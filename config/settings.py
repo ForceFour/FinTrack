@@ -1,0 +1,90 @@
+"""Configuration settings for FinTrack application"""
+
+import os
+from typing import Dict, Any, List
+from pydantic import BaseSettings, Field
+
+
+class Settings(BaseSettings):
+    """Application settings"""
+    
+    # API Settings
+    api_title: str = "FinTrack API"
+    api_version: str = "0.1.0"
+    api_description: str = "Financial Transaction Analysis and Processing System"
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    debug: bool = False
+    
+    # OpenAI Settings
+    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    openai_model: str = "gpt-3.5-turbo"
+    
+    # Database Settings (for future use)
+    database_url: str = Field(default="sqlite:///./fintrack.db", env="DATABASE_URL")
+    
+    # Model Settings
+    model_path: str = "models/"
+    category_model_path: str = "models/category_classifier.joblib"
+    anomaly_model_path: str = "models/anomaly_detector.joblib"
+    
+    # Feature Engineering Settings
+    max_tfidf_features: int = 100
+    merchant_frequency_threshold: int = 2
+    
+    # Processing Settings
+    batch_size: int = 100
+    max_transactions_per_request: int = 1000
+    
+    # Security Settings
+    allowed_origins: List[str] = ["*"]
+    
+    # Logging Settings
+    log_level: str = "INFO"
+    log_file: str = "logs/fintrack.log"
+    
+    # Agent Configuration
+    agent_configs: Dict[str, Any] = {
+        "ingestion_agent": {
+            "timeout": 30,
+            "retry_attempts": 3
+        },
+        "ner_merchant_agent": {
+            "confidence_threshold": 0.8,
+            "unknown_merchant_label": "Unknown Merchant"
+        },
+        "classifier_agent": {
+            "confidence_threshold": 0.7,
+            "default_category": "miscellaneous"
+        },
+        "pattern_analyzer_agent": {
+            "lookback_days": 90,
+            "min_transactions_for_pattern": 3
+        },
+        "suggestion_agent": {
+            "max_suggestions": 10,
+            "priority_threshold": 0.8
+        },
+        "safety_guard_agent": {
+            "anomaly_threshold": 0.9,
+            "alert_severity_threshold": "medium"
+        }
+    }
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+# Global settings instance
+settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get application settings"""
+    return settings
+
+
+def get_agent_config(agent_name: str) -> Dict[str, Any]:
+    """Get configuration for a specific agent"""
+    return settings.agent_configs.get(agent_name, {})
