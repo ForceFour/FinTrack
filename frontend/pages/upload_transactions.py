@@ -24,6 +24,7 @@ def upload_to_api(file_data, file_type):
         files = {"file": file_data}
         data = {"file_type": file_type}
         
+        #FIXME: Uncomment when backend is ready
         # Simulate API call
         # response = requests.post(f"{API_BASE_URL}/api/transactions/upload", files=files, data=data)
         # For now, return simulated response
@@ -61,6 +62,7 @@ def process_csv_file(uploaded_file):
 def process_bank_statement(uploaded_file, bank_type):
     """Process bank statement files (PDF, OFX, QIF)"""
     try:
+        #FIXME: Integrate with actual bank statement parsing library or API
         # Simulate bank statement processing
         st.info(f"Processing {bank_type} bank statement...")
         time.sleep(3)
@@ -129,7 +131,8 @@ with upload_tab1:
         
         with col2:
             if st.button("Process File", type="primary"):
-                with st.spinner("Processing file..."):
+                with st.spinner():
+                    st.write("Processing file...")
                     if uploaded_file.name.endswith('.csv'):
                         df = process_csv_file(uploaded_file)
                     else:
@@ -165,7 +168,8 @@ with upload_tab2:
         st.success(f"Statement uploaded: {statement_file.name}")
 
         if st.button("Extract Transactions", type="primary"):
-            with st.spinner("Extracting transactions from statement..."):
+            with st.spinner():
+                st.write("Extracting transactions from statement...")
                 df = process_bank_statement(statement_file, bank_type)
                 
                 if df is not None:
@@ -195,7 +199,8 @@ with upload_tab3:
         st.success(f"Export uploaded: {mobile_file.name}")
 
         if st.button("Import from App", type="primary"):
-            with st.spinner(f"Importing from {app_type}..."):
+            with st.spinner():
+                st.write(f"Importing from {app_type}...")
                 if mobile_file.name.endswith('.json'):
                     data = json.load(mobile_file)
                     df = pd.DataFrame(data)
@@ -279,7 +284,7 @@ if 'transactions' in st.session_state and st.session_state.transactions:
         )
     
     # Action buttons
-    st.markdown("#### 🎯 Next Steps")
+    st.markdown("#### Next Steps")
     
     col1, col2, col3 = st.columns(3)
     
@@ -320,7 +325,7 @@ with st.expander("Add Single Transaction"):
     
     if st.button("Add Transaction"):
         new_transaction = {
-            "date": manual_date.strftime("%Y-%m-%d"),
+            "date": manual_date.strftime("%Y-%m-%d") if manual_date else datetime.now().strftime("%Y-%m-%d"),
             "amount": manual_amount,
             "description": manual_description,
             "category": manual_category,
