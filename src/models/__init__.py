@@ -10,7 +10,9 @@ from .transaction import (
 )
 from .analytics import (
     SpendingAnalytics, CategoryBreakdown, TrendAnalysis, AnalyticsPeriod, 
-    AnalyticsMetric, BudgetPerformance, DashboardSummary
+    AnalyticsMetric, BudgetPerformance, DashboardSummary, CashFlowAnalysis,
+    SpendingPattern, FinancialGoalProgress, MerchantAnalysis, AnomalyDetection,
+    ForecastData
 )
 from .suggestion import (
     Suggestion, SuggestionCreate, SuggestionType, BudgetRecommendation,
@@ -34,7 +36,9 @@ __all__ = [
     
     # Analytics models
     "SpendingAnalytics", "CategoryBreakdown", "TrendAnalysis", "AnalyticsPeriod",
-    "AnalyticsMetric", "BudgetPerformance", "DashboardSummary",
+    "AnalyticsMetric", "BudgetPerformance", "DashboardSummary", "CashFlowAnalysis",
+    "SpendingPattern", "FinancialGoalProgress", "MerchantAnalysis", "AnomalyDetection",
+    "ForecastData",
     
     # Suggestion models
     "Suggestion", "SuggestionCreate", "SuggestionType", "BudgetRecommendation",
