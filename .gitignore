@@ -1,23 +1,16 @@
-# Python-generated files
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-
-# Test files
-tests/
-
-# Python cache
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
+build/
 develop-eggs/
+dist/
 downloads/
 eggs/
 .eggs/
@@ -26,9 +19,75 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 MANIFEST
 
-# Environment
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# celery beat schedule file
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
 .env
 .venv
 env/
@@ -37,45 +96,46 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Spyder project settings
+.spyderproject
+.spyproject
 
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Rope project settings
+.ropeproject
 
-# Logs
-logs/
-*.log
+# mkdocs documentation
+/site
 
-# Models
-models/*.joblib
-models/*.pkl
-models/*.model
-
-# Data
-data/
-*.csv
-*.json
-*.xlsx
-*.db
-*.sqlite
-
-# Coverage
-.coverage
-.pytest_cache/
-htmlcov/
-
-# MyPy
+# mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# VS Code
+.vscode/settings.json
+.vscode/launch.json
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Application specific
+models/*.joblib
+models/*.pkl
+data/
+*.log
+logs/
+
+# Development files
+test_*.py
+verify_*.py
+fix_*.py
