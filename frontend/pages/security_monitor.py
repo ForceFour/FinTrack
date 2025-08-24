@@ -101,7 +101,8 @@ with st.sidebar:
     
     # Quick actions
     if st.button("Run Security Scan", type="primary"):
-        with st.spinner("Running comprehensive security scan..."):
+        with st.spinner():
+            st.write("Running security scan...")
             import time
             time.sleep(2)
             st.success("Security scan completed!")
@@ -221,8 +222,8 @@ with tab1:
             st.write(event["event"])
         
         with col3:
-            severity_colors = {"Info": "🔵", "Warning": "🟡", "Critical": "🔴"}
-            st.write(f"{severity_colors.get(event['severity'], '⚪')} {event['severity']}")
+            severity_colors = {"Info": "#4a90e2", "Warning": "#f39c12", "Critical": "#e74c3c"}
+            st.write(f"{severity_colors.get(event['severity'], '#ffffff')} {event['severity']}")
         
         with col4:
             st.write(event["action"])
@@ -303,11 +304,12 @@ with tab2:
             # Simulate risk scores for transactions
             risk_scores = np.random.beta(2, 5, len(df))  # Beta distribution for realistic fraud scores
             risk_categories = ['Low (0-0.3)', 'Medium (0.3-0.7)', 'High (0.7-1.0)']
-            risk_counts = [
-                sum(risk_scores < 0.3),
-                sum((risk_scores >= 0.3) & (risk_scores < 0.7)),
-                sum(risk_scores >= 0.7)
-            ]
+
+            risk_counts = np.array([
+                int(np.sum(risk_scores < 0.3)),
+                int(np.sum((risk_scores >= 0.3) & (risk_scores < 0.7))),
+                int(np.sum(risk_scores >= 0.7))
+            ])
             
             fig_risk = px.bar(
                 x=risk_categories,
@@ -342,10 +344,21 @@ with tab2:
             # Show some example high-risk transactions
             high_risk_df = unusual_amounts.head(5) if not unusual_amounts.empty else df.head(5)
             display_df = high_risk_df[['date', 'amount', 'description']].copy()
-            display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d %H:%M')
-            display_df['amount'] = display_df['amount'].apply(lambda x: f"${abs(x):.2f}")
+            
+            # Convert date column safely
+            if 'date' in display_df.columns:
+                date_series = pd.to_datetime(display_df['date'])
+                display_df['date'] = date_series.dt.strftime('%Y-%m-%d %H:%M')
+            
+            # Format amount column safely
+            if 'amount' in display_df.columns:
+                amount_series = pd.Series(display_df['amount'])
+                display_df['amount'] = amount_series.apply(lambda x: f"${abs(x):.2f}")
+            
+            # Add risk score column
             display_df['risk_score'] = [np.random.uniform(0.7, 0.95) for _ in range(len(display_df))]
-            display_df['risk_score'] = display_df['risk_score'].apply(lambda x: f"{x:.2f}")
+            risk_score_series = pd.Series(display_df['risk_score'])
+            display_df['risk_score'] = risk_score_series.apply(lambda x: f"{x:.2f}")
             
             st.dataframe(display_df, use_container_width=True)
     
@@ -378,41 +391,55 @@ with tab3:
         
         with col1:
             # Amount-based anomalies
-            expense_amounts = df[df['is_expense']]['amount_abs']
-            mean_amount = expense_amounts.mean()
-            std_amount = expense_amounts.std()
-            
-            # Z-score based anomalies
-            z_scores = np.abs((expense_amounts - mean_amount) / std_amount)
-            anomalies = expense_amounts[z_scores > 2]  # 2 standard deviations
-            
-            st.metric("Amount Anomalies", len(anomalies))
-            st.metric("Mean Transaction", f"${mean_amount:.2f}")
-            st.metric("Std Deviation", f"${std_amount:.2f}")
-            
-            if not anomalies.empty:
-                st.markdown("**Anomalous Amounts:**")
-                for amount in anomalies.head(5):
-                    st.write(f"• ${amount:.2f}")
+            if not df.empty and 'is_expense' in df.columns and 'amount_abs' in df.columns:
+                expense_amounts = df[df['is_expense']]['amount_abs']
+                if len(expense_amounts) > 0:
+                    expense_series = pd.Series(expense_amounts)
+                    mean_amount = expense_series.mean()
+                    std_amount = expense_series.std()
+                    
+                    # Z-score based anomalies
+                    z_scores = np.abs((expense_series - mean_amount) / std_amount)
+                    anomalies = expense_series[z_scores > 2]  # 2 standard deviations
+                    
+                    st.metric("Amount Anomalies", len(anomalies))
+                    st.metric("Mean Transaction", f"${mean_amount:.2f}")
+                    st.metric("Std Deviation", f"${std_amount:.2f}")
+                    
+                    if len(anomalies) > 0:
+                        st.markdown("**Anomalous Amounts:**")
+                        for amount in list(anomalies)[:5]:  # Convert to list and take first 5
+                            st.write(f"• ${amount:.2f}")
+                else:
+                    st.info("No expense data available for anomaly analysis.")
+            else:
+                st.info("No transaction data available for amount analysis.")
         
         with col2:
             # Time-based anomalies
-            if len(df) > 1:
-                # Transaction frequency analysis
-                daily_counts = df.groupby(df['date'].dt.date).size()
-                mean_daily = daily_counts.mean()
-                std_daily = daily_counts.std()
-                
-                daily_anomalies = daily_counts[np.abs(daily_counts - mean_daily) > 2 * std_daily]
-                
-                st.metric("Frequency Anomalies", len(daily_anomalies))
-                st.metric("Avg Daily Transactions", f"{mean_daily:.1f}")
-                st.metric("Frequency Std Dev", f"{std_daily:.1f}")
-                
-                if not daily_anomalies.empty:
-                    st.markdown("**Anomalous Days:**")
-                    for date, count in daily_anomalies.head(5).items():
-                        st.write(f"• {date}: {count} transactions")
+            if len(df) > 1 and 'date' in df.columns:
+                try:
+                    # Transaction frequency analysis
+                    date_series = pd.to_datetime(df['date'])
+                    daily_counts = date_series.groupby(date_series.dt.date).size()
+                    mean_daily = daily_counts.mean()
+                    std_daily = daily_counts.std()
+                    
+                    daily_anomalies_mask = np.abs(daily_counts - mean_daily) > 2 * std_daily
+                    daily_anomalies = daily_counts[daily_anomalies_mask]
+                    
+                    st.metric("Frequency Anomalies", len(daily_anomalies))
+                    st.metric("Avg Daily Transactions", f"{mean_daily:.1f}")
+                    st.metric("Frequency Std Dev", f"{std_daily:.1f}")
+                    
+                    if len(daily_anomalies) > 0:
+                        st.markdown("**Anomalous Days:**")
+                        for date, count in list(daily_anomalies.items())[:5]:  # Convert to list and take first 5
+                            st.write(f"• {date}: {count} transactions")
+                except Exception:
+                    st.info("Unable to analyze time-based anomalies.")
+            else:
+                st.info("Insufficient data for time-based analysis.")
         
         # Anomaly visualization
         st.markdown("#### Anomaly Visualization")
@@ -421,9 +448,14 @@ with tab3:
         if not df.empty:
             # Scatter plot of amount vs time with anomalies highlighted
             df['is_anomaly'] = False
-            if not expense_amounts.empty:
-                z_scores = np.abs((df['amount_abs'] - df['amount_abs'].mean()) / df['amount_abs'].std())
-                df['is_anomaly'] = z_scores > 2
+            if len(df) > 0 and 'amount_abs' in df.columns:
+                try:
+                    amount_series = pd.Series(df['amount_abs'])
+                    z_scores = np.abs((amount_series - amount_series.mean()) / amount_series.std())
+                    df['is_anomaly'] = z_scores > 2
+                except Exception:
+                    # If calculation fails, mark all as normal
+                    df['is_anomaly'] = False
             
             fig_anomaly = px.scatter(
                 df,
@@ -440,11 +472,22 @@ with tab3:
         # Anomaly patterns
         st.markdown("#### Detected Patterns")
 
+        # Calculate pattern data safely
+        try:
+            if 'expense_series' in locals() and len(expense_series) > 0:
+                mean_amount = expense_series.mean()
+                std_amount = expense_series.std()
+                anomaly_count = len([x for x in locals().get('anomalies', []) if x is not None])
+            else:
+                mean_amount, std_amount, anomaly_count = 0, 0, 0
+        except Exception:
+            mean_amount, std_amount, anomaly_count = 0, 0, 0
+
         patterns = [
             {
                 'pattern': 'Unusual Amount Range',
                 'description': f'Transactions outside normal range (${mean_amount - 2*std_amount:.2f} - ${mean_amount + 2*std_amount:.2f})',
-                'count': len(anomalies) if not anomalies.empty else 0,
+                'count': anomaly_count,
                 'severity': 'Medium'
             },
             {
@@ -701,7 +744,8 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button("Run Deep Scan"):
-        with st.spinner("Running comprehensive security scan..."):
+        with st.spinner():
+            st.write("Running comprehensive security scan...")
             import time
             time.sleep(3)
             st.success("Deep scan completed! No threats detected.")

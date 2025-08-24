@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
+import json
 
 st.set_page_config(page_title="Dashboard", page_icon="", layout="wide")
 
@@ -99,7 +100,9 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("#### Spending by Category")
-    category_spending = df[df['is_expense']].groupby('category')['amount_abs'].sum().sort_values(ascending=False)
+    # Group by category and sum amounts, then sort manually
+    category_spending_temp = df[df['is_expense']].groupby('category')['amount_abs'].sum()
+    category_spending = category_spending_temp.iloc[category_spending_temp.values.argsort()[::-1]]
     
     fig_category = px.pie(
         values=category_spending.values,
@@ -133,7 +136,9 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("#### Top Merchants by Spending")
-    merchant_spending = df[df['is_expense']].groupby('merchant')['amount_abs'].sum().sort_values(ascending=False).head(10)
+    merchant_spending_temp = df[df['is_expense']].groupby('merchant')['amount_abs'].sum()
+    # Sort values in descending order and take top 10
+    merchant_spending = merchant_spending_temp.iloc[merchant_spending_temp.values.argsort()[::-1][:10]]
     
     fig_merchants = px.bar(
         x=merchant_spending.values,
@@ -158,11 +163,11 @@ with col2:
     else:
         # Sample data if payment_method not available
         payment_methods = pd.Series({
-            'Credit Card': len(df) * 0.6,
-            'Debit Card': len(df) * 0.25,
-            'Cash': len(df) * 0.1,
-            'Digital Wallet': len(df) * 0.05
-        }).astype(int)
+            'Credit Card': int(len(df) * 0.6),
+            'Debit Card': int(len(df) * 0.25),
+            'Cash': int(len(df) * 0.1),
+            'Digital Wallet': int(len(df) * 0.05)
+        })
     
     fig_payment = px.bar(
         x=payment_methods.index,
@@ -262,9 +267,30 @@ st.subheader("Recent Transactions")
 
 # Display recent transactions
 recent_df = df.sort_values('date', ascending=False).head(10)
-display_df = recent_df[['date', 'merchant', 'category', 'amount', 'description']].copy()
-display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
-display_df['amount'] = display_df['amount'].apply(lambda x: f"${x:.2f}")
+
+# Create display dataframe with formatted data
+display_data = []
+for _, row in recent_df.iterrows():
+    # Handle date formatting safely
+    try:
+        formatted_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
+    except (ValueError, AttributeError):
+        formatted_date = str(row['date'])
+    
+    try:
+        formatted_amount = f"${float(row['amount']):.2f}"
+    except (ValueError, TypeError):
+        formatted_amount = str(row['amount'])
+    
+    display_data.append({
+        'date': formatted_date,
+        'merchant': str(row['merchant']),
+        'category': str(row['category']),
+        'amount': formatted_amount,
+        'description': str(row['description'])
+    })
+
+display_df = pd.DataFrame(display_data)
 
 st.dataframe(
     display_df,
@@ -301,7 +327,7 @@ with col1:
         
         st.download_button(
             label="Download Report (JSON)",
-            data=pd.Series(report_data).to_json(),
+            data=json.dumps(report_data, indent=2, default=str),
             file_name=f"expense_report_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json"
         )
