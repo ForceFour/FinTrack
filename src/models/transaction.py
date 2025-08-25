@@ -31,6 +31,7 @@ class TransactionBase(BaseModel):
     merchant: Optional[str] = Field(None, max_length=200)
     account: Optional[str] = Field(None, max_length=100)
     transaction_type: TransactionType = TransactionType.EXPENSE
+    offer_discount: Optional[str] = Field(None, max_length=100)
     tags: Optional[List[str]] = Field(default_factory=list)
     notes: Optional[str] = Field(None, max_length=1000)
     
@@ -53,6 +54,7 @@ class TransactionUpdate(BaseModel):
     merchant: Optional[str] = Field(None, max_length=200)
     account: Optional[str] = Field(None, max_length=100)
     transaction_type: Optional[TransactionType] = None
+    offer_discount: Optional[str] = Field(None, max_length=100)
     tags: Optional[List[str]] = None
     notes: Optional[str] = Field(None, max_length=1000)
 

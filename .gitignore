@@ -139,3 +139,5 @@ logs/
 test_*.py
 verify_*.py
 fix_*.py
+
+tests/
