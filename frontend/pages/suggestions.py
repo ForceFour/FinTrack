@@ -4,6 +4,7 @@ Suggestions Page - AI-powered financial recommendations and insights
 
 import streamlit as st
 import pandas as pd
+from typing import Dict, List, Any, Optional, Union
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
@@ -62,12 +63,19 @@ with st.sidebar:
     st.session_state.user_preferences['savings_goal'] = savings_goal
     
     # Risk tolerance
+    current_risk = st.session_state.user_preferences['risk_tolerance']
+    risk_options = ['Conservative', 'Moderate', 'Aggressive']
+    try:
+        current_index = risk_options.index(current_risk.title() if current_risk else 'Moderate')
+    except (ValueError, AttributeError):
+        current_index = 1  # Default to 'Moderate'
+    
     risk_tolerance = st.selectbox(
         "Risk Tolerance",
-        ['Conservative', 'Moderate', 'Aggressive'],
-        index=['Conservative', 'Moderate', 'Aggressive'].index(st.session_state.user_preferences['risk_tolerance'].title())
+        risk_options,
+        index=current_index
     )
-    st.session_state.user_preferences['risk_tolerance'] = risk_tolerance.lower()
+    st.session_state.user_preferences['risk_tolerance'] = risk_tolerance.lower() if risk_tolerance else 'moderate'
     
     # Financial goals
     available_goals = [
@@ -109,10 +117,10 @@ with tab1:
 
     # Calculate spending by category
     expense_df = df[df['is_expense']].copy()
-    category_spending = expense_df.groupby('category')['amount_abs'].agg(['sum', 'mean', 'count']).round(2)
-    category_spending.columns = ['Total', 'Average', 'Count']
-    category_spending = category_spending.sort_values('Total', ascending=False)
-    
+    category_spending_df = expense_df.groupby('category')['amount_abs'].agg(['sum', 'mean', 'count']).round(2)
+    category_spending_df.columns = ['Total', 'Average', 'Count']
+    category_spending = category_spending_df.sort_values('Total', ascending=False)
+
     # Generate savings suggestions
     savings_opportunities = []
     
@@ -288,7 +296,7 @@ with tab2:
         current_amount = current_spending[category]
         current_pct = (current_amount / total_spending) * 100
         
-        recommended_pct = recommended_allocation.get(category, 0.05) * 100
+        recommended_pct = recommended_allocation.get(str(category), 0.05) * 100
         recommended_amount = total_spending * (recommended_pct / 100)
         
         difference = current_amount - recommended_amount
@@ -332,15 +340,17 @@ with tab3:
         st.metric("Available for Investment", f"${available_for_investment:.2f}")
     
     with col2:
-        st.metric("Risk Tolerance", risk_tolerance.title())
+        current_risk = st.session_state.user_preferences.get('risk_tolerance', 'moderate')
+        st.metric("Risk Tolerance", current_risk.title() if current_risk else 'Moderate')
     
     with col3:
-        recommended_investment_pct = {'conservative': 0.6, 'moderate': 0.8, 'aggressive': 1.0}[risk_tolerance]
+        recommended_investment_pct = {'conservative': 0.6, 'moderate': 0.8, 'aggressive': 1.0}.get(current_risk, 0.8)
         recommended_amount = available_for_investment * recommended_investment_pct
         st.metric("Recommended Investment", f"${recommended_amount:.2f}")
     
     # Investment recommendations based on risk tolerance
-    if risk_tolerance == 'conservative':
+    current_risk = st.session_state.user_preferences.get('risk_tolerance', 'moderate')
+    if current_risk == 'conservative':
         investment_suggestions = [
             {
                 'type': 'High-Yield Savings Account',
@@ -371,7 +381,7 @@ with tab3:
                 'description': 'Mix of bonds and conservative stocks'
             }
         ]
-    elif risk_tolerance == 'moderate':
+    elif current_risk == 'moderate':
         investment_suggestions = [
             {
                 'type': 'Index Funds (S&P 500)',
@@ -441,7 +451,7 @@ with tab3:
         allocation_df,
         values='allocation',
         names='type',
-        title=f"Recommended Investment Allocation - {risk_tolerance.title()} Risk"
+        title=f"Recommended Investment Allocation - {current_risk.title() if current_risk else 'Moderate'} Risk"
     )
     st.plotly_chart(fig_allocation, use_container_width=True)
     
@@ -491,8 +501,17 @@ with tab4:
         st.metric("Emergency Fund (Months)", f"{emergency_fund_months:.1f}", delta_color=color)
     
     # Spending volatility
-    daily_spending = expense_df.groupby(expense_df['date'].dt.date)['amount_abs'].sum()
-    spending_volatility = daily_spending.std() / daily_spending.mean() if len(daily_spending) > 1 else 0
+    if len(expense_df) > 0:
+        try:
+            # Group by date safely - simplified approach
+            expense_df_copy = expense_df.copy()
+            expense_df_copy['date'] = pd.to_datetime(expense_df_copy['date'])
+            daily_spending = expense_df_copy.groupby(expense_df_copy['date'].dt.date)['amount_abs'].sum()
+            spending_volatility = daily_spending.std() / daily_spending.mean() if len(daily_spending) > 1 else 0
+        except Exception:
+            spending_volatility = 0
+    else:
+        spending_volatility = 0
     
     with col2:
         volatility_status = "Low" if spending_volatility < 0.5 else "Medium" if spending_volatility < 1.0 else "High"
@@ -500,17 +519,31 @@ with tab4:
     
     # Subscription/recurring expense ratio
     recurring_keywords = ['netflix', 'spotify', 'subscription', 'monthly', 'annual']
-    recurring_expenses = expense_df[
-        expense_df['description'].str.lower().str.contains('|'.join(recurring_keywords), na=False)
-    ]['amount_abs'].sum()
+    if len(expense_df) > 0 and 'description' in expense_df.columns:
+        try:
+            # Ensure we have a pandas Series for string operations
+            description_series = pd.Series(expense_df['description'])
+            recurring_mask = description_series.str.lower().str.contains('|'.join(recurring_keywords), na=False)
+            recurring_expenses = expense_df[recurring_mask]['amount_abs'].sum()
+        except (AttributeError, KeyError):
+            recurring_expenses = 0
+    else:
+        recurring_expenses = 0
     recurring_ratio = (recurring_expenses / monthly_expenses) * 100 if monthly_expenses > 0 else 0
     
     with col3:
         st.metric("Recurring Expenses", f"{recurring_ratio:.1f}%")
     
     # Large transaction frequency
-    large_threshold = expense_df['amount_abs'].quantile(0.9)
-    large_transactions = len(expense_df[expense_df['amount_abs'] > large_threshold])
+    if len(expense_df) > 0:
+        try:
+            amount_series = pd.Series(expense_df['amount_abs'])
+            large_threshold = amount_series.quantile(0.9)
+            large_transactions = len(expense_df[expense_df['amount_abs'] > large_threshold])
+        except (AttributeError, KeyError):
+            large_transactions = 0
+    else:
+        large_transactions = 0
     
     with col4:
         st.metric("Large Transactions", large_transactions)
@@ -632,10 +665,11 @@ with tab5:
         custom_goal_amount = st.number_input("Goal Amount ($)", min_value=100, value=5000, step=100)
         custom_timeline = st.selectbox("Timeline", ["6 months", "1 year", "2 years", "3 years", "5 years"])
         
-        timeline_months = {
+        timeline_mapping = {
             "6 months": 6, "1 year": 12, "2 years": 24, 
             "3 years": 36, "5 years": 60
-        }[custom_timeline]
+        }
+        timeline_months = timeline_mapping.get(custom_timeline or "1 year", 12)  # Default to 12 months
         
         required_monthly = custom_goal_amount / timeline_months
         
@@ -742,7 +776,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 ## Summary
 - Potential Monthly Savings: ${total_potential_savings:.2f}
 - Investment Recommendation: ${recommended_amount:.2f}
-- Risk Tolerance: {risk_tolerance.title()}
+- Risk Tolerance: {current_risk.title() if current_risk else 'Moderate'}
 - Active Goals: {len(financial_goals)}
 
 ## Top Recommendations
