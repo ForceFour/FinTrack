@@ -59,7 +59,8 @@ with st.sidebar:
     
     if st.button("Auto-Categorize All", type="primary"):
         if 'transactions' in st.session_state:
-            with st.spinner("AI categorizing transactions..."):
+            with st.spinner():
+                st.write("AI categorizing transactions...")
                 # Simulate AI categorization
                 import time
                 time.sleep(2)
@@ -108,7 +109,8 @@ with tab1:
             if 'amount' in df.columns:
                 expense_df = df[df['amount'] < 0].copy()
                 expense_df['amount_abs'] = abs(expense_df['amount'])
-                category_spending = expense_df.groupby('category')['amount_abs'].sum().sort_values(ascending=True)
+                category_spending_series = expense_df.groupby('category')['amount_abs'].sum()
+                category_spending = category_spending_series.sort_values(ascending=True)  # type: ignore
                 
                 fig_bar = px.bar(
                     x=category_spending.values,
@@ -132,8 +134,13 @@ with tab1:
             }).round(2)
             
             category_stats.columns = ['Transaction Count', 'Total Amount', 'Average Amount', 'First Transaction', 'Last Transaction']
-            category_stats['Total Amount'] = category_stats['Total Amount'].apply(lambda x: f"${x:,.2f}")
-            category_stats['Average Amount'] = category_stats['Average Amount'].apply(lambda x: f"${x:,.2f}")
+            
+            # Convert to string format safely
+            total_amount_series = pd.Series(category_stats['Total Amount'])
+            average_amount_series = pd.Series(category_stats['Average Amount'])
+            
+            category_stats['Total Amount'] = total_amount_series.apply(lambda x: f"${x:,.2f}")
+            category_stats['Average Amount'] = average_amount_series.apply(lambda x: f"${x:,.2f}")
             
             st.dataframe(category_stats, use_container_width=True)
     
@@ -228,7 +235,7 @@ with tab2:
             
             with col_save:
                 if st.form_submit_button("Save Changes", type="primary"):
-                    rules_list = [rule.strip() for rule in edit_rules.split('\n') if rule.strip()]
+                    rules_list = [rule.strip() for rule in (edit_rules or '').split('\n') if rule.strip()]
                     
                     st.session_state.custom_categories[edit_idx] = {
                         "name": edit_name,
