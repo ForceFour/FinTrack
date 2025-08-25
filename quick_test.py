@@ -24,7 +24,7 @@ def test_imports():
         print("✅ Transaction service")
         
         # Test core
-        from src.core.config import Settings
+        from config.settings import Settings
         print("✅ Config")
         
         from src.core.database import MockDatabase
