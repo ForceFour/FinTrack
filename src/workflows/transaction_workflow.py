@@ -186,9 +186,73 @@ class TransactionWorkflow:
             current_step="starting",
             metadata={}
         )
+
+        # Run the workflow with proper configuration
+        config = {
+            "configurable": {
+                "thread_id": "demo_thread_001"
+            }
+        }
         
         # Run the workflow
         final_state = await app.ainvoke(initial_state)
+        
+        return {
+            "processed_transactions": final_state["classified_transactions"],
+            "insights": final_state["pattern_insights"],
+            "suggestions": final_state["suggestions"],
+            "security_alerts": final_state["security_alerts"],
+            "metadata": final_state["metadata"]
+        }
+    
+    async def process_preprocessed_transactions(self, preprocessed_transactions: List[Any]) -> Dict[str, Any]:
+        """Process already preprocessed transactions starting from NER step"""
+        # Create a workflow that starts from NER merchant step
+        workflow = StateGraph(TransactionProcessingState)
+        
+        # Add nodes (skip ingestion)
+        workflow.add_node("ner_merchant", self._ner_merchant_step)
+        workflow.add_node("classifier", self._classifier_step)
+        workflow.add_node("pattern_analyzer", self._pattern_analyzer_step)
+        workflow.add_node("suggestion", self._suggestion_step)
+        workflow.add_node("safety_guard", self._safety_guard_step)
+        
+        # Define edges starting from NER
+        workflow.add_edge("ner_merchant", "classifier")
+        workflow.add_edge("classifier", "pattern_analyzer")
+        workflow.add_edge("pattern_analyzer", "suggestion")
+        workflow.add_edge("suggestion", "safety_guard")
+        workflow.add_edge("safety_guard", END)
+        
+        # Set entry point to NER merchant
+        workflow.set_entry_point("ner_merchant")
+        
+        # Compile workflow
+        memory = MemorySaver()
+        app = workflow.compile(checkpointer=memory)
+        
+        # Create initial state with preprocessed data
+        initial_state = TransactionProcessingState(
+            raw_transactions=[],
+            preprocessed_transactions=[t.dict() if hasattr(t, 'dict') else t.__dict__ for t in preprocessed_transactions],
+            merchant_transactions=[],
+            classified_transactions=[],
+            pattern_insights=[],
+            suggestions=[],
+            security_alerts=[],
+            current_step="ingestion_complete",
+            metadata={}
+        )
+
+        # Run the workflow with proper configuration
+        config = {
+            "configurable": {
+                "thread_id": "preprocessed_thread_001"
+            }
+        }
+        
+        # Run the workflow
+        final_state = await app.ainvoke(initial_state, config)
         
         return {
             "processed_transactions": final_state["classified_transactions"],
