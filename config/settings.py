@@ -2,7 +2,8 @@
 
 import os
 from typing import Dict, Any, List
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,15 @@ class Settings(BaseSettings):
     # OpenAI Settings
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
     openai_model: str = "gpt-3.5-turbo"
+    
+    # Groq Settings
+    groq_api_key: str = Field(default="", env="GROQ_API_KEY")
+    
+    # LangGraph Settings
+    langgraph_api_key: str = Field(default="", env="LANGGRAPH_API_KEY")
+    
+    # Security Settings
+    secret_key: str = Field(default="your_secret_key_here", env="SECRET_KEY")
     
     # Database Settings (for future use)
     database_url: str = Field(default="sqlite:///./fintrack.db", env="DATABASE_URL")

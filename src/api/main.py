@@ -7,6 +7,7 @@ import uvicorn
 
 from ..workflows.transaction_workflow import TransactionWorkflow
 from ..schemas.transaction_schemas import RawTransaction
+from ..routes.workflow import router as workflow_router
 
 
 # Initialize FastAPI app
@@ -24,6 +25,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include workflow routes
+app.include_router(workflow_router, prefix="/api/v1")
 
 # Initialize workflow
 workflow = TransactionWorkflow()

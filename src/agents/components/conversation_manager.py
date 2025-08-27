@@ -66,11 +66,11 @@ class ConversationManager:
     def _handle_initial_input(self, user_input: str) -> Tuple[str, Dict[str, Any]]:
         """Handle the initial transaction description"""
         # Import here to avoid circular imports
-        from .nl_processor import NLProcessor
+        from .nl_processor import NaturalLanguageProcessor
         
         # Process with NL processor
-        nl_processor = NLProcessor()
-        extracted_data = nl_processor.process_natural_language(user_input)
+        nl_processor = NaturalLanguageProcessor()
+        extracted_data = nl_processor.process_input(user_input)
         
         self.current_transaction.update(extracted_data)
         self.missing_fields = extracted_data.get('missing_fields', [])
