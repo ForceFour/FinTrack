@@ -12,7 +12,10 @@ from ..models.user import User, UserCreate, UserUpdate, UserResponse, LoginReque
 from ..models.auth import Token, TokenData
 from ..services.auth_service import AuthService, get_current_user
 from ..core.database import get_db_session
-from ..core.config import settings
+from config.settings import get_settings
+
+# Get settings instance
+settings = get_settings()
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 security = HTTPBearer()

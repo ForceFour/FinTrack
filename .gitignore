@@ -88,7 +88,6 @@ celerybeat-schedule
 *.sage.py
 
 # Environments
-.env
 .venv
 env/
 venv/
@@ -131,7 +130,6 @@ ehthumbs.db
 # Application specific
 models/*.joblib
 models/*.pkl
-data/
 *.log
 logs/
 

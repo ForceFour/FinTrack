@@ -1,8 +1,21 @@
-"""LangGraph workflow definition for the financial transaction processing pipeline"""
+"""
+Enhanced LangGraph Workflow for Transaction Processing Pipeline
+Integrates: LangChain/Groq NL Processing + Enhanced Ingestion + NER + Classification
+"""
 
-from typing import Dict, Any, List, TypedDict
+import logging
+from typing import Dict, Any, List, TypedDict, Optional
+from datetime import datetime
+import os
+
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+
+from ..states import TransactionProcessingState, ProcessingStage
+from ..nodes import TransactionProcessingNodes
+from ..nodes.specialized_nodes import ConditionalNodes, ErrorHandlingNodes, UtilityNodes
+
+logger = logging.getLogger(__name__)
 
 from ..agents.ingestion_agent import IngestionAgent
 from ..agents.ner_merchant_agent import NERMerchantAgent
@@ -11,19 +24,6 @@ from ..agents.pattern_analyzer_agent import PatternAnalyzerAgent
 from ..agents.suggestion_agent import SuggestionAgent
 from ..agents.safety_guard_agent import SafetyGuardAgent
 from ..schemas.transaction_schemas import RawTransaction
-
-
-class TransactionProcessingState(TypedDict):
-    """State object for the transaction processing workflow"""
-    raw_transactions: List[Any]
-    preprocessed_transactions: List[Any]
-    merchant_transactions: List[Any]
-    classified_transactions: List[Any]
-    pattern_insights: List[Any]
-    suggestions: List[Any]
-    security_alerts: List[Any]
-    current_step: str
-    metadata: Dict[str, Any]
 
 
 class TransactionWorkflow:
@@ -260,4 +260,116 @@ class TransactionWorkflow:
             "suggestions": final_state["suggestions"],
             "security_alerts": final_state["security_alerts"],
             "metadata": final_state["metadata"]
+        }
+
+
+class TransactionProcessingWorkflow:
+    """
+    LangGraph-based workflow for comprehensive transaction processing
+    Integrates with the states and nodes for complete pipeline orchestration
+    """
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """
+        Initialize the LangGraph workflow
+        
+        Args:
+            config: Optional configuration dictionary
+        """
+        from config.settings import get_settings
+        
+        # Get configuration
+        self.config = config or {}
+        self.settings = get_settings()
+        
+        # Initialize processing nodes
+        from ..nodes import TransactionProcessingNodes
+        self.nodes = TransactionProcessingNodes(config=self.config)
+        
+        # Build the workflow graph
+        self.workflow = self._build_workflow()
+        
+    def _build_workflow(self):
+        """Build the LangGraph workflow"""
+        from langgraph.graph import StateGraph
+        from langgraph.checkpoint.memory import MemorySaver
+        from ..states import TransactionProcessingState
+        
+        # Create the workflow graph
+        workflow = StateGraph(TransactionProcessingState)
+        
+        # Add nodes
+        workflow.add_node("initialize", self.nodes.initialize_workflow_node)
+        workflow.add_node("nl_processing", self.nodes.nl_processing_node)
+        workflow.add_node("ingestion", self.nodes.ingestion_node)
+        workflow.add_node("ner_extraction", self.nodes.ner_extraction_node)
+        workflow.add_node("classification", self.nodes.classification_node)
+        workflow.add_node("validation", self.nodes.validation_node)
+        workflow.add_node("finalization", self.nodes.finalization_node)
+        
+        # Define the flow
+        workflow.set_entry_point("initialize")
+        workflow.add_edge("initialize", "nl_processing")
+        workflow.add_edge("nl_processing", "ingestion")
+        workflow.add_edge("ingestion", "ner_extraction")
+        workflow.add_edge("ner_extraction", "classification")
+        workflow.add_edge("classification", "validation")
+        workflow.add_edge("validation", "finalization")
+        workflow.set_finish_point("finalization")
+        
+        # Compile with memory
+        memory = MemorySaver()
+        return workflow.compile(checkpointer=memory)
+    
+    async def process_transaction(self, user_input: str, user_id: str = "default", 
+                                conversation_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Process a single transaction through the complete workflow
+        
+        Args:
+            user_input: Natural language transaction description
+            user_id: User identifier
+            conversation_context: Additional context
+            
+        Returns:
+            Dictionary with processing results
+        """
+        from ..states import TransactionProcessingState, ProcessingStage
+        from datetime import datetime
+        
+        # Create initial state
+        initial_state = TransactionProcessingState(
+            user_input=user_input,
+            user_id=user_id,
+            conversation_context=conversation_context or {},
+            current_stage=ProcessingStage.INITIAL,
+            processed_transactions=[],
+            confidence_scores=[],
+            processing_history=[],
+            error_log=[],
+            created_at=datetime.now()
+        )
+        
+        # Execute workflow
+        config = {"configurable": {"thread_id": f"user_{user_id}"}}
+        result = await self.workflow.ainvoke(initial_state, config=config)
+        
+        return result
+    
+    def get_workflow_status(self) -> Dict[str, Any]:
+        """Get the current workflow status and capabilities"""
+        return {
+            "status": "ready",
+            "nodes": [
+                "initialize", "nl_processing", "ingestion", 
+                "ner_extraction", "classification", "validation", "finalization"
+            ],
+            "capabilities": [
+                "Natural language transaction processing",
+                "Automatic merchant extraction",
+                "Category classification",
+                "Confidence scoring",
+                "Error handling"
+            ],
+            "config": bool(self.config)
         }
