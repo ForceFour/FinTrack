@@ -301,7 +301,7 @@ if 'transactions' in st.session_state and st.session_state.transactions:
             st.switch_page("pages/Suggestions.py")
 
 # Conversational Transaction Entry
-st.subheader("💬 Conversational Transaction Entry")
+st.subheader("Conversational Transaction Entry")
 st.markdown("Enter transaction details naturally by typing them out")
 
 # Chat input and interface
@@ -322,7 +322,7 @@ try:
     conversation_stats()
     
 except ImportError:
-    st.error("⚠️ Conversational entry component not found. Please check the components directory.")
+    st.error("Conversational entry component not found. Please check the components directory.")
 
 # Data Validation Summary
 if 'transactions' in st.session_state and st.session_state.transactions:
