@@ -158,6 +158,46 @@ async def security_check(transactions: List[Dict[str, Any]], user_profile: Dict[
         raise HTTPException(status_code=500, detail=f"Security check failed: {str(e)}")
 
 
+@app.post("/api/transactions/natural-language")
+async def process_natural_language_transaction(request: Dict[str, Any]):
+    """
+    Process natural language transaction input through conversational interface
+    
+    Args:
+        request: Dictionary containing user_input, user_id, and conversation_context
+        
+    Returns:
+        Dictionary with status, response, and conversation state
+    """
+    try:
+        user_input = request.get("user_input")
+        user_id = request.get("user_id", "default_user")
+        conversation_context = request.get("conversation_context", {})
+        
+        if not user_input:
+            raise HTTPException(status_code=400, detail="user_input is required")
+        
+        # Import and use the transaction service
+        from ..services.transaction_service import TransactionService
+        from ..core.database import get_database
+        
+        # Initialize service with database
+        db = get_database()
+        service = TransactionService(db)
+        
+        # Process the natural language input
+        result = await service.process_natural_language_transaction(
+            user_input=user_input,
+            user_id=user_id,
+            conversation_context=conversation_context
+        )
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Natural language processing failed: {str(e)}")
+
+
 @app.get("/agents/status")
 async def get_agents_status():
     """
