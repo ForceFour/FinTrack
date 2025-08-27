@@ -300,45 +300,29 @@ if 'transactions' in st.session_state and st.session_state.transactions:
         if st.button("Get Suggestions"):
             st.switch_page("pages/Suggestions.py")
 
-# Manual Data Entry
-st.subheader("Manual Entry")
+# Conversational Transaction Entry
+st.subheader("💬 Conversational Transaction Entry")
+st.markdown("Enter transaction details naturally by typing them out")
 
-with st.expander("Add Single Transaction"):
-    col1, col2 = st.columns(2)
+# Chat input and interface
+try:
+    from components.conversational_entry import (
+        conversational_transaction_entry, 
+        show_conversation_tips,
+        conversation_stats
+    )
     
-    with col1:
-        manual_date = st.date_input("Date", value=datetime.now().date())
-        manual_amount = st.number_input("Amount", step=0.01, format="%.2f")
-        manual_description = st.text_input("Description")
+    # Main conversational interface (input box will be at top)
+    conversational_transaction_entry()
     
-    with col2:
-        manual_category = st.selectbox(
-            "Category",
-            ["Food & Dining", "Groceries", "Transportation", "Entertainment", 
-             "Shopping", "Utilities", "Healthcare", "Other"]
-        )
-        manual_merchant = st.text_input("Merchant")
-        manual_payment_method = st.selectbox(
-            "Payment Method",
-            ["Credit Card", "Debit Card", "Cash", "Digital Wallet"]
-        )
+    # Show tips below the chat
+    show_conversation_tips()
     
-    if st.button("Add Transaction"):
-        new_transaction = {
-            "date": manual_date.strftime("%Y-%m-%d") if manual_date else datetime.now().strftime("%Y-%m-%d"),
-            "amount": manual_amount,
-            "description": manual_description,
-            "category": manual_category,
-            "merchant": manual_merchant,
-            "payment_method": manual_payment_method
-        }
-        
-        if 'transactions' not in st.session_state:
-            st.session_state.transactions = []
-        
-        st.session_state.transactions.append(new_transaction)
-        st.success("Transaction added successfully!")
-        st.rerun()
+    # Show conversation statistics if there's activity
+    conversation_stats()
+    
+except ImportError:
+    st.error("⚠️ Conversational entry component not found. Please check the components directory.")
 
 # Data Validation Summary
 if 'transactions' in st.session_state and st.session_state.transactions:

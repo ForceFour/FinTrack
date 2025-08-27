@@ -253,6 +253,31 @@ def process_file(uploaded_file, options: Dict[str, bool]):
         st.error(f"❌ Processing failed: {str(e)}")
         status_text.text("❌ Processing failed")
 
+    # Conversational Transaction Entry (placed like the old manual entry)
+    st.markdown("---")
+    st.subheader("💬 Conversational Transaction Entry")
+    st.markdown("Enter transaction details by typing them naturally")
+    
+    # Import and display conversational interface
+    try:
+        from components.conversational_entry import (
+            conversational_transaction_entry, 
+            show_conversation_tips,
+            conversation_stats
+        )
+        
+        # Main conversational interface (input box will be at top)
+        conversational_transaction_entry()
+        
+        # Show tips below the chat
+        show_conversation_tips()
+        
+        # Show conversation statistics if there's activity
+        conversation_stats()
+        
+    except ImportError:
+        st.error("⚠️ Conversational entry component not found. Please check the components directory.")
+
 def dashboard_tab():
     """Main dashboard tab"""
     st.header("📊 Expense Dashboard")
