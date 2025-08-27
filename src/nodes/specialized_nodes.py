@@ -23,16 +23,16 @@ class ConditionalNodes:
         nl_confidence = state.get('nl_confidence', 0.0)
         extraction_method = state.get('extraction_method', 'unknown')
         
-        print(f"🤔 ROUTING: Extraction method={extraction_method}, confidence={nl_confidence:.2f}")
+        print(f"ROUTING: Extraction method={extraction_method}, confidence={nl_confidence:.2f}")
         
         if extraction_method == 'llm' and nl_confidence > 0.6:
-            print(f"➡️ ROUTING: High LLM confidence, proceeding to ingestion")
+            print(f"ROUTING: High LLM confidence, proceeding to ingestion")
             return "ingestion_node"
         elif nl_confidence < 0.4:
-            print(f"➡️ ROUTING: Low confidence, needs human review")
+            print(f"ROUTING: Low confidence, needs human review")
             return "human_review_node"
         else:
-            print(f"➡️ ROUTING: Standard processing flow")
+            print(f"ROUTING: Standard processing flow")
             return "ingestion_node"
     
     @staticmethod
@@ -44,13 +44,13 @@ class ConditionalNodes:
         errors = state.get('errors', [])
         
         if errors and retry_count < 2:
-            print(f"🔄 ROUTING: Retry attempt {retry_count + 1}")
+            print(f"ROUTING: Retry attempt {retry_count + 1}")
             return "retry_processing"
         elif errors:
-            print(f"❌ ROUTING: Max retries reached, marking as failed")
+            print(f"ROUTING: Max retries reached, marking as failed")
             return "error_handling_node"
         else:
-            print(f"✅ ROUTING: No errors, proceeding")
+            print(f"ROUTING: No errors, proceeding")
             return "ner_extraction_node"
     
     @staticmethod
@@ -62,13 +62,13 @@ class ConditionalNodes:
         validation_errors = state.get('validation_errors', [])
         is_valid = state.get('is_valid', True)
         
-        print(f"🧑‍💼 REVIEW CHECK: confidence={confidence:.2f}, valid={is_valid}, errors={len(validation_errors)}")
+        print(f"REVIEW CHECK: confidence={confidence:.2f}, valid={is_valid}, errors={len(validation_errors)}")
         
         if confidence < 0.3 or not is_valid or len(validation_errors) > 2:
-            print(f"👨‍💻 ROUTING: Human review required")
+            print(f"ROUTING: Human review required")
             return "human_review_node"
         else:
-            print(f"🤖 ROUTING: Automated processing sufficient")
+            print(f"ROUTING: Automated processing sufficient")
             return "finalization_node"
 
 class ErrorHandlingNodes:
@@ -81,7 +81,7 @@ class ErrorHandlingNodes:
         """
         Handle errors in the processing pipeline
         """
-        print(f"⚠️ ERROR HANDLER: Processing errors in workflow")
+        print(f"ERROR HANDLER: Processing errors in workflow")
         
         state['current_stage'] = ProcessingStage.ERROR
         errors = state.get('errors', [])
@@ -113,7 +113,7 @@ class ErrorHandlingNodes:
         }
         state['processing_history'].append(processing_entry)
         
-        print(f"🔧 ERROR HANDLER: {len(recovery_strategies)} recovery strategies available")
+        print(f"ERROR HANDLER: {len(recovery_strategies)} recovery strategies available")
         
         return state
     
@@ -146,7 +146,7 @@ class ErrorHandlingNodes:
         # Mark for human review
         state['requires_human_review'] = True
         
-        print(f"📋 HUMAN REVIEW: Review request created for workflow {state.get('workflow_id')}")
+        print(f"HUMAN REVIEW: Review request created for workflow {state.get('workflow_id')}")
         
         return state
 
@@ -164,7 +164,7 @@ class UtilityNodes:
         current_stage = state.get('current_stage', ProcessingStage.INITIAL)
         confidence = state.get('confidence_score', 0.0)
         
-        print(f"📊 WORKFLOW STATUS: {workflow_id} | Stage: {current_stage.value if hasattr(current_stage, 'value') else current_stage} | Confidence: {confidence:.2f}")
+        print(f"WORKFLOW STATUS: {workflow_id} | Stage: {current_stage.value if hasattr(current_stage, 'value') else current_stage} | Confidence: {confidence:.2f}")
         
         return state
     
@@ -185,6 +185,6 @@ class UtilityNodes:
         }
         
         # In a real implementation, this would send to monitoring system
-        logger.info(f"📈 Workflow metrics: {metrics}")
+        logger.info(f"Workflow metrics: {metrics}")
         
         return state
