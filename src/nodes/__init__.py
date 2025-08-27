@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 # Import states first
 try:
     from ..states import TransactionProcessingState, ProcessingStage
-    logger.info("✅ States imported successfully")
+    logger.info("States imported successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to import states: {e}")
+    logger.error(f"Failed to import states: {e}")
     raise
 
 # Delay heavy imports until needed
@@ -28,16 +28,16 @@ def _import_agents():
     if EnhancedIngestionAgent is None:
         try:
             from ..agents.ingestion_agent import EnhancedIngestionAgent, IngestionAgentInput
-            logger.info("✅ Enhanced Ingestion Agent imported")
+            logger.info("Enhanced Ingestion Agent imported")
         except Exception as e:
-            logger.warning(f"⚠️ Enhanced Ingestion Agent import failed: {e}")
+            logger.warning(f"Enhanced Ingestion Agent import failed: {e}")
             
     if NaturalLanguageProcessor is None:
         try:
             from ..agents.components.nl_processor import NaturalLanguageProcessor
-            logger.info("✅ NL Processor imported")
+            logger.info("NL Processor imported")
         except Exception as e:
-            logger.warning(f"⚠️ NL Processor import failed: {e}")
+            logger.warning(f"NL Processor import failed: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class TransactionProcessingNodes:
                 }
                 logger.info("🔧 Auto-loaded configuration from settings")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to load settings: {e}")
+                logger.warning(f"Failed to load settings: {e}")
                 config = {}
         
         self.config = config or {}
@@ -72,26 +72,26 @@ class TransactionProcessingNodes:
         try:
             if EnhancedIngestionAgent:
                 self.ingestion_agent = EnhancedIngestionAgent(config=self.config)
-                logger.info("✅ Enhanced Ingestion Agent initialized")
+                logger.info("Enhanced Ingestion Agent initialized")
             else:
                 self.ingestion_agent = None
-                logger.warning("⚠️ Enhanced Ingestion Agent not available")
+                logger.warning("Enhanced Ingestion Agent not available")
                 
             if NaturalLanguageProcessor:
                 groq_key = self.config.get('groq_api_key')
                 if groq_key:
                     self.nl_processor = NaturalLanguageProcessor(groq_api_key=groq_key)
-                    logger.info(f"✅ NL Processor initialized with API key: {groq_key[:10]}...")
+                    logger.info(f"NL Processor initialized with API key: {groq_key[:10]}...")
                 else:
                     self.nl_processor = NaturalLanguageProcessor()
-                    logger.warning("⚠️ NL Processor initialized without API key")
+                    logger.warning("NL Processor initialized without API key")
             else:
                 self.nl_processor = None
-                logger.warning("⚠️ NL Processor not available")
+                logger.warning("NL Processor not available")
                 
             logger.info("🔧 Transaction Processing Nodes initialized")
         except Exception as e:
-            logger.warning(f"⚠️ Some agents failed to initialize: {e}")
+            logger.warning(f"Some agents failed to initialize: {e}")
             # Continue with limited functionality for testing
             self.ingestion_agent = None
             self.nl_processor = None
@@ -101,7 +101,7 @@ class TransactionProcessingNodes:
         Initialize the workflow with enhanced setup and metadata
         Merged features from enhanced_nodes.py
         """
-        print(f"🚀 WORKFLOW INIT: Starting transaction processing workflow")
+        print(f"WORKFLOW INIT: Starting transaction processing workflow")
         
         # Generate workflow ID if not present
         if not state.get('workflow_id'):
@@ -141,7 +141,7 @@ class TransactionProcessingNodes:
         }
         state['processing_history'].append(processing_entry)
         
-        print(f"✅ WORKFLOW INIT: Workflow {state['workflow_id']} initialized")
+        print(f"WORKFLOW INIT: Workflow {state['workflow_id']} initialized")
         
         return state
     
@@ -149,7 +149,7 @@ class TransactionProcessingNodes:
         """
         Enhanced Natural Language Processing using LangChain/Groq
         """
-        print(f"🤖 NL PROCESSING: Starting enhanced NLP with Groq integration")
+        print(f"NL PROCESSING: Starting enhanced NLP with Groq integration")
         
         try:
             state['current_stage'] = ProcessingStage.NL_PROCESSING
@@ -182,13 +182,13 @@ class TransactionProcessingNodes:
                         'context': nl_result.get('context', {})
                     }
                     
-                    print(f"✅ NL PROCESSING: Groq extraction successful with {processed_result['confidence']:.2f} confidence")
+                    print(f"NL PROCESSING: Groq extraction successful with {processed_result['confidence']:.2f} confidence")
                     
                 except Exception as groq_error:
-                    print(f"⚠️ Groq processing failed: {groq_error}, falling back to regex")
+                    print(f"Groq processing failed: {groq_error}, falling back to regex")
                     processed_result = self._fallback_nl_extraction(user_input)
             else:
-                print(f"⚠️ NL Processor not available, using fallback regex extraction")
+                print(f"NL Processor not available, using fallback regex extraction")
                 processed_result = self._fallback_nl_extraction(user_input)
             
             # Store comprehensive NL results
@@ -221,7 +221,7 @@ class TransactionProcessingNodes:
             }
             state['processing_history'].append(processing_entry)
             
-            print(f"✅ NL PROCESSING: Completed - Amount: ${processed_result['transaction_data'].get('amount', 'N/A')}, Merchant: {processed_result['transaction_data'].get('merchant_name', 'N/A')}")
+            print(f"NL PROCESSING: Completed - Amount: ${processed_result['transaction_data'].get('amount', 'N/A')}, Merchant: {processed_result['transaction_data'].get('merchant_name', 'N/A')}")
             
         except Exception as e:
             error_info = {
@@ -235,7 +235,7 @@ class TransactionProcessingNodes:
                 state['error_log'] = []
             state['error_log'].append(error_info)
             state['current_stage'] = ProcessingStage.ERROR
-            logger.error(f"❌ NL Processing failed: {e}")
+            logger.error(f"NL Processing failed: {e}")
             
         return state
     
@@ -330,7 +330,7 @@ class TransactionProcessingNodes:
         """
         Enhanced Ingestion processing - simplified and reliable
         """
-        print(f"⚙️ INGESTION: Starting transaction ingestion and preprocessing")
+        print(f"INGESTION: Starting transaction ingestion and preprocessing")
         
         try:
             state['current_stage'] = ProcessingStage.INGESTION
@@ -419,14 +419,14 @@ class TransactionProcessingNodes:
             
             # Display results
             txn = preprocessed_txns[0]
-            print(f"   📊 Processed Transaction:")
+            print(f"   Processed Transaction:")
             print(f"      • ID: {txn['id']}")
             print(f"      • Amount: ${txn['amount']}")
             print(f"      • Merchant: {txn['merchant_name']}")
             print(f"      • Category: {txn['category']}")
             print(f"      • Date: {txn['date'][:10]}")
             
-            print(f"✅ INGESTION: Successfully processed 1 transaction with {ingestion_confidence:.2f} confidence")
+            print(f"INGESTION: Successfully processed 1 transaction with {ingestion_confidence:.2f} confidence")
             
         except Exception as e:
             error_info = {
@@ -537,7 +537,7 @@ class TransactionProcessingNodes:
         """
         Named Entity Recognition node for merchant and location extraction
         """
-        print(f"🏷️ NER: Starting named entity recognition")
+        print(f"NER: Starting named entity recognition")
         
         try:
             state['current_stage'] = ProcessingStage.NER_EXTRACTION
@@ -580,7 +580,7 @@ class TransactionProcessingNodes:
             }
             state['processing_history'].append(processing_entry)
             
-            print(f"✅ NER: Extracted entities - Merchants: {len(state['ner_entities']['merchants'])}, Locations: {len(state['ner_entities']['locations'])}")
+            print(f"NER: Extracted entities - Merchants: {len(state['ner_entities']['merchants'])}, Locations: {len(state['ner_entities']['locations'])}")
             
         except Exception as e:
             error_info = {
@@ -590,7 +590,7 @@ class TransactionProcessingNodes:
                 'error_type': type(e).__name__
             }
             state['errors'].append(error_info)
-            logger.error(f"❌ NER extraction failed: {e}")
+            logger.error(f"NER extraction failed: {e}")
             
         return state
     
@@ -598,7 +598,7 @@ class TransactionProcessingNodes:
         """
         Transaction classification node
         """
-        print(f"📂 CLASSIFICATION: Starting transaction classification")
+        print(f"CLASSIFICATION: Starting transaction classification")
         
         try:
             state['current_stage'] = ProcessingStage.CLASSIFICATION
@@ -622,7 +622,7 @@ class TransactionProcessingNodes:
             }
             state['processing_history'].append(processing_entry)
             
-            print(f"✅ CLASSIFICATION: Classified as '{state['predicted_category']}' with {state['category_confidence']:.2f} confidence")
+            print(f"CLASSIFICATION: Classified as '{state['predicted_category']}' with {state['category_confidence']:.2f} confidence")
             
         except Exception as e:
             error_info = {
@@ -640,7 +640,7 @@ class TransactionProcessingNodes:
         """
         Transaction validation node
         """
-        print(f"✅ VALIDATION: Starting transaction validation")
+        print(f"VALIDATION: Starting transaction validation")
         
         try:
             state['current_stage'] = ProcessingStage.VALIDATION
@@ -674,9 +674,9 @@ class TransactionProcessingNodes:
             state['processing_history'].append(processing_entry)
             
             if state['is_valid']:
-                print(f"✅ VALIDATION: Transaction is valid")
+                print(f"VALIDATION: Transaction is valid")
             else:
-                print(f"⚠️ VALIDATION: {len(state['validation_errors'])} validation errors found")
+                print(f"VALIDATION: {len(state['validation_errors'])} validation errors found")
             
         except Exception as e:
             error_info = {
@@ -686,7 +686,7 @@ class TransactionProcessingNodes:
                 'error_type': type(e).__name__
             }
             state['errors'].append(error_info)
-            logger.error(f"❌ Validation failed: {e}")
+            logger.error(f"Validation failed: {e}")
             
         return state
     
@@ -694,7 +694,7 @@ class TransactionProcessingNodes:
         """
         Final node to complete the workflow
         """
-        print(f"🏁 FINALIZATION: Completing transaction processing workflow")
+        print(f"FINALIZATION: Completing transaction processing workflow")
         
         try:
             state['current_stage'] = ProcessingStage.COMPLETED
@@ -740,7 +740,7 @@ class TransactionProcessingNodes:
             print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {state.get('confidence_score', 0):.2f} confidence")
             
         except Exception as e:
-            logger.error(f"❌ Finalization failed: {e}")
+            logger.error(f"Finalization failed: {e}")
             state['current_stage'] = ProcessingStage.ERROR
         
         return state
@@ -763,7 +763,7 @@ class TransactionProcessingNodes:
         
         state['error_log'].append(error_info)
         state['current_stage'] = ProcessingStage.ERROR
-        logger.error(f"❌ {stage.upper()} failed: {error}")
+        logger.error(f"{stage.upper()} failed: {error}")
     
     def _update_confidence_tracking(self, state: TransactionProcessingState, stage: str, confidence: float, method: str = None) -> None:
         """

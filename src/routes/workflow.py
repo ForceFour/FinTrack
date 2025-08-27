@@ -48,7 +48,7 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
     Process a transaction through the complete LangGraph workflow
     """
     try:
-        logger.info(f"🚀 Starting workflow for input: {request.raw_input[:50]}...")
+        logger.info(f"Starting workflow for input: {request.raw_input[:50]}...")
         
         # Get workflow instance
         workflow = get_workflow_instance()
@@ -72,12 +72,12 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
             errors=[error.get('error', str(error)) for error in result.get('errors', [])]
         )
         
-        logger.info(f"✅ Workflow completed: {response.workflow_id} with confidence {response.confidence_score:.2f}")
+        logger.info(f"Workflow completed: {response.workflow_id} with confidence {response.confidence_score:.2f}")
         
         return response
         
     except Exception as e:
-        logger.error(f"❌ Workflow processing failed: {e}")
+        logger.error(f"Workflow processing failed: {e}")
         raise HTTPException(status_code=500, detail=f"Workflow processing failed: {str(e)}")
 
 @workflow_router.get("/status/{workflow_id}")
@@ -95,7 +95,7 @@ async def get_workflow_status(workflow_id: str):
         return status
         
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow status: {e}")
+        logger.error(f"Failed to get workflow status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get workflow status: {str(e)}")
 
 @workflow_router.get("/visualize")
@@ -126,7 +126,7 @@ async def visualize_workflow():
         }
         
     except Exception as e:
-        logger.error(f"❌ Failed to visualize workflow: {e}")
+        logger.error(f"Failed to visualize workflow: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to visualize workflow: {str(e)}")
 
 @workflow_router.post("/bulk-process")
@@ -171,7 +171,7 @@ async def bulk_process_transactions(
         }
         
     except Exception as e:
-        logger.error(f"❌ Bulk processing failed: {e}")
+        logger.error(f"Bulk processing failed: {e}")
         raise HTTPException(status_code=500, detail=f"Bulk processing failed: {str(e)}")
 
 # Health check for workflow
@@ -199,7 +199,7 @@ async def workflow_health_check():
         }
         
     except Exception as e:
-        logger.error(f"❌ Workflow health check failed: {e}")
+        logger.error(f"Workflow health check failed: {e}")
         return {
             "status": "unhealthy",
             "error": str(e),
