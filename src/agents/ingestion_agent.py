@@ -15,7 +15,7 @@ import re
 from ..schemas.transaction_schemas import RawTransaction, PreprocessedTransaction, PaymentMethod, TransactionCategory
 from ..utils.data_preprocessing import DataPreprocessor
 from .components.file_parser import FileParser
-from .components.nl_processor import NLProcessor
+from .components.nl_processor import NaturalLanguageProcessor
 from .components.conversation_manager import ConversationManager
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class EnhancedIngestionAgent:
         self.config = config or {}
         self.preprocessor = DataPreprocessor()
         self.file_parser = FileParser()
-        self.nl_processor = NLProcessor(groq_api_key=self.config.get('groq_api_key'))
+        self.nl_processor = NaturalLanguageProcessor(groq_api_key=self.config.get('groq_api_key'))
         self.conversation_manager = ConversationManager()
         
         # Categories for one-hot encoding
@@ -142,6 +142,17 @@ class EnhancedIngestionAgent:
         # Process the input through conversation manager
         response, transaction_data = self.conversation_manager.process_input(input_data.natural_language_input)
         
+        # Use enhanced NL processor to extract transaction details with LLM
+        if not transaction_data or len(transaction_data) == 0:
+            # If conversation manager didn't extract data, use NL processor
+            extracted_data = self.nl_processor.process_input(input_data.natural_language_input)
+            transaction_data = extracted_data
+            response = "I've extracted the transaction details from your input. Please review and confirm."
+            
+            # Log confidence for pipeline tracking
+            confidence = extracted_data.get('confidence', 0.0)
+            print(f"INGESTION AGENT: Received confidence {confidence:.2f} from NL Processor → Passing to preprocessing pipeline")
+        
         # If conversation is completed, process the transaction
         if self.conversation_manager.state.value == "completed" and transaction_data:
             try:
@@ -161,12 +172,17 @@ class EnhancedIngestionAgent:
                 processed_df = self.preprocessor.process_dataframe(df)
                 preprocessed_transactions = self._dataframe_to_transactions(processed_df)
                 
+                # Log confidence as it flows to next agent
+                confidence = transaction_data.get('confidence', 1.0)
+                print(f"INGESTION COMPLETE: Transaction processed with confidence {confidence:.2f} → Ready for NER/Classification Agents")
+                
                 return IngestionAgentOutput(
                     preprocessed_transactions=preprocessed_transactions,
                     metadata={
                         "input_type": "unstructured",
                         "conversation_completed": True,
-                        "confidence": transaction_data.get('confidence', 1.0),
+                        "confidence": confidence,
+                        "extraction_method": transaction_data.get('extraction_method', 'unknown'),
                         "status": "completed"
                     },
                     conversation_response=response,

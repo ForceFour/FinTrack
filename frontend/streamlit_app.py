@@ -15,8 +15,8 @@ import time
 
 # Configure page
 st.set_page_config(
-    page_title="🤖 Agentic Expense Tracker",
-    page_icon="💰",
+    page_title="Agentic Expense Tracker",
+    page_icon="", #REVIEW - add icon
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -28,7 +28,7 @@ try:
     from components.data_display import display_transaction_table, display_suggestions
     from components.widgets import agent_status_widget, file_upload_widget
 except ImportError:
-    st.error("⚠️ Frontend modules not found. Please ensure the project structure is complete.")
+    st.error("Frontend modules not found. Please ensure the project structure is complete.")
     st.stop()
 
 # Initialize session state
@@ -63,24 +63,24 @@ def main():
         st.title("🎛️ Control Panel")
         
         # API Status Check
-        st.subheader("🔗 API Connection")
+        st.subheader("API Connection")
         if st.button("Test API Connection"):
             with st.spinner("Testing connection..."):
                 try:
                     status = st.session_state.api_client.health_check()
                     if status.get('status') == 'healthy':
-                        st.success("✅ API Connected")
+                        st.success("API Connected")
                     else:
-                        st.error("❌ API Unavailable")
+                        st.error("API Unavailable")
                 except Exception as e:
-                    st.error(f"❌ Connection failed: {str(e)}")
+                    st.error(f"Connection failed: {str(e)}")
         
         # Agent Status
-        st.subheader("🤖 Agent Status")
+        st.subheader("Agent Status")
         agent_status_widget(st.session_state.agent_status)
         
         # Quick Stats
-        st.subheader("📊 Quick Stats")
+        st.subheader("Quick Stats")
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Transactions", len(st.session_state.transactions))
@@ -89,10 +89,10 @@ def main():
     
     # Main content tabs
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📤 Upload & Process", 
-        "📊 Dashboard", 
-        "🔍 Transaction Analysis",
-        "⚙️ Agent Workflow"
+        "Upload & Process", 
+        "Dashboard", 
+        "Transaction Analysis",
+        "Agent Workflow"
     ])
     
     with tab1:
@@ -109,7 +109,7 @@ def main():
 
 def upload_and_process_tab():
     """File upload and processing tab"""
-    st.header("📤 Upload Transaction Data")
+    st.header("Upload Transaction Data")
     
     # File upload section
     col1, col2 = st.columns([2, 1])
@@ -123,7 +123,7 @@ def upload_and_process_tab():
         )
         
         # Sample format info
-        with st.expander("📝 Expected File Format"):
+        with st.expander("Expected File Format"):
             st.code("""
 CSV Format:
 date,amount,description,payment_method,account_type
@@ -144,7 +144,7 @@ JSON Format:
     
     with col2:
         # Processing options
-        st.subheader("🔧 Processing Options")
+        st.subheader("Processing Options")
         
         use_llm = st.checkbox("Use LLM for merchant extraction", value=True)
         enable_ml_classification = st.checkbox("Enable ML classification", value=True)
@@ -153,9 +153,9 @@ JSON Format:
     
     # Process file
     if uploaded_file is not None:
-        st.subheader("🚀 Process Transactions")
+        st.subheader("Process Transactions")
         
-        if st.button("🤖 Start Agent Processing", type="primary"):
+        if st.button("Start Agent Processing", type="primary"):
             process_file(uploaded_file, {
                 'use_llm': use_llm,
                 'enable_ml_classification': enable_ml_classification,
@@ -173,7 +173,7 @@ def process_file(uploaded_file, options: Dict[str, bool]):
     
     try:
         # Read file
-        status_text.text("📁 Reading file...")
+        status_text.text("Reading file...")
         progress_bar.progress(10)
         
         if uploaded_file.name.endswith('.csv'):
@@ -187,14 +187,14 @@ def process_file(uploaded_file, options: Dict[str, bool]):
         transactions = df.to_dict('records')
         
         # Start agent processing
-        status_text.text("🤖 Initializing agents...")
+        status_text.text("Initializing agents...")
         progress_bar.progress(20)
         
         # Simulate agent workflow (replace with actual API calls)
         agents = ['ingestion', 'ner_merchant', 'classifier', 'pattern_analyzer', 'suggestion', 'safety_guard']
         
         for i, agent in enumerate(agents):
-            status_text.text(f"🔄 Running {agent.replace('_', ' ').title()} Agent...")
+            status_text.text(f"Running {agent.replace('_', ' ').title()} Agent...")
             
             # Update agent status
             st.session_state.agent_status[agent] = 'running'
@@ -205,9 +205,9 @@ def process_file(uploaded_file, options: Dict[str, bool]):
                 for j, ag in enumerate(agents):
                     with cols[j]:
                         if ag == agent:
-                            st.success(f"🔄 {ag.replace('_', ' ').title()}")
+                            st.success(f"{ag.replace('_', ' ').title()}")
                         elif j < i:
-                            st.success(f"✅ {ag.replace('_', ' ').title()}")
+                            st.success(f"{ag.replace('_', ' ').title()}")
                         else:
                             st.info(f"⏳ {ag.replace('_', ' ').title()}")
             
@@ -221,7 +221,7 @@ def process_file(uploaded_file, options: Dict[str, bool]):
             st.session_state.agent_status[agent] = 'complete'
         
         # Complete processing
-        status_text.text("✅ Processing complete!")
+        status_text.text("Processing complete!")
         progress_bar.progress(100)
         
         # Store results
@@ -234,7 +234,7 @@ def process_file(uploaded_file, options: Dict[str, bool]):
         })
         
         # Show results
-        st.success(f"🎉 Successfully processed {len(transactions)} transactions!")
+        st.success(f"Successfully processed {len(transactions)} transactions!")
         
         # Display sample results
         col1, col2, col3 = st.columns(3)
@@ -246,16 +246,16 @@ def process_file(uploaded_file, options: Dict[str, bool]):
             st.metric("Merchants Identified", len(set([t.get('merchant', 'Unknown') for t in transactions])))
         
         # Show processed data preview
-        with st.expander("📊 Processed Data Preview"):
+        with st.expander("Processed Data Preview"):
             st.dataframe(pd.DataFrame(transactions).head(10))
     
     except Exception as e:
-        st.error(f"❌ Processing failed: {str(e)}")
-        status_text.text("❌ Processing failed")
+        st.error(f"Processing failed: {str(e)}")
+        status_text.text("Processing failed")
 
     # Conversational Transaction Entry (placed like the old manual entry)
     st.markdown("---")
-    st.subheader("💬 Conversational Transaction Entry")
+    st.subheader("Conversational Transaction Entry")
     st.markdown("Enter transaction details by typing them naturally")
     
     # Import and display conversational interface
@@ -276,14 +276,14 @@ def process_file(uploaded_file, options: Dict[str, bool]):
         conversation_stats()
         
     except ImportError:
-        st.error("⚠️ Conversational entry component not found. Please check the components directory.")
+        st.error("Conversational entry component not found. Please check the components directory.")
 
 def dashboard_tab():
     """Main dashboard tab"""
-    st.header("📊 Expense Dashboard")
+    st.header("Expense Dashboard")
     
     if not st.session_state.transactions:
-        st.info("📤 Please upload and process transaction data first.")
+        st.info("Please upload and process transaction data first.")
         return
     
     # Key metrics
@@ -311,14 +311,14 @@ def dashboard_tab():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("💰 Expenses by Category")
+        st.subheader("Expenses by Category")
         if 'category' in df.columns and 'amount' in df.columns:
             category_expenses = df.groupby('category')['amount'].sum().abs()
             fig = px.pie(values=category_expenses.values, names=category_expenses.index)
             st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        st.subheader("📈 Spending Trend")
+        st.subheader("Spending Trend")
         if 'date' in df.columns and 'amount' in df.columns:
             df['date'] = pd.to_datetime(df['date'])
             daily_spending = df.groupby(df['date'].dt.date)['amount'].sum().abs()
@@ -328,10 +328,10 @@ def dashboard_tab():
 
 def analysis_tab():
     """Transaction analysis tab"""
-    st.header("🔍 Transaction Analysis")
+    st.header("Transaction Analysis")
     
     if not st.session_state.transactions:
-        st.info("📤 Please upload and process transaction data first.")
+        st.info("Please upload and process transaction data first.")
         return
     
     df = pd.DataFrame(st.session_state.transactions)
@@ -362,17 +362,17 @@ def analysis_tab():
             df = df[(df['amount'] >= min_amount) & (df['amount'] <= max_amount)]
     
     # Analysis results
-    st.subheader("📋 Filtered Transactions")
+    st.subheader("Filtered Transactions")
     st.dataframe(df, use_container_width=True)
     
     # Insights
-    st.subheader("💡 AI-Generated Insights")
+    st.subheader("AI-Generated Insights")
     
     insights = [
-        "🔍 You spend most on dining and entertainment on weekends",
-        "📊 Your grocery spending has increased 15% this month",
-        "⚠️ Unusual spending pattern detected at electronics stores",
-        "💡 Consider setting a budget limit for restaurant expenses"
+        "You spend most on dining and entertainment on weekends",
+        "Your grocery spending has increased 15% this month",
+        "Unusual spending pattern detected at electronics stores",
+        "Consider setting a budget limit for restaurant expenses"
     ]
     
     for insight in insights:
@@ -380,19 +380,19 @@ def analysis_tab():
 
 def workflow_tab():
     """Agent workflow monitoring tab"""
-    st.header("⚙️ Agent Workflow Monitor")
+    st.header("Agent Workflow Monitor")
     
     # Real-time agent status
-    st.subheader("🤖 Agent Status Dashboard")
+    st.subheader("Agent Status Dashboard")
     
     # Create workflow visualization
     agents = [
-        ("📥 Ingestion", "Normalizes raw data"),
-        ("🏪 NER/Merchant", "Extracts merchants"),
-        ("🏷️ Classifier", "Predicts categories"),
-        ("📊 Pattern Analyzer", "Detects patterns"),
-        ("💡 Suggestion", "Generates recommendations"),
-        ("🛡️ Safety Guard", "Security & compliance")
+        ("Ingestion", "Normalizes raw data"),
+        ("NER/Merchant", "Extracts merchants"),
+        ("Classifier", "Predicts categories"),
+        ("Pattern Analyzer", "Detects patterns"),
+        ("Suggestion", "Generates recommendations"),
+        ("Safety Guard", "Security & compliance")
     ]
     
     cols = st.columns(3)
@@ -402,16 +402,16 @@ def workflow_tab():
             status = st.session_state.agent_status.get(agent_key, 'idle')
             
             if status == 'complete':
-                st.success(f"✅ {name}")
+                st.success(f"{name}")
             elif status == 'running':
-                st.warning(f"🔄 {name}")
+                st.warning(f"{name}")
             else:
-                st.info(f"⏳ {name}")
+                st.info(f"{name}")
             
             st.caption(desc)
     
     # Processing log
-    st.subheader("📋 Processing Log")
+    st.subheader("Processing Log")
     
     if st.session_state.processing_log:
         log_df = pd.DataFrame(st.session_state.processing_log)
@@ -420,7 +420,7 @@ def workflow_tab():
         st.info("No processing history available")
     
     # Agent communication
-    st.subheader("📡 Agent Communication")
+    st.subheader("Agent Communication")
     
     with st.expander("View Agent Messages"):
         st.code("""
