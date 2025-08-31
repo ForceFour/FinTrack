@@ -53,14 +53,16 @@ if 'suggestion_history' not in st.session_state:
 with st.sidebar:
     st.header("Your Preferences")
     
-    # Savings goal
-    savings_goal = st.number_input(
-        "Monthly Savings Goal ($)",
+    # Annual Savings Goal
+    annual_savings_goal = st.number_input(
+        "Annual Savings Goal ($)",
         min_value=0,
-        value=st.session_state.user_preferences['savings_goal'],
-        step=50
+        value=st.session_state.user_preferences.get('annual_savings_goal', 12000),  # Default $12000/year
+        step=1000
     )
-    st.session_state.user_preferences['savings_goal'] = savings_goal
+    monthly_savings_goal = annual_savings_goal / 12  # Calculate monthly goal
+    st.session_state.user_preferences['annual_savings_goal'] = annual_savings_goal
+    st.session_state.user_preferences['savings_goal'] = monthly_savings_goal  # Keep monthly for compatibility
     
     # Risk tolerance
     current_risk = st.session_state.user_preferences['risk_tolerance']
@@ -188,12 +190,19 @@ with tab1:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Potential Monthly Savings", f"${total_potential_savings:.2f}")
+        st.metric("Your Monthly Savings Target", f"${monthly_savings_goal:.2f}")
     
     with col2:
-        st.metric("Annual Savings Potential", f"${total_potential_savings * 12:.2f}")
+        st.metric("Potential Monthly Savings", f"${total_potential_savings:.2f}")
     
     with col3:
+        potential_annual_savings = total_potential_savings * 12
+        progress_to_goal = (potential_annual_savings / annual_savings_goal) * 100 if annual_savings_goal > 0 else 0
+        st.metric("Annual Savings Potential", 
+                 f"${potential_annual_savings:.2f}",
+                 delta=f"{progress_to_goal:.1f}% of goal")
+    
+    with col4:
         current_total = expense_df['amount_abs'].sum()
         savings_percentage = (total_potential_savings / current_total) * 100
         st.metric("Savings Percentage", f"{savings_percentage:.1f}%")
@@ -332,7 +341,7 @@ with tab3:
     # Calculate available funds for investment
     total_income = df[~df['is_expense']]['amount_abs'].sum() if not df[~df['is_expense']].empty else 5000  # Default if no income data
     total_expenses = expense_df['amount_abs'].sum()
-    available_for_investment = max(0, total_income - total_expenses - savings_goal)
+    available_for_investment = max(0, total_income - total_expenses - monthly_savings_goal)
     
     col1, col2, col3 = st.columns(3)
     
@@ -494,7 +503,7 @@ with tab4:
     
     # Emergency fund ratio
     monthly_expenses = expense_df['amount_abs'].sum()
-    emergency_fund_months = savings_goal / monthly_expenses if monthly_expenses > 0 else 0
+    emergency_fund_months = monthly_savings_goal / monthly_expenses if monthly_expenses > 0 else 0
     
     with col1:
         color = "normal" if emergency_fund_months >= 3 else "inverse"
@@ -606,8 +615,8 @@ with tab5:
             # Goal-specific recommendations
             if goal == 'Emergency Fund':
                 target_amount = monthly_expenses * 6
-                current_progress = savings_goal
-                months_to_goal = (target_amount - current_progress) / savings_goal if savings_goal > 0 else float('inf')
+                current_progress = monthly_savings_goal
+                months_to_goal = (target_amount - current_progress) / monthly_savings_goal if monthly_savings_goal > 0 else float('inf')
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -630,9 +639,9 @@ with tab5:
                     st.metric("Timeline", f"{vacation_months} months")
                 with col2:
                     st.metric("Monthly Savings Needed", f"${monthly_needed:.2f}")
-                    st.metric("Current Allocation", f"${savings_goal * 0.3:.2f}")  # 30% of savings
+                    st.metric("Current Allocation", f"${monthly_savings_goal * 0.3:.2f}")  # 30% of savings
                 
-                progress = (savings_goal * 0.3 * vacation_months) / vacation_cost
+                progress = (monthly_savings_goal * 0.3 * vacation_months) / vacation_cost
                 st.progress(min(progress, 1.0))
                 
             elif goal == 'Home Purchase':
@@ -649,8 +658,8 @@ with tab5:
                     st.metric("Years to Save", f"{years_to_save}")
                     st.metric("Monthly Savings Needed", f"${monthly_needed:.2f}")
                 
-                if monthly_needed > savings_goal:
-                    st.warning(f"You need to save ${monthly_needed - savings_goal:.2f} more per month to reach this goal.")
+                if monthly_needed > monthly_savings_goal:
+                    st.warning(f"You need to save ${monthly_needed - monthly_savings_goal:.2f} more per month to reach this goal.")
                 else:
                     st.success(f"Your current savings rate can achieve this goal!")
     
@@ -675,10 +684,10 @@ with tab5:
         
         st.metric("Required Monthly Savings", f"${required_monthly:.2f}")
         
-        if required_monthly <= savings_goal:
+        if required_monthly <= monthly_savings_goal:
             st.success(f"Achievable with current savings rate!")
         else:
-            additional_needed = required_monthly - savings_goal
+            additional_needed = required_monthly - monthly_savings_goal
             st.warning(f"Need ${additional_needed:.2f} more per month")
 
     with col2:
@@ -796,7 +805,8 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 with col3:
     if st.button("Reset Preferences"):
         st.session_state.user_preferences = {
-            'savings_goal': 1000,
+            'annual_savings_goal': 12000,  # Default $12000/year
+            'savings_goal': 1000,  # Monthly equivalent
             'risk_tolerance': 'moderate',
             'financial_goals': ['Emergency Fund', 'Vacation'],
             'budget_preferences': {}
