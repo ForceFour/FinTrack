@@ -10,6 +10,33 @@ from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta
 import json
+import io
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.pdfgen import canvas
+
+def format_currency(amount, show_full_on_hover=True):
+    """Format currency values to be more readable with K/M/B suffixes"""
+    # Full formatted value for tooltip
+    full_value = f"LKR{amount:,.2f}"
+    
+    # Simplified value for display
+    if abs(amount) >= 1e9:
+        simple_value = f"LKR {amount/1e9:.1f}B"
+    elif abs(amount) >= 1e6:
+        simple_value = f"LKR {amount/1e6:.1f}M"
+    elif abs(amount) >= 1e3:
+        simple_value = f"LKR {amount/1e3:.1f}K"
+    else:
+        simple_value = f"LKR {amount:.0f}"
+    
+    if show_full_on_hover:
+        # Use markdown with hover tooltip
+        return f"<span title='{full_value}'>{simple_value}</span>"
+    return simple_value
 
 st.set_page_config(page_title="Analytics", page_icon="📈", layout="wide")
 
@@ -167,104 +194,95 @@ if analysis_type == "Overview":
     with col1:
         total_expenses = filtered_df[filtered_df['is_expense']]['amount_abs'].sum()
         expense_count = len(filtered_df[filtered_df['is_expense']])
-        st.metric("Total Expenses", f"${total_expenses:,.2f}", delta=f"{expense_count} transactions")
+        formatted_expenses = format_currency(total_expenses)
+        st.markdown(
+            f"""
+            <div style='text-align: center'>
+                <p style='margin-bottom: 0'>Total Expenses ({expense_count} transactions)</p>
+                <div title='LKR{total_expenses:,.2f}' style='font-size: 28px'>
+                    {formatted_expenses}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     
     with col2:
-        total_income = filtered_df[filtered_df['is_income']]['amount_abs'].sum()
-        income_count = len(filtered_df[filtered_df['is_income']])
-        st.metric("Total Income", f"${total_income:,.2f}", delta=f"{income_count} transactions")
+        total_income = filtered_df[~filtered_df['is_expense']]['amount_abs'].sum()
+        income_count = len(filtered_df[~filtered_df['is_expense']])
+        formatted_income = format_currency(total_income)
+        st.markdown(
+            f"""
+            <div style='text-align: center'>
+                <p style='margin-bottom: 0'>Total Income ({income_count} transactions)</p>
+                <div title='LKR{total_income:,.2f}' style='font-size: 28px'>
+                    {formatted_income}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     
     with col3:
         net_flow = total_income - total_expenses
-        net_percentage = (net_flow / total_income * 100) if total_income > 0 else 0
-        st.metric("Net Cash Flow", f"${net_flow:,.2f}", delta=f"{net_percentage:+.1f}%")
+        formatted_net = format_currency(net_flow)
+        st.markdown(
+            f"""
+            <div style='text-align: center'>
+                <p style='margin-bottom: 0'>Net Cash Flow</p>
+                <div title='LKR{net_flow:,.2f}' style='font-size: 28px'>
+                    {formatted_net}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     
     with col4:
         avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean()
-        avg_income = filtered_df[filtered_df['is_income']]['amount_abs'].mean()
-        st.metric("Avg Expense", f"${avg_expense:.2f}")
-        st.metric("Avg Income", f"${avg_income:.2f}")
+        formatted_avg = format_currency(avg_expense)
+        st.markdown(
+            f"""
+            <div style='text-align: center'>
+                <p style='margin-bottom: 0'>Avg Expense</p>
+                <div title='LKR{avg_expense:,.2f}' style='font-size: 28px'>
+                    {formatted_avg}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     
     with col5:
         transaction_count = len(filtered_df)
-        expense_ratio = expense_count / transaction_count * 100 if transaction_count > 0 else 0
-        st.metric("Total Transactions", f"{transaction_count:,}")
-        st.write(f"📊 {expense_ratio:.1f}% Expenses")
-    
-    # Income vs Expense Classification Summary
-    st.subheader("💰 Transaction Classification Summary")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Pie chart of transaction types by count
-        transaction_type_counts = filtered_df['transaction_type'].value_counts()
-        fig_pie_count = px.pie(
-            values=transaction_type_counts.values,
-            names=transaction_type_counts.index,
-            title="Transactions by Type (Count)",
-            color_discrete_map={'income': 'lightgreen', 'expense': 'lightcoral'}
+        formatted_count = f"{transaction_count:,}"
+        st.markdown(
+            f"""
+            <div style='text-align: center'>
+                <p style='margin-bottom: 0'>Transactions</p>
+                <div style='font-size: 28px'>
+                    {formatted_count}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
-        st.plotly_chart(fig_pie_count, use_container_width=True)
-    
-    with col2:
-        # Pie chart of transaction types by amount
-        transaction_type_amounts = filtered_df.groupby('transaction_type')['amount_abs'].sum()
-        fig_pie_amount = px.pie(
-            values=transaction_type_amounts.values,
-            names=transaction_type_amounts.index,
-            title="Transactions by Type (Amount)",
-            color_discrete_map={'income': 'lightgreen', 'expense': 'lightcoral'}
-        )
-        st.plotly_chart(fig_pie_amount, use_container_width=True)
-    
-    with col3:
-        # Bar chart comparison
-        comparison_data = pd.DataFrame({
-            'Type': ['Income', 'Expenses'],
-            'Amount': [total_income, total_expenses],
-            'Count': [income_count, expense_count]
-        })
-        
-        fig_comparison = px.bar(
-            comparison_data,
-            x='Type',
-            y='Amount',
-            title="Income vs Expenses",
-            color='Type',
-            color_discrete_map={'Income': 'lightgreen', 'Expenses': 'lightcoral'},
-            text='Amount'
-        )
-        fig_comparison.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
-        st.plotly_chart(fig_comparison, use_container_width=True)
     
     # Monthly trend
     st.subheader("Monthly Financial Flow")
     
-    # Aggregate by month and transaction type
-    monthly_summary = filtered_df.groupby(['month', 'transaction_type'])['amount_abs'].sum().unstack(fill_value=0)
+    # First, separate income and expenses
+    income_data = filtered_df[~filtered_df['is_expense']].groupby('month')['amount_abs'].sum()
+    expense_data = filtered_df[filtered_df['is_expense']].groupby('month')['amount_abs'].sum()
     
-    # Handle case where monthly_summary might be empty or have different structure
-    if monthly_summary.empty:
-        # Create empty DataFrame with correct structure
-        monthly_data = pd.DataFrame({
-            'Income': [0],
-            'Expenses': [0],
-            'Net': [0]
-        })
-        monthly_data.index = [filtered_df['month'].iloc[0] if not filtered_df.empty else pd.Period('2024-01')]
-    else:
-        # Ensure we have both income and expenses columns
-        if 'income' not in monthly_summary.columns:
-            monthly_summary['income'] = 0
-        if 'expense' not in monthly_summary.columns:
-            monthly_summary['expense'] = 0
-        
-        # Create monthly_data DataFrame with proper column handling
-        monthly_data = pd.DataFrame()
-        monthly_data['Income'] = monthly_summary.get('income', 0)
-        monthly_data['Expenses'] = monthly_summary.get('expense', 0)
-        monthly_data['Net'] = monthly_data['Income'] - monthly_data['Expenses']
+    # Create DataFrame with both series
+    monthly_data = pd.DataFrame({
+        'Income': income_data,
+        'Expenses': expense_data
+    }).fillna(0)
+    
+    # Calculate net
+    monthly_data['Net'] = monthly_data['Income'] - monthly_data['Expenses']
     
     fig_monthly = go.Figure()
     
@@ -296,7 +314,7 @@ if analysis_type == "Overview":
     fig_monthly.update_layout(
         title="Monthly Income vs Expenses",
         xaxis_title="Month",
-        yaxis_title="Amount ($)",
+        yaxis_title="Amount (LKR)",
         barmode='relative',
         hovermode='x unified'
     )
@@ -318,7 +336,7 @@ elif analysis_type == "Spending Patterns":
             x=dow_spending.index,
             y=dow_spending.values,
             title="Spending by Day of Week",
-            labels={'x': 'Day', 'y': 'Amount ($)'},
+            labels={'x': 'Day', 'y': 'Amount (LKR)'},
             color=dow_spending.values,
             color_continuous_scale='Blues'
         )
@@ -351,7 +369,7 @@ elif analysis_type == "Spending Patterns":
             x=expense_amounts,
             title="Distribution of Expense Amounts",
             nbins=30,
-            labels={'x': 'Amount ($)', 'y': 'Frequency'}
+            labels={'x': 'Amount (LKR)', 'y': 'Frequency'}
         )
         fig_hist.update_traces(marker_color='lightcoral')
         st.plotly_chart(fig_hist, use_container_width=True)
@@ -362,7 +380,8 @@ elif analysis_type == "Spending Patterns":
             filtered_df[filtered_df['is_expense']],
             x='category',
             y='amount_abs',
-            title="Expense Distribution by Category"
+            title="Expense Distribution by Category",
+            labels={'amount_abs': 'Amount (LKR)'}
         )
         fig_box.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig_box, use_container_width=True)
@@ -371,34 +390,38 @@ elif analysis_type == "Trend Analysis":
     st.subheader("Advanced Trend Analysis")
     
     # Time series analysis
-    daily_spending = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.date)['amount_abs'].sum()
+    daily_spending = filtered_df[filtered_df['is_expense']].groupby('date')['amount_abs'].sum().reset_index()
+    daily_spending = daily_spending.sort_values('date')
     
-    # Moving averages
-    ma_7 = daily_spending.rolling(window=7).mean()
-    ma_30 = daily_spending.rolling(window=30).mean()
+    # Calculate moving averages
+    daily_spending['MA7'] = daily_spending['amount_abs'].rolling(window=7).mean()
+    daily_spending['MA30'] = daily_spending['amount_abs'].rolling(window=30).mean()
     
     fig_trend = go.Figure()
     
+    # Daily spending
     fig_trend.add_trace(go.Scatter(
-        x=daily_spending.index,
-        y=daily_spending.values,
+        x=daily_spending['date'],
+        y=daily_spending['amount_abs'],
         mode='lines',
         name='Daily Spending',
         line=dict(color='lightblue', width=1),
         opacity=0.7
     ))
     
+    # 7-day moving average
     fig_trend.add_trace(go.Scatter(
-        x=ma_7.index,
-        y=ma_7.values,
+        x=daily_spending['date'],
+        y=daily_spending['MA7'],
         mode='lines',
         name='7-Day Moving Average',
         line=dict(color='orange', width=2)
     ))
     
+    # 30-day moving average
     fig_trend.add_trace(go.Scatter(
-        x=ma_30.index,
-        y=ma_30.values,
+        x=daily_spending['date'],
+        y=daily_spending['MA30'],
         mode='lines',
         name='30-Day Moving Average',
         line=dict(color='red', width=3)
@@ -407,7 +430,7 @@ elif analysis_type == "Trend Analysis":
     fig_trend.update_layout(
         title="Daily Spending Trends with Moving Averages",
         xaxis_title="Date",
-        yaxis_title="Amount ($)",
+        yaxis_title="Amount (LKR)",
         hovermode='x unified'
     )
     
@@ -421,11 +444,19 @@ elif analysis_type == "Trend Analysis":
         monthly_avg = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.month)['amount_abs'].mean()
         month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
         
+        # Create proper DataFrame for plotting
+        seasonal_df = pd.DataFrame({
+            'Month': month_names[:len(monthly_avg)],
+            'Average Spending': monthly_avg.values
+        })
+        
         fig_seasonal = px.line(
-            x=month_names[:len(monthly_avg)],
-            y=monthly_avg.values,
+            seasonal_df,
+            x='Month',
+            y='Average Spending',
             title="Average Monthly Spending Pattern",
-            markers=True
+            markers=True,
+            labels={'Average Spending': 'Amount (LKR)'}
         )
         fig_seasonal.update_traces(line_color='green', marker_size=8)
         st.plotly_chart(fig_seasonal, use_container_width=True)
@@ -435,12 +466,20 @@ elif analysis_type == "Trend Analysis":
         weekly_avg = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.dayofweek)['amount_abs'].mean()
         weekday_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
         
+        # Create DataFrame for weekly plot
+        weekly_df = pd.DataFrame({
+            'Day': weekday_names,
+            'Average Spending': weekly_avg.values
+        })
+        
         fig_weekly = px.bar(
-            x=weekday_names,
-            y=weekly_avg.values,
+            weekly_df,
+            x='Day',
+            y='Average Spending',
             title="Average Daily Spending Pattern",
-            color=weekly_avg.values,
-            color_continuous_scale='Purples'
+            color='Average Spending',
+            color_continuous_scale='Purples',
+            labels={'Average Spending': 'Amount (LKR)'}
         )
         fig_weekly.update_layout(showlegend=False, coloraxis_showscale=False)
         st.plotly_chart(fig_weekly, use_container_width=True)
@@ -448,27 +487,31 @@ elif analysis_type == "Trend Analysis":
 elif analysis_type == "Merchant Analysis":
     st.subheader("Merchant Analysis")
     
-    merchant_analysis = filtered_df[filtered_df['is_expense']].groupby('merchant').agg({
+    # Prepare merchant analysis data
+    merchant_summary = filtered_df[filtered_df['is_expense']].groupby('merchant').agg({
         'amount_abs': ['sum', 'mean', 'count'],
         'date': ['min', 'max']
-    }).round(2)
+    })
     
-    merchant_analysis.columns = ['Total Spent', 'Avg Transaction', 'Transaction Count', 'First Visit', 'Last Visit']
-    merchant_analysis = merchant_analysis.sort_values('Total Spent', ascending=False)
+    # Flatten column names and rename
+    merchant_summary.columns = ['total_spent', 'avg_transaction', 'transaction_count', 'first_visit', 'last_visit']
+    merchant_summary = merchant_summary.round(2)
+    merchant_summary = merchant_summary.sort_values('total_spent', ascending=False)
     
     col1, col2 = st.columns(2)
     
     with col1:
         # Top merchants by spending
-        top_merchants = merchant_analysis.head(10)
+        top_merchants = merchant_summary.head(10).reset_index()
         
         fig_merchants = px.bar(
-            x=top_merchants['Total Spent'],
-            y=top_merchants.index,
+            top_merchants,
+            x='total_spent',
+            y='merchant',
             orientation='h',
             title="Top 10 Merchants by Total Spending",
-            labels={'x': 'Total Spent ($)', 'y': 'Merchant'},
-            color=top_merchants['Total Spent'],
+            labels={'total_spent': 'Total Spent (LKR)', 'merchant': 'Merchant'},
+            color='total_spent',
             color_continuous_scale='Reds'
         )
         fig_merchants.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, coloraxis_showscale=False)
@@ -477,22 +520,29 @@ elif analysis_type == "Merchant Analysis":
     with col2:
         # Merchant frequency vs amount
         fig_scatter = px.scatter(
-            merchant_analysis,
-            x='Transaction Count',
-            y='Total Spent',
-            size='Avg Transaction',
-            hover_name=merchant_analysis.index,
+            merchant_summary.reset_index(),
+            x='transaction_count',
+            y='total_spent',
+            size='avg_transaction',
+            hover_name='merchant',
             title="Merchant Analysis: Frequency vs Spending",
-            labels={'x': 'Number of Transactions', 'y': 'Total Spent ($)'}
+            labels={
+                'transaction_count': 'Number of Transactions',
+                'total_spent': 'Total Spent (LKR)',
+                'avg_transaction': 'Average Transaction (LKR)'
+            }
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
     
     # Merchant details table
     st.subheader("Merchant Details")
     
-    display_merchant_df = merchant_analysis.copy()
-    display_merchant_df['Total Spent'] = display_merchant_df['Total Spent'].apply(lambda x: f"${x:,.2f}")
-    display_merchant_df['Avg Transaction'] = display_merchant_df['Avg Transaction'].apply(lambda x: f"${x:.2f}")
+    display_merchant_df = merchant_summary.reset_index()
+    display_merchant_df['total_spent'] = display_merchant_df['total_spent'].apply(lambda x: f"LKR{x:,.2f}")
+    display_merchant_df['avg_transaction'] = display_merchant_df['avg_transaction'].apply(lambda x: f"LKR{x:.2f}")
+    
+    # Rename columns for display
+    display_merchant_df.columns = ['Merchant', 'Total Spent', 'Avg Transaction', 'Transaction Count', 'First Visit', 'Last Visit']
     
     st.dataframe(display_merchant_df, use_container_width=True)
 
@@ -504,8 +554,8 @@ elif analysis_type == "Predictive Analytics":
         daily_spending = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.date)['amount_abs'].sum()
         
         # Generate future dates
-        last_date = daily_spending.index.max()
-        future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=30, freq='D')
+        last_date = pd.to_datetime(daily_spending.index.max())
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=30, freq='D')
         
         # Simple linear projection (in real app, use more sophisticated models)
         recent_trend = daily_spending.tail(30).mean()
@@ -534,7 +584,7 @@ elif analysis_type == "Predictive Analytics":
         fig_forecast.update_layout(
             title="30-Day Spending Forecast",
             xaxis_title="Date",
-            yaxis_title="Amount ($)",
+            yaxis_title="Amount (LKR)",
             hovermode='x unified'
         )
         
@@ -545,7 +595,7 @@ elif analysis_type == "Predictive Analytics":
         
         with col1:
             predicted_monthly = sum(future_spending)
-            st.metric("Predicted Monthly Spending", f"${predicted_monthly:,.2f}")
+            st.metric("Predicted Monthly Spending", f"LKR{predicted_monthly:,.2f}")
         
         with col2:
             current_monthly = daily_spending.tail(30).sum()
@@ -565,29 +615,218 @@ if show_ai_insights:
     with col1:
         st.markdown("#### Key Findings")
         
-        insights = [
-            {
-                "type": "trend",
-                "message": f"Your spending has increased by 12% compared to last month",
-                "severity": "warning"
-            },
-            {
-                "type": "category",
-                "message": f"Food & Dining represents 35% of your total expenses",
-                "severity": "info"
-            },
-            {
-                "type": "pattern",
-                "message": "You spend 40% more on weekends compared to weekdays",
-                "severity": "info"
-            },
-            {
-                "type": "merchant",
-                "message": "Starbucks is your most frequent expense location (15 visits)",
-                "severity": "info"
-            }
-        ]
+        # Calculate insights from actual data
+        insights = []
         
+        # Spending pattern and correlation analysis
+        if not filtered_df.empty:
+            # Analyze spending vs. time of month
+            filtered_df['day_of_month'] = filtered_df['date'].dt.day
+            early_month_spending = filtered_df[filtered_df['day_of_month'] <= 15]['amount_abs'].mean()
+            late_month_spending = filtered_df[filtered_df['day_of_month'] > 15]['amount_abs'].mean()
+            if early_month_spending != 0 and late_month_spending != 0:
+                month_half_diff = ((early_month_spending - late_month_spending) / late_month_spending) * 100
+                if abs(month_half_diff) > 20:
+                    insights.append({
+                        "type": "timing_pattern",
+                        "message": f"You tend to spend {'more' if month_half_diff > 0 else 'less'} in the first half of the month " +
+                                 f"(LKR {abs(early_month_spending - late_month_spending):,.2f} {'higher' if month_half_diff > 0 else 'lower'} on average)",
+                        "severity": "warning" if month_half_diff > 0 else "info"
+                    })
+
+            # Analyze expense clustering
+            expense_intervals = filtered_df[filtered_df['is_expense']]['date'].diff().dt.days
+            if not expense_intervals.empty:
+                avg_interval = expense_intervals.mean()
+                if avg_interval < 2:
+                    insights.append({
+                        "type": "spending_behavior",
+                        "message": "Your expenses tend to cluster together - consider planning purchases more evenly throughout the month",
+                        "severity": "warning"
+                    })
+
+            # Category diversification analysis
+            category_amounts = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum()
+            total_expense = category_amounts.sum()
+            if not category_amounts.empty and total_expense > 0:
+                category_percentages = (category_amounts / total_expense) * 100
+                high_concentration_cats = category_percentages[category_percentages > 30]
+                if not high_concentration_cats.empty:
+                    insights.append({
+                        "type": "diversification",
+                        "message": f"High spending concentration in {len(high_concentration_cats)} categories - " +
+                                 f"consider diversifying expenses for better financial stability",
+                        "severity": "warning"
+                    })
+
+        # Category analysis
+        if not filtered_df[filtered_df['is_expense']].empty:
+            category_totals = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum()
+            total_expenses = filtered_df[filtered_df['is_expense']]['amount_abs'].sum()
+            top_category_pct = (category_totals.max() / total_expenses) * 100
+            top_category_name = category_totals.idxmax()
+            
+            insights.append({
+                "type": "category",
+                "message": f"{top_category_name} represents {top_category_pct:.1f}% of your total expenses",
+                "severity": "warning" if top_category_pct > 50 else "info"
+            })
+
+        # Day of week pattern analysis
+        daily_spending = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.strftime('%A'))['amount_abs'].mean()
+        if not daily_spending.empty:
+            highest_day = daily_spending.idxmax()
+            highest_amount = daily_spending.max()
+            insights.append({
+                "type": "pattern",
+                "message": f"{highest_day}s tend to be your highest spending days (LKR {highest_amount:,.2f} on average)",
+                "severity": "info"
+            })
+
+        # Merchant analysis
+        merchant_visits = filtered_df[filtered_df['is_expense']]['merchant'].value_counts()
+        if not merchant_visits.empty:
+            top_merchant = merchant_visits.index[0]
+            visit_count = merchant_visits.iloc[0]
+            merchant_total = filtered_df[filtered_df['merchant'] == top_merchant]['amount_abs'].sum()
+            
+            insights.append({
+                "type": "merchant",
+                "message": f"{top_merchant} is your most frequent expense location ({visit_count} visits, total ${merchant_total:.2f})",
+                "severity": "info"
+            })
+
+            # Analyze transaction size trends
+            expense_amounts = filtered_df[filtered_df['is_expense']]['amount_abs']
+            if not expense_amounts.empty:
+                large_transactions = expense_amounts[expense_amounts > expense_amounts.mean() + 2*expense_amounts.std()]
+                if not large_transactions.empty:
+                    unusual_dates = filtered_df[filtered_df['amount_abs'].isin(large_transactions)]['date']
+                    date_patterns = unusual_dates.dt.day.value_counts()
+                    if len(date_patterns) >= 2:
+                        insights.append({
+                            "type": "transaction_pattern",
+                            "message": "Large expenses frequently occur on similar dates - " +
+                                     "this might indicate recurring major payments or bills",
+                            "severity": "info"
+                        })
+                        
+            # Analyze income stability
+            if not filtered_df[~filtered_df['is_expense']].empty:
+                monthly_income_var = filtered_df[~filtered_df['is_expense']].groupby(
+                    filtered_df['date'].dt.strftime('%B %Y'))['amount_abs'].sum().std()
+                monthly_income_mean = filtered_df[~filtered_df['is_expense']].groupby(
+                    filtered_df['date'].dt.strftime('%B %Y'))['amount_abs'].sum().mean()
+                if monthly_income_mean > 0:
+                    income_volatility = (monthly_income_var / monthly_income_mean) * 100
+                    if income_volatility > 20:
+                        insights.append({
+                            "type": "income_stability",
+                            "message": f"Your monthly income shows significant variation (±{income_volatility:.1f}%) - " +
+                                     "consider building a larger emergency fund",
+                            "severity": "warning"
+                        })        # Time-based analysis
+        monthly_expenses = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.strftime('%B %Y'))['amount_abs'].sum()
+        monthly_income = filtered_df[~filtered_df['is_expense']].groupby(filtered_df['date'].dt.strftime('%B %Y'))['amount_abs'].sum()
+        
+        if not monthly_expenses.empty:
+            max_expense_month = monthly_expenses.idxmax()
+            min_expense_month = monthly_expenses.idxmin()
+            insights.append({
+                "type": "monthly_expense",
+                "message": f"{max_expense_month} had the highest expenses (LKR {monthly_expenses[max_expense_month]:,.2f})",
+                "severity": "warning" if monthly_expenses[max_expense_month] > monthly_expenses.mean() * 1.5 else "info"
+            })
+            insights.append({
+                "type": "monthly_expense_low",
+                "message": f"{min_expense_month} had the lowest expenses (LKR {monthly_expenses[min_expense_month]:,.2f})",
+                "severity": "success"
+            })
+            
+        if not monthly_income.empty:
+            max_income_month = monthly_income.idxmax()
+            min_income_month = monthly_income.idxmin()
+            insights.append({
+                "type": "monthly_income",
+                "message": f"{max_income_month} was your best month for income (LKR {monthly_income[max_income_month]:,.2f})",
+                "severity": "success"
+            })
+            insights.append({
+                "type": "monthly_income_low",
+                "message": f"{min_income_month} had the lowest income (LKR {monthly_income[min_income_month]:,.2f})",
+                "severity": "warning"
+            })
+            
+        # Daily patterns
+        daily_avg = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.strftime('%A'))['amount_abs'].mean()
+        if not daily_avg.empty:
+            highest_spending_day = daily_avg.idxmax()
+            lowest_spending_day = daily_avg.idxmin()
+            insights.append({
+                "type": "daily_pattern_high",
+                "message": f"{highest_spending_day}s tend to be your highest spending days (LKR {daily_avg[highest_spending_day]:,.2f} on average)",
+                "severity": "warning"
+            })
+            insights.append({
+                "type": "daily_pattern_low",
+                "message": f"{lowest_spending_day}s are your most economical days (LKR {daily_avg[lowest_spending_day]:,.2f} on average)",
+                "severity": "success"
+            })
+            
+        # Category analysis
+        category_expenses = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].agg(['sum', 'count'])
+        if not category_expenses.empty:
+            top_expense_cat = category_expenses['sum'].idxmax()
+            top_expense_amount = category_expenses.loc[top_expense_cat, 'sum']
+            top_expense_count = category_expenses.loc[top_expense_cat, 'count']
+            insights.append({
+                "type": "category_high",
+                "message": f"Highest spending category: {top_expense_cat} (LKR {top_expense_amount:,.2f} across {top_expense_count} transactions)",
+                "severity": "warning" if top_expense_amount > category_expenses['sum'].mean() * 2 else "info"
+            })
+            
+        # Merchant analysis
+        merchant_expenses = filtered_df[filtered_df['is_expense']].groupby('merchant')['amount_abs'].agg(['sum', 'count'])
+        if not merchant_expenses.empty:
+            top_merchant = merchant_expenses['sum'].idxmax()
+            merchant_total = merchant_expenses.loc[top_merchant, 'sum']
+            merchant_count = merchant_expenses.loc[top_merchant, 'count']
+            insights.append({
+                "type": "merchant_high",
+                "message": f"Most significant merchant: {top_merchant} (LKR {merchant_total:,.2f} across {merchant_count} visits)",
+                "severity": "warning" if merchant_count > merchant_expenses['count'].mean() * 2 else "info"
+            })
+            
+        # Transaction size analysis
+        large_transactions = filtered_df[filtered_df['is_expense'] & (filtered_df['amount_abs'] > filtered_df['amount_abs'].mean() * 2)]
+        if not large_transactions.empty:
+            insights.append({
+                "type": "large_transactions",
+                "message": f"Found {len(large_transactions)} unusually large transactions (over LKR {filtered_df['amount_abs'].mean() * 2:,.2f})",
+                "severity": "warning"
+            })
+            
+        # Most common transaction category
+        category_counts = filtered_df['category'].value_counts()
+        if not category_counts.empty:
+            most_common_category = category_counts.index[0]
+            category_count = category_counts.iloc[0]
+            category_total = filtered_df[filtered_df['category'] == most_common_category]['amount_abs'].sum()
+            insights.append({
+                "type": "frequency",
+                "message": f"Most frequent category: {most_common_category} ({category_count} transactions, total LKR {category_total:,.2f})",
+                "severity": "info"
+            })
+        
+        if not insights:
+            # This should rarely happen now, as we've added more varied analyses
+            current_period = filtered_df['date'].dt.strftime('%B %Y').iloc[0] if not filtered_df.empty else "the selected period"
+            insights.append({
+                "type": "info",
+                "message": f"Showing transaction analysis for {current_period}",
+                "severity": "info"
+            })
+            
         for insight in insights:
             if insight["severity"] == "warning":
                 st.warning(f"{insight['message']}")
@@ -597,17 +836,7 @@ if show_ai_insights:
                 st.info(f"{insight['message']}")
     
     with col2:
-        st.markdown("#### Recommendations")
-
-        recommendations = [
-            "Consider setting a weekly budget for Food & Dining expenses",
-            "Look for alternatives to frequent coffee purchases",
-            "Review subscription services for potential savings",
-            "Set up automatic transfers to savings account"
-        ]
-        
-        for i, rec in enumerate(recommendations, 1):
-            st.write(f"{i}. {rec}")
+        pass  # Recommendations section removed
 
 # Anomaly Detection
 if show_anomalies:
@@ -626,7 +855,7 @@ if show_anomalies:
         
         anomaly_display = anomalies[['date', 'merchant', 'category', 'amount', 'description']].copy()
         anomaly_display['date'] = anomaly_display['date'].dt.strftime('%Y-%m-%d')
-        anomaly_display['amount'] = anomaly_display['amount'].apply(lambda x: f"${abs(x):.2f}")
+        anomaly_display['amount'] = anomaly_display['amount'].apply(lambda x: f"LKR{abs(x):.2f}")
         
         st.dataframe(anomaly_display, use_container_width=True)
     else:
@@ -640,24 +869,92 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("Export Analysis Report"):
         # Generate comprehensive report
-        report_data = {
-            "analysis_type": analysis_type,
-            "date_range": [str(date_range[0]), str(date_range[1])] if len(date_range) == 2 else None,
-            "summary": {
-                "total_transactions": len(filtered_df),
-                "total_expenses": float(filtered_df[filtered_df['is_expense']]['amount_abs'].sum()),
-                "avg_expense": float(filtered_df[filtered_df['is_expense']]['amount_abs'].mean()),
-                "top_category": filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().idxmax(),
-                "top_merchant": filtered_df[filtered_df['is_expense']].groupby('merchant')['amount_abs'].sum().idxmax()
-            },
-            "generated_at": datetime.now().isoformat()
-        }
-        
+        def generate_pdf_report():
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            styles = getSampleStyleSheet()
+            story = []
+
+            # Custom styles
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                spaceAfter=30,
+                textColor=colors.HexColor('#1f77b4')
+            )
+            heading_style = ParagraphStyle(
+                'CustomHeading',
+                parent=styles['Heading2'],
+                fontSize = 16,
+                spaceAfter=12,
+                textColor=colors.HexColor('#2c3e50')
+            )
+
+            # Title
+            story.append(Paragraph("FinTrack Analytics Report", title_style))
+            story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y')}", styles["Italic"]))
+            story.append(Spacer(1, 20))
+
+            # Analysis Type and Date Range
+            story.append(Paragraph(f"Analysis Type: {analysis_type}", heading_style))
+            if len(date_range) == 2:
+                story.append(Paragraph(f"Date Range: {date_range[0]} to {date_range[1]}", styles["Normal"]))
+            story.append(Spacer(1, 20))
+
+            # Key Metrics
+            story.append(Paragraph("Key Metrics", heading_style))
+            
+            # Create table data
+            total_expenses = filtered_df[filtered_df['is_expense']]['amount_abs'].sum() if not filtered_df[filtered_df['is_expense']].empty else 0
+            total_income = filtered_df[~filtered_df['is_expense']]['amount_abs'].sum() if not filtered_df[~filtered_df['is_expense']].empty else 0
+            avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean() if not filtered_df[filtered_df['is_expense']].empty else 0
+            top_category = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+            top_merchant = filtered_df[filtered_df['is_expense']].groupby('merchant')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+
+            data = [
+                ["Metric", "Value"],
+                ["Transactions", f"{len(filtered_df):,}"],
+                ["Total Income", f"LKR {total_income:,.2f}"],
+                ["Total Expenses", f"LKR {total_expenses:,.2f}"],
+                ["Net Cash Flow", f"LKR {total_income - total_expenses:,.2f}"],
+                ["Average Expense", f"LKR {avg_expense:,.2f}"],
+                ["Top Spending Category", top_category],
+                ["Top Merchant", top_merchant]
+            ]
+
+            # Create table
+            table = Table(data, colWidths=[4*inch, 3*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 14),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('BOX', (0, 0), (-1, -1), 2, colors.black),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4')),
+            ]))
+            
+            story.append(table)
+            story.append(Spacer(1, 20))
+
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
+
+        # Generate PDF and create download button
+        pdf_buffer = generate_pdf_report()
         st.download_button(
-            label="Download Report (JSON)",
-            data=json.dumps(report_data, indent=2),
-            file_name=f"analytics_report_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json"
+            label="Download Report (PDF)",
+            data=pdf_buffer,
+            file_name=f"fintrack_analytics_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf"
         )
 
 with col2:
@@ -665,6 +962,7 @@ with col2:
         # Export current view data
         export_df = filtered_df[['date', 'merchant', 'category', 'amount', 'description']].copy()
         export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
+        export_df['amount'] = export_df['amount'].apply(lambda x: f"LKR{x:.2f}")
         
         csv_data = export_df.to_csv(index=False)
         st.download_button(
