@@ -52,7 +52,7 @@ class DataPreprocessor:
             # Date features
             'year', 'month', 'day', 'day_of_week',
             # Transaction basics
-            'amount', 'is_outlier', 'amount_log',
+            'amount', 'transaction_type', 'is_outlier', 'amount_log',
             'discount_percent', 'discount_value', 'effective_amount',
             # Merchant & Offer
             'merchant_encoded', 'offer_applied',
@@ -75,8 +75,11 @@ class DataPreprocessor:
         # Step 3: Amount Handling
         df3 = self._step3_amount_handling(df2)
         
+        # Step 3.5: Transaction Type Classification
+        df3_5 = self._step3_5_transaction_type_classification(df3)
+        
         # Step 4: Discounts
-        df4 = self._step4_discounts(df3)
+        df4 = self._step4_discounts(df3_5)
         
         # Step 5: Encoding
         df5 = self._step5_encoding(df4)
@@ -140,6 +143,62 @@ class DataPreprocessor:
         df['amount_log'] = np.log1p(df['amount'])  # log1p = log(1 + x)
         
         logger.debug(f"Found {df['is_outlier'].sum()} outliers out of {len(df)} transactions")
+        return df
+    
+    def _step3_5_transaction_type_classification(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Step 3.5: Transaction Type Classification - classify as income/expense/transfer"""
+        logger.debug("Step 3.5: Transaction Type Classification")
+        
+        df = df.copy()
+        
+        # Initialize transaction_type column
+        df['transaction_type'] = 'expense'  # Default to expense
+        
+        # Classify based on amount sign (positive = income, negative = expense)
+        df.loc[df['amount'] > 0, 'transaction_type'] = 'income'
+        df.loc[df['amount'] < 0, 'transaction_type'] = 'expense'
+        
+        # Additional classification based on description patterns
+        description_lower = df['description'].str.lower().fillna('')
+        
+        # Income patterns
+        income_patterns = [
+            r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
+            r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
+            r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
+            r'\b(social.*security|unemployment|pension|benefits)\b',
+            r'\b(gift.*received|inheritance|lottery|settlement)\b'
+        ]
+        
+        for pattern in income_patterns:
+            mask = description_lower.str.contains(pattern, regex=True, na=False)
+            # Only mark as income if amount is positive or neutral context
+            df.loc[mask & (df['amount'] >= 0), 'transaction_type'] = 'income'
+        
+        # Transfer patterns
+        transfer_patterns = [
+            r'\b(transfer|wire|ach|direct.*deposit|bank.*to.*bank)\b',
+            r'\b(atm.*deposit|mobile.*deposit|check.*deposit)\b',
+            r'\b(internal.*transfer|account.*transfer|balance.*transfer)\b',
+            r'\b(p2p|peer.*to.*peer|venmo|zelle|cashapp|paypal.*transfer)\b'
+        ]
+        
+        for pattern in transfer_patterns:
+            mask = description_lower.str.contains(pattern, regex=True, na=False)
+            df.loc[mask, 'transaction_type'] = 'transfer'
+        
+        # Force negative amounts to be expenses (overrides other classifications)
+        df.loc[df['amount'] < 0, 'transaction_type'] = 'expense'
+        
+        # Convert amounts to absolute values for consistency in downstream processing
+        df['original_amount'] = df['amount'].copy()  # Keep original for reference
+        df['amount'] = df['amount'].abs()  # Make all amounts positive
+        
+        logger.debug(f"Transaction type classification: "
+                    f"Income: {(df['transaction_type'] == 'income').sum()}, "
+                    f"Expense: {(df['transaction_type'] == 'expense').sum()}, "
+                    f"Transfer: {(df['transaction_type'] == 'transfer').sum()}")
+        
         return df
     
     def _step4_discounts(self, df: pd.DataFrame) -> pd.DataFrame:

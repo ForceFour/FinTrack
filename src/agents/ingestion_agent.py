@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 import logging
 import re
 
-from ..schemas.transaction_schemas import RawTransaction, PreprocessedTransaction, PaymentMethod, TransactionCategory
+from ..schemas.transaction_schemas import RawTransaction, PreprocessedTransaction, PaymentMethod, TransactionCategory, TransactionType
 from ..utils.data_preprocessing import DataPreprocessor
 from .components.file_parser import FileParser
 from .components.nl_processor import NaturalLanguageProcessor
@@ -238,6 +238,7 @@ class EnhancedIngestionAgent:
                 day=int(row.get('day', transaction_date.day)),
                 day_of_week=int(row.get('day_of_week', transaction_date.weekday())),
                 amount=float(row.get('amount', 0.0)),
+                transaction_type=TransactionType(row.get('transaction_type', 'expense')),
                 payment_method=self._determine_payment_method(row),
                 description_cleaned=str(row.get('description_clean', '')),
                 has_discount=bool(row.get('offer_applied', 0)),
@@ -248,6 +249,7 @@ class EnhancedIngestionAgent:
                     'discount_value': float(row.get('discount_value', 0.0)),
                     'effective_amount': float(row.get('effective_amount', row.get('amount', 0.0))),
                     'merchant_encoded': float(row.get('merchant_encoded', 0.0)),
+                    'original_amount': float(row.get('original_amount', row.get('amount', 0.0))),
                     'processed_features': {k: v for k, v in row.items() if k.startswith(('pay_', 'cat_'))},
                     'preprocessing_pipeline': 'comprehensive'
                 }

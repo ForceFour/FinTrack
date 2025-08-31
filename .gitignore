@@ -135,6 +135,7 @@ logs/
 
 # Development files
 test_*.py
+debug_*.py
 verify_*.py
 fix_*.py
 
