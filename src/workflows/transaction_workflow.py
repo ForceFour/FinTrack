@@ -1,6 +1,7 @@
 """
 Enhanced LangGraph Workflow for Transaction Processing Pipeline
 Integrates: LangChain/Groq NL Processing + Enhanced Ingestion + NER + Classification
+With LangSmith Tracing for Visualization
 """
 
 import logging
@@ -10,6 +11,8 @@ import os
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.tracers.langchain import LangChainTracer
+from langsmith import Client
 
 from ..states import TransactionProcessingState, ProcessingStage
 from ..nodes import TransactionProcessingNodes
@@ -29,9 +32,16 @@ from ..schemas.transaction_schemas import RawTransaction
 class TransactionWorkflow:
     """
     LangGraph workflow for processing financial transactions through 6 agents
+    With LangSmith tracing enabled for visualization
     """
     
-    def __init__(self):
+    def __init__(self, enable_tracing: bool = True):
+        # Initialize LangSmith client for tracing if enabled
+        self.enable_tracing = enable_tracing
+        if enable_tracing:
+            self.langsmith_client = Client()
+            logger.info("🎯 LangSmith tracing enabled for workflow visualization")
+        
         self.ingestion_agent = IngestionAgent()
         self.ner_merchant_agent = NERMerchantAgent()
         self.classifier_agent = ClassifierAgent()
@@ -43,32 +53,34 @@ class TransactionWorkflow:
         self.workflow = self._build_workflow()
     
     def _build_workflow(self) -> StateGraph:
-        """Build the LangGraph workflow"""
+        """Build the LangGraph workflow with proper node names for visualization"""
         workflow = StateGraph(TransactionProcessingState)
         
-        # Add nodes for each agent
-        workflow.add_node("ingestion", self._ingestion_step)
-        workflow.add_node("ner_merchant", self._ner_merchant_step)
-        workflow.add_node("classifier", self._classifier_step)
-        workflow.add_node("pattern_analyzer", self._pattern_analyzer_step)
-        workflow.add_node("suggestion", self._suggestion_step)
-        workflow.add_node("safety_guard", self._safety_guard_step)
+        # Add nodes for each agent with descriptive names
+        workflow.add_node("🚀 NL Processing & Ingestion", self._ingestion_step)
+        workflow.add_node("🏷️ NER Merchant Extraction", self._ner_merchant_step) 
+        workflow.add_node("📂 Transaction Classification", self._classifier_step)
+        workflow.add_node("📊 Pattern Analysis", self._pattern_analyzer_step)
+        workflow.add_node("💡 Smart Suggestions", self._suggestion_step)
+        workflow.add_node("🛡️ Safety & Compliance", self._safety_guard_step)
         
         # Define the workflow edges (pipeline flow)
-        workflow.add_edge("ingestion", "ner_merchant")
-        workflow.add_edge("ner_merchant", "classifier")
-        workflow.add_edge("classifier", "pattern_analyzer")
-        workflow.add_edge("pattern_analyzer", "suggestion")
-        workflow.add_edge("suggestion", "safety_guard")
-        workflow.add_edge("safety_guard", END)
+        workflow.add_edge("🚀 NL Processing & Ingestion", "🏷️ NER Merchant Extraction")
+        workflow.add_edge("🏷️ NER Merchant Extraction", "📂 Transaction Classification")
+        workflow.add_edge("📂 Transaction Classification", "📊 Pattern Analysis")
+        workflow.add_edge("📊 Pattern Analysis", "💡 Smart Suggestions")
+        workflow.add_edge("💡 Smart Suggestions", "🛡️ Safety & Compliance")
+        workflow.add_edge("🛡️ Safety & Compliance", END)
         
         # Set entry point
-        workflow.set_entry_point("ingestion")
+        workflow.set_entry_point("🚀 NL Processing & Ingestion")
         
         return workflow
     
     def _ingestion_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 1: Process raw transactions through Ingestion Agent"""
+        logger.info("🚀 INGESTION NODE: Starting transaction ingestion and preprocessing")
+        
         from ..agents.ingestion_agent import IngestionAgentInput
         
         # Create proper input model - convert RawTransaction objects to dicts if needed
@@ -87,10 +99,14 @@ class TransactionWorkflow:
         # Extract the actual data from the output model
         state["preprocessed_transactions"] = [t.dict() if hasattr(t, 'dict') else t for t in result.preprocessed_transactions]
         state["current_step"] = "ingestion_complete"
+        
+        logger.info(f"✅ INGESTION NODE: Processed {len(state['preprocessed_transactions'])} transactions")
         return state
 
     def _ner_merchant_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 2: Extract merchant information through NER/Merchant Agent"""
+        logger.info("🏷️ NER NODE: Starting named entity recognition")
+        
         from ..agents.ner_merchant_agent import NERMerchantAgentInput
         from ..schemas.transaction_schemas import PreprocessedTransaction
         
@@ -101,10 +117,18 @@ class TransactionWorkflow:
         
         state["merchant_transactions"] = [t.dict() if hasattr(t, 'dict') else t for t in result.merchant_transactions]
         state["current_step"] = "ner_merchant_complete"
+        
+        logger.info(f"✅ NER NODE: Extracted entities for {len(state['merchant_transactions'])} transactions")
+        return state
+        
+        state["merchant_transactions"] = [t.dict() if hasattr(t, 'dict') else t for t in result.merchant_transactions]
+        state["current_step"] = "ner_merchant_complete"
         return state
 
     def _classifier_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 3: Classify transactions through Classifier Agent"""
+        logger.info("📂 CLASSIFICATION NODE: Starting transaction classification")
+        
         from ..agents.classifier_agent import ClassifierAgentInput
         from ..schemas.transaction_schemas import MerchantTransaction
         
@@ -115,10 +139,14 @@ class TransactionWorkflow:
         
         state["classified_transactions"] = [t.dict() if hasattr(t, 'dict') else t for t in result.classified_transactions]
         state["current_step"] = "classifier_complete"
+        
+        logger.info(f"✅ CLASSIFICATION NODE: Classified {len(state['classified_transactions'])} transactions")
         return state
 
     def _pattern_analyzer_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 4: Analyze patterns through Pattern Analyzer Agent"""
+        logger.info("📊 PATTERN NODE: Starting pattern analysis")
+        
         from ..agents.pattern_analyzer_agent import PatternAnalyzerAgentInput
         from ..schemas.transaction_schemas import ClassifiedTransaction
         
@@ -132,10 +160,14 @@ class TransactionWorkflow:
         
         state["pattern_insights"] = [insight.dict() if hasattr(insight, 'dict') else insight for insight in result.pattern_insights]
         state["current_step"] = "pattern_analyzer_complete"
+        
+        logger.info(f"✅ PATTERN NODE: Generated {len(state['pattern_insights'])} insights")
         return state
 
     def _suggestion_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 5: Generate suggestions through Suggestion Agent"""
+        logger.info("💡 SUGGESTION NODE: Starting smart suggestions generation")
+        
         from ..agents.suggestion_agent import SuggestionAgentInput
         from ..schemas.transaction_schemas import PatternInsight
         
@@ -150,10 +182,14 @@ class TransactionWorkflow:
         
         state["suggestions"] = [s.dict() if hasattr(s, 'dict') else s for s in result.suggestions]
         state["current_step"] = "suggestion_complete"
+        
+        logger.info(f"✅ SUGGESTION NODE: Generated {len(state['suggestions'])} suggestions")
         return state
 
     def _safety_guard_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Step 6: Safety check through Safety & Compliance Guard Agent"""
+        logger.info("🛡️ SAFETY NODE: Starting safety and compliance checks")
+        
         from ..agents.safety_guard_agent import SafetyGuardAgentInput
         from ..schemas.transaction_schemas import ClassifiedTransaction
         
@@ -164,15 +200,22 @@ class TransactionWorkflow:
         
         state["security_alerts"] = [alert.dict() if hasattr(alert, 'dict') else alert for alert in result.security_alerts]
         state["current_step"] = "safety_guard_complete"
+        
+        logger.info(f"✅ SAFETY NODE: Generated {len(state['security_alerts'])} security alerts")
         return state
 
     def compile_workflow(self):
-        """Compile the workflow with memory saver"""
+        """Compile the workflow with memory saver and tracing"""
         memory = MemorySaver()
-        return self.workflow.compile(checkpointer=memory)
+        compiled_app = self.workflow.compile(checkpointer=memory)
+        
+        if self.enable_tracing:
+            logger.info("🎯 LangSmith tracing configured for workflow visualization")
+        
+        return compiled_app
     
     async def process_transactions(self, raw_transactions: List[RawTransaction]) -> Dict[str, Any]:
-        """Process transactions through the complete pipeline"""
+        """Process transactions through the complete pipeline with LangSmith tracing"""
         app = self.compile_workflow()
         
         initial_state = TransactionProcessingState(
@@ -187,15 +230,19 @@ class TransactionWorkflow:
             metadata={}
         )
 
-        # Run the workflow with proper configuration
+        # Run the workflow with proper configuration including tracing
         config = {
             "configurable": {
-                "thread_id": "demo_thread_001"
+                "thread_id": f"fintrack_workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             }
         }
         
+        if self.enable_tracing:
+            logger.info("🚀 Starting workflow execution with LangSmith tracing")
+            logger.info("📊 Visit https://smith.langchain.com to view workflow visualization")
+        
         # Run the workflow
-        final_state = await app.ainvoke(initial_state)
+        final_state = await app.ainvoke(initial_state, config=config)
         
         return {
             "processed_transactions": final_state["classified_transactions"],

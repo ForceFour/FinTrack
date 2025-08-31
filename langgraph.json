@@ -1,0 +1,6 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "minimal_workflow": "langgraph_server:app"
+  }
+}
