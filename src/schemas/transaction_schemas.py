@@ -6,19 +6,32 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 
+class TransactionType(str, Enum):
+    """Transaction types"""
+    INCOME = "income"
+    EXPENSE = "expense"
+    TRANSFER = "transfer"
+
+
 class PaymentMethod(str, Enum):
-    """Standardized payment methods"""
+    """Sri Lankan payment methods"""
     CREDIT_CARD = "credit_card"
     DEBIT_CARD = "debit_card"
     CASH = "cash"
     BANK_TRANSFER = "bank_transfer"
     DIGITAL_WALLET = "digital_wallet"
     CHECK = "check"
+    # Sri Lanka specific payment methods
+    MOBILE_MONEY = "mobile_money"  # Dialog eZ Cash, Mobitel mCash
+    ONLINE_BANKING = "online_banking"  # BOC, Commercial Bank, etc.
+    ATM_TRANSFER = "atm_transfer"
+    RTGS = "rtgs"  # Real Time Gross Settlement
+    SLIPS = "slips"  # Sri Lanka Interbank Payment System
     OTHER = "other"
 
 
 class TransactionCategory(str, Enum):
-    """Expense categories"""
+    """Sri Lankan expense categories"""
     FOOD_DINING = "food_dining"
     GROCERIES = "groceries"
     TRANSPORTATION = "transportation"
@@ -29,6 +42,13 @@ class TransactionCategory(str, Enum):
     SUBSCRIPTIONS = "subscriptions"
     EDUCATION = "education"
     TRAVEL = "travel"
+    # Sri Lanka specific categories
+    RELIGIOUS_DONATIONS = "religious_donations"  # Temple, Church donations
+    GOVERNMENT_SERVICES = "government_services"  # License fees, taxes, etc.
+    DOMESTIC_HELP = "domestic_help"  # Maid, driver payments
+    TELECOMMUNICATIONS = "telecommunications"  # Mobile, internet bills
+    FUEL = "fuel"  # Petrol, diesel - important category in Sri Lanka
+    MEDICAL_INSURANCE = "medical_insurance"
     MISCELLANEOUS = "miscellaneous"
 
 
@@ -52,6 +72,7 @@ class PreprocessedTransaction(BaseModel):
     day: int = Field(description="Day extracted from date")
     day_of_week: int = Field(description="Day of week (0=Monday, 6=Sunday)")
     amount: float = Field(description="Numeric amount")
+    transaction_type: TransactionType = Field(description="Transaction type (income/expense/transfer)")
     payment_method: PaymentMethod = Field(description="Standardized payment method")
     description_cleaned: str = Field(description="Cleaned transaction description")
     has_discount: bool = Field(False, description="Whether transaction includes discount")

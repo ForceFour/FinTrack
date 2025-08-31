@@ -25,10 +25,65 @@ if 'transactions' not in st.session_state or not st.session_state.transactions:
 # Get transaction data
 df = pd.DataFrame(st.session_state.transactions)
 
+# Enhanced transaction type classification
+def classify_transaction_type(row):
+    """
+    Enhanced transaction type classification logic
+    """
+    amount = row['amount']
+    description = str(row.get('description', '')).lower()
+    
+    # Income indicators
+    income_keywords = [
+        'salary', 'payroll', 'deposit', 'refund', 'reimbursement', 'dividend',
+        'interest', 'bonus', 'commission', 'freelance', 'payment received',
+        'transfer in', 'cash deposit', 'direct deposit', 'pension', 'benefits'
+    ]
+    
+    # Expense indicators  
+    expense_keywords = [
+        'purchase', 'payment', 'withdrawal', 'bill', 'subscription', 'fee',
+        'charge', 'debit', 'pos', 'atm', 'online', 'store', 'restaurant'
+    ]
+    
+    # Check keywords in description
+    has_income_keywords = any(keyword in description for keyword in income_keywords)
+    has_expense_keywords = any(keyword in description for keyword in expense_keywords)
+    
+    # Primary logic: use amount sign
+    if amount > 0:
+        # Positive amounts are typically income, but check for exceptions
+        if has_expense_keywords and not has_income_keywords:
+            return 'expense'
+        return 'income'
+    elif amount < 0:
+        # Negative amounts are typically expenses, but check for exceptions
+        if has_income_keywords and not has_expense_keywords:
+            return 'income'
+        return 'expense'
+    else:
+        # Zero amount - classify based on keywords
+        if has_income_keywords:
+            return 'income'
+        elif has_expense_keywords:
+            return 'expense'
+        return 'expense'  # default for zero amounts
+
 # Data preprocessing
 df['date'] = pd.to_datetime(df['date'])
 df['amount_abs'] = abs(df['amount'])
-df['is_expense'] = df['amount'] < 0
+
+# Enhanced transaction type determination
+if 'transaction_type' not in df.columns:
+    # Apply enhanced classification
+    df['transaction_type'] = df.apply(classify_transaction_type, axis=1)
+    df['is_expense'] = df['transaction_type'] == 'expense'
+    df['is_income'] = df['transaction_type'] == 'income'
+else:
+    # Use existing transaction_type field but ensure consistency
+    df['is_expense'] = df['transaction_type'] == 'expense'
+    df['is_income'] = df['transaction_type'] == 'income'
+
 df['month'] = df['date'].dt.to_period('M')
 df['week'] = df['date'].dt.isocalendar().week
 df['day_of_week'] = df['date'].dt.day_name()
@@ -106,35 +161,110 @@ else:
 if analysis_type == "Overview":
     st.subheader("Financial Overview")
     
-    # Key metrics
+    # Enhanced Key metrics with better Income/Expense breakdown
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         total_expenses = filtered_df[filtered_df['is_expense']]['amount_abs'].sum()
-        st.metric("Total Expenses", f"${total_expenses:,.2f}")
+        expense_count = len(filtered_df[filtered_df['is_expense']])
+        st.metric("Total Expenses", f"${total_expenses:,.2f}", delta=f"{expense_count} transactions")
     
     with col2:
-        total_income = filtered_df[~filtered_df['is_expense']]['amount_abs'].sum()
-        st.metric("Total Income", f"${total_income:,.2f}")
+        total_income = filtered_df[filtered_df['is_income']]['amount_abs'].sum()
+        income_count = len(filtered_df[filtered_df['is_income']])
+        st.metric("Total Income", f"${total_income:,.2f}", delta=f"{income_count} transactions")
     
     with col3:
         net_flow = total_income - total_expenses
-        st.metric("Net Cash Flow", f"${net_flow:,.2f}", delta=f"${net_flow:,.2f}")
+        net_percentage = (net_flow / total_income * 100) if total_income > 0 else 0
+        st.metric("Net Cash Flow", f"${net_flow:,.2f}", delta=f"{net_percentage:+.1f}%")
     
     with col4:
         avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean()
+        avg_income = filtered_df[filtered_df['is_income']]['amount_abs'].mean()
         st.metric("Avg Expense", f"${avg_expense:.2f}")
+        st.metric("Avg Income", f"${avg_income:.2f}")
     
     with col5:
         transaction_count = len(filtered_df)
-        st.metric("Transactions", f"{transaction_count:,}")
+        expense_ratio = expense_count / transaction_count * 100 if transaction_count > 0 else 0
+        st.metric("Total Transactions", f"{transaction_count:,}")
+        st.write(f"📊 {expense_ratio:.1f}% Expenses")
+    
+    # Income vs Expense Classification Summary
+    st.subheader("💰 Transaction Classification Summary")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Pie chart of transaction types by count
+        transaction_type_counts = filtered_df['transaction_type'].value_counts()
+        fig_pie_count = px.pie(
+            values=transaction_type_counts.values,
+            names=transaction_type_counts.index,
+            title="Transactions by Type (Count)",
+            color_discrete_map={'income': 'lightgreen', 'expense': 'lightcoral'}
+        )
+        st.plotly_chart(fig_pie_count, use_container_width=True)
+    
+    with col2:
+        # Pie chart of transaction types by amount
+        transaction_type_amounts = filtered_df.groupby('transaction_type')['amount_abs'].sum()
+        fig_pie_amount = px.pie(
+            values=transaction_type_amounts.values,
+            names=transaction_type_amounts.index,
+            title="Transactions by Type (Amount)",
+            color_discrete_map={'income': 'lightgreen', 'expense': 'lightcoral'}
+        )
+        st.plotly_chart(fig_pie_amount, use_container_width=True)
+    
+    with col3:
+        # Bar chart comparison
+        comparison_data = pd.DataFrame({
+            'Type': ['Income', 'Expenses'],
+            'Amount': [total_income, total_expenses],
+            'Count': [income_count, expense_count]
+        })
+        
+        fig_comparison = px.bar(
+            comparison_data,
+            x='Type',
+            y='Amount',
+            title="Income vs Expenses",
+            color='Type',
+            color_discrete_map={'Income': 'lightgreen', 'Expenses': 'lightcoral'},
+            text='Amount'
+        )
+        fig_comparison.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+        st.plotly_chart(fig_comparison, use_container_width=True)
     
     # Monthly trend
     st.subheader("Monthly Financial Flow")
     
-    monthly_data = filtered_df.groupby(['month', 'is_expense'])['amount_abs'].sum().unstack(fill_value=0)
-    monthly_data.columns = ['Income', 'Expenses']
-    monthly_data['Net'] = monthly_data['Income'] - monthly_data['Expenses']
+    # Aggregate by month and transaction type
+    monthly_summary = filtered_df.groupby(['month', 'transaction_type'])['amount_abs'].sum().unstack(fill_value=0)
+    
+    # Handle case where monthly_summary might be empty or have different structure
+    if monthly_summary.empty:
+        # Create empty DataFrame with correct structure
+        monthly_data = pd.DataFrame({
+            'Income': [0],
+            'Expenses': [0],
+            'Net': [0]
+        })
+        monthly_data.index = [filtered_df['month'].iloc[0] if not filtered_df.empty else pd.Period('2024-01')]
+    else:
+        # Ensure we have both income and expenses columns
+        if 'income' not in monthly_summary.columns:
+            monthly_summary['income'] = 0
+        if 'expense' not in monthly_summary.columns:
+            monthly_summary['expense'] = 0
+        
+        # Create monthly_data DataFrame with proper column handling
+        monthly_data = pd.DataFrame()
+        monthly_data['Income'] = monthly_summary.get('income', 0)
+        monthly_data['Expenses'] = monthly_summary.get('expense', 0)
+        monthly_data['Net'] = monthly_data['Income'] - monthly_data['Expenses']
     
     fig_monthly = go.Figure()
     

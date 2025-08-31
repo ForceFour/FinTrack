@@ -20,9 +20,10 @@ from ..nodes.specialized_nodes import ConditionalNodes, ErrorHandlingNodes, Util
 
 logger = logging.getLogger(__name__)
 
-from ..agents.ingestion_agent import IngestionAgent
-from ..agents.ner_merchant_agent import NERMerchantAgent
-from ..agents.classifier_agent import ClassifierAgent
+from ..agents.ingestion_agent import EnhancedIngestionAgent
+from ..agents.transaction_classifier_agent import TransactionClassificationAgent
+from ..agents.ner_merchant_agent import EnhancedNERMerchantAgent
+from ..agents.classifier_agent import EnhancedClassifierAgent
 from ..agents.pattern_analyzer_agent import PatternAnalyzerAgent
 from ..agents.suggestion_agent import SuggestionAgent
 from ..agents.safety_guard_agent import SafetyGuardAgent
@@ -33,6 +34,7 @@ class TransactionWorkflow:
     """
     LangGraph workflow for processing financial transactions through 6 agents
     With LangSmith tracing enabled for visualization
+    Enhanced LangGraph workflow for processing financial transactions through 7 agents
     """
     
     def __init__(self, enable_tracing: bool = True):
@@ -42,9 +44,16 @@ class TransactionWorkflow:
             self.langsmith_client = Client()
             logger.info("🎯 LangSmith tracing enabled for workflow visualization")
         
-        self.ingestion_agent = IngestionAgent()
-        self.ner_merchant_agent = NERMerchantAgent()
-        self.classifier_agent = ClassifierAgent()
+        self.ingestion_agent = EnhancedIngestionAgent()
+        self.ner_merchant_agent = EnhancedNERMerchantAgent()
+        self.classifier_agent = EnhancedClassifierAgent()
+
+    
+    def __init__(self):
+        self.ingestion_agent = EnhancedIngestionAgent()
+        self.transaction_classifier = TransactionClassificationAgent()  # New agent
+        self.ner_merchant_agent = EnhancedNERMerchantAgent()
+        self.classifier_agent = EnhancedClassifierAgent()
         self.pattern_analyzer_agent = PatternAnalyzerAgent()
         self.suggestion_agent = SuggestionAgent()
         self.safety_guard_agent = SafetyGuardAgent()
@@ -56,21 +65,23 @@ class TransactionWorkflow:
         """Build the LangGraph workflow with proper node names for visualization"""
         workflow = StateGraph(TransactionProcessingState)
         
-        # Add nodes for each agent with descriptive names
-        workflow.add_node("🚀 NL Processing & Ingestion", self._ingestion_step)
-        workflow.add_node("🏷️ NER Merchant Extraction", self._ner_merchant_step) 
-        workflow.add_node("📂 Transaction Classification", self._classifier_step)
-        workflow.add_node("📊 Pattern Analysis", self._pattern_analyzer_step)
-        workflow.add_node("💡 Smart Suggestions", self._suggestion_step)
-        workflow.add_node("🛡️ Safety & Compliance", self._safety_guard_step)
+        # Add nodes for each agent
+        workflow.add_node("ingestion", self._ingestion_step)
+        workflow.add_node("transaction_classifier", self._transaction_classifier_step)
+        workflow.add_node("ner_merchant", self._ner_merchant_step)
+        workflow.add_node("classifier", self._classifier_step)
+        workflow.add_node("pattern_analyzer", self._pattern_analyzer_step)
+        workflow.add_node("suggestion", self._suggestion_step)
+        workflow.add_node("safety_guard", self._safety_guard_step)
         
         # Define the workflow edges (pipeline flow)
-        workflow.add_edge("🚀 NL Processing & Ingestion", "🏷️ NER Merchant Extraction")
-        workflow.add_edge("🏷️ NER Merchant Extraction", "📂 Transaction Classification")
-        workflow.add_edge("📂 Transaction Classification", "📊 Pattern Analysis")
-        workflow.add_edge("📊 Pattern Analysis", "💡 Smart Suggestions")
-        workflow.add_edge("💡 Smart Suggestions", "🛡️ Safety & Compliance")
-        workflow.add_edge("🛡️ Safety & Compliance", END)
+        workflow.add_edge("ingestion", "transaction_classifier")
+        workflow.add_edge("transaction_classifier", "ner_merchant")
+        workflow.add_edge("ner_merchant", "classifier")
+        workflow.add_edge("classifier", "pattern_analyzer")
+        workflow.add_edge("pattern_analyzer", "suggestion")
+        workflow.add_edge("suggestion", "safety_guard")
+        workflow.add_edge("safety_guard", END)
         
         # Set entry point
         workflow.set_entry_point("🚀 NL Processing & Ingestion")
@@ -101,6 +112,42 @@ class TransactionWorkflow:
         state["current_step"] = "ingestion_complete"
         
         logger.info(f"✅ INGESTION NODE: Processed {len(state['preprocessed_transactions'])} transactions")
+        return state
+
+    def _transaction_classifier_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """Step 2: Classify transactions as Income vs Expense"""
+        from ..agents.transaction_classifier_agent import TransactionClassificationInput
+        from ..schemas.transaction_schemas import PreprocessedTransaction
+        
+        # Convert dict data back to PreprocessedTransaction objects
+        preprocessed_txns = [PreprocessedTransaction(**t) if isinstance(t, dict) else t for t in state["preprocessed_transactions"]]
+        input_data = TransactionClassificationInput(preprocessed_transactions=preprocessed_txns)
+        result = self.transaction_classifier.process(input_data)
+        
+        # Update state with transaction type classifications
+        transaction_types = {ct.transaction_id: ct for ct in result.classified_transactions}
+        
+        # Add transaction_type to each preprocessed transaction
+        updated_transactions = []
+        for txn_data in state["preprocessed_transactions"]:
+            txn_dict = txn_data.dict() if hasattr(txn_data, 'dict') else txn_data
+            txn_id = txn_dict.get('id')
+            if txn_id in transaction_types:
+                classification = transaction_types[txn_id]
+                txn_dict['transaction_type'] = classification.transaction_type
+                txn_dict['transaction_type_confidence'] = classification.classification_confidence
+                txn_dict['classification_reasoning'] = classification.classification_reasoning
+            else:
+                # Fallback classification
+                txn_dict['transaction_type'] = 'expense' if txn_dict.get('amount', 0) < 0 else 'income'
+                txn_dict['transaction_type_confidence'] = 0.5
+                txn_dict['classification_reasoning'] = 'Fallback classification based on amount sign'
+            
+            updated_transactions.append(txn_dict)
+        
+        state["preprocessed_transactions"] = updated_transactions
+        state["transaction_classifications"] = [ct.dict() if hasattr(ct, 'dict') else ct for ct in result.classified_transactions]
+        state["current_step"] = "transaction_classifier_complete"
         return state
 
     def _ner_merchant_step(self, state: TransactionProcessingState) -> TransactionProcessingState:
