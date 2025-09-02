@@ -49,8 +49,8 @@ class AnalyticsService:
                 date=tx.date,
                 amount=tx.amount,
                 description=tx.description,
-                category=tx.category,
-                merchant=tx.merchant
+                predicted_category=tx.category,
+                merchant_standardized=tx.merchant or "Unknown Merchant"
             ) for tx in transactions
         ]
         
@@ -251,14 +251,35 @@ class AnalyticsService:
         if len(data_points) >= 2:
             last_value = data_points[-1]['value']
             avg_change = (data_points[-1]['value'] - data_points[0]['value']) / len(data_points)
+            
+            # Calculate trend stability for confidence
+            values = [dp['value'] for dp in data_points]
+            if values:
+                import statistics
+                mean_val = statistics.mean(values)
+                std_val = statistics.stdev(values) if len(values) > 1 else 0
+                trend_variance = std_val / (mean_val + 1e-6) if mean_val > 0 else 1.0
+            else:
+                trend_variance = 1.0
+            data_quality = min(len(data_points) / 10, 1.0)  # Higher confidence with more data points
+            
             forecast = []
             for i in range(3):  # Forecast next 3 periods
                 forecast_date = data_points[-1]['date'] + timedelta(days=period_days * (i + 1))
                 forecast_value = last_value + (avg_change * (i + 1))
+                
+                # Dynamic confidence calculation
+                base_confidence = 0.9 * data_quality  # Start with data quality
+                stability_factor = max(0.5, 1.0 - min(trend_variance, 0.5))  # Trend stability
+                horizon_penalty = 0.15 * i  # Decreasing confidence over time
+                
+                confidence = (base_confidence * stability_factor) - horizon_penalty
+                confidence = max(0.3, min(0.95, confidence))  # Clamp between 30% and 95%
+                
                 forecast.append({
                     'date': forecast_date,
                     'value': forecast_value,
-                    'confidence': max(0.8 - (0.1 * i), 0.5)  # Decreasing confidence
+                    'confidence': confidence
                 })
         else:
             forecast = []
@@ -445,9 +466,44 @@ class AnalyticsService:
         base_prediction = daily_average * forecast_days
         adjusted_prediction = base_prediction * trend_factor
         
-        # Calculate confidence based on data quality and trend strength
-        data_confidence = min(days_covered / 90, 1.0)  # Higher confidence with more historical data
-        confidence = (data_confidence + trend_strength) / 2
+        # Calculate confidence based on multiple factors
+        # 1. Data availability (more historical data = higher confidence)
+        data_confidence = min(days_covered / 90, 1.0)
+        
+        # 2. Transaction count (more transactions = more reliable patterns)
+        transaction_confidence = min(len(transactions) / 50, 1.0) if transactions else 0.1
+        
+        # 3. Forecast horizon (shorter forecasts = higher confidence)
+        horizon_confidence = max(0.5, 1.0 - (forecast_days / 90))
+        
+        # 4. Trend reliability (how consistent is the trend)
+        trend_confidence = trend_strength
+        
+        # 5. Spending variability (consistent spending = higher confidence)
+        if transactions:
+            import statistics
+            amounts = [abs(tx.amount) for tx in transactions]
+            if len(amounts) > 1:
+                mean_spending = statistics.mean(amounts)
+                std_spending = statistics.stdev(amounts)
+                variability = std_spending / (mean_spending + 1e-6) if mean_spending > 0 else 1.0
+                consistency_confidence = max(0.3, 1.0 - min(variability / 2, 0.7))
+            else:
+                consistency_confidence = 0.5
+        else:
+            consistency_confidence = 0.3
+        
+        # Weighted combination of all confidence factors
+        confidence = (
+            data_confidence * 0.25 +          # 25% weight for data availability
+            transaction_confidence * 0.20 +   # 20% weight for transaction count
+            horizon_confidence * 0.20 +       # 20% weight for forecast horizon
+            trend_confidence * 0.15 +         # 15% weight for trend reliability
+            consistency_confidence * 0.20     # 20% weight for spending consistency
+        )
+        
+        # Ensure confidence is within reasonable bounds
+        confidence = max(0.2, min(0.95, confidence))
         
         return {
             "forecast_days": forecast_days,
