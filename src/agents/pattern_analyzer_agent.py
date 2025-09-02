@@ -186,14 +186,14 @@ class PatternAnalyzerAgent:
             std_dev = (sum((x - mean) ** 2 for x in amounts) / len(amounts)) ** 0.5
             
             # Detect spikes (amounts more than 2 standard deviations from mean)
-            for tx in txs:
+            for tx_dict in txs:
                 if std_dev > 0:  # Avoid division by zero
-                    deviation = (tx['amount'] - mean) / std_dev
+                    deviation = (tx_dict['amount'] - mean) / std_dev
                     if deviation > 2:  # More than 2 standard deviations
                         spikes.append({
                             'category': category,
-                            'date': tx.date,
-                            'amount': tx.amount,
+                            'date': tx_dict['date'],
+                            'amount': tx_dict['amount'],
                             'deviation': deviation,
                             'normal_range': {
                                 'min': mean - std_dev,

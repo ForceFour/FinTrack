@@ -631,7 +631,20 @@ elif analysis_type == "Predictive Analytics":
             st.metric("Predicted Change", f"{change:+.1f}%", delta=f"{change:+.1f}%")
         
         with col3:
-            confidence = 0.75  # Simulated confidence
+            # Calculate confidence based on data quality and trend stability
+            data_points = len(daily_spending)
+            trend_variance = daily_spending.std() / daily_spending.mean() if daily_spending.mean() > 0 else 1.0
+            
+            # Base confidence from data availability (more data = higher confidence)
+            data_confidence = min(data_points / 30, 1.0)  # Max confidence with 30+ days
+            
+            # Adjust for trend stability (lower variance = higher confidence)
+            stability_confidence = max(0.5, 1.0 - min(trend_variance, 0.5))
+            
+            # Combined confidence score
+            confidence = (data_confidence + stability_confidence) / 2
+            confidence = max(0.4, min(0.95, confidence))  # Clamp between 40% and 95%
+            
             st.metric("Forecast Confidence", f"{confidence:.1%}")
 
 # AI Insights Section
@@ -711,46 +724,246 @@ with col1:
             heading_style = ParagraphStyle(
                 'CustomHeading',
                 parent=styles['Heading2'],
-                fontSize = 16,
+                fontSize=16,
                 spaceAfter=12,
                 textColor=colors.HexColor('#2c3e50')
+            )
+            subheading_style = ParagraphStyle(
+                'CustomSubheading',
+                parent=styles['Heading3'],
+                fontSize=14,
+                spaceAfter=8,
+                textColor=colors.HexColor('#34495e')
             )
 
             # Title
             story.append(Paragraph("FinTrack Analytics Report", title_style))
-            story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y')}", styles["Italic"]))
+            story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %H:%M')}", styles["Italic"]))
             story.append(Spacer(1, 20))
 
-            # Analysis Type and Date Range
+            # Report metadata
             story.append(Paragraph(f"Analysis Type: {analysis_type}", heading_style))
             if len(date_range) == 2:
                 story.append(Paragraph(f"Date Range: {date_range[0]} to {date_range[1]}", styles["Normal"]))
+            story.append(Paragraph(f"Amount Range: LKR {amount_range[0]:,.2f} to LKR {amount_range[1]:,.2f}", styles["Normal"]))
+            story.append(Paragraph(f"Categories: {', '.join(selected_categories)}", styles["Normal"]))
             story.append(Spacer(1, 20))
 
-            # Key Metrics
-            story.append(Paragraph("Key Metrics", heading_style))
-            
-            # Create table data
+            # Common metrics for all reports
             total_expenses = filtered_df[filtered_df['is_expense']]['amount_abs'].sum() if not filtered_df[filtered_df['is_expense']].empty else 0
             total_income = filtered_df[~filtered_df['is_expense']]['amount_abs'].sum() if not filtered_df[~filtered_df['is_expense']].empty else 0
-            avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean() if not filtered_df[filtered_df['is_expense']].empty else 0
-            top_category = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
-            top_merchant = filtered_df[filtered_df['is_expense']].groupby('merchant')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+            transaction_count = len(filtered_df)
+            
+            # Analysis type specific content
+            if analysis_type == "Overview":
+                # Overview specific content
+                story.append(Paragraph("Financial Overview Summary", heading_style))
+                
+                avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean() if not filtered_df[filtered_df['is_expense']].empty else 0
+                top_category = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+                top_merchant = filtered_df[filtered_df['is_expense']].groupby('merchant')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+                net_flow = total_income - total_expenses
+                savings_rate = (net_flow / total_income * 100) if total_income > 0 else 0
 
-            data = [
-                ["Metric", "Value"],
-                ["Transactions", f"{len(filtered_df):,}"],
-                ["Total Income", f"LKR {total_income:,.2f}"],
-                ["Total Expenses", f"LKR {total_expenses:,.2f}"],
-                ["Net Cash Flow", f"LKR {total_income - total_expenses:,.2f}"],
-                ["Average Expense", f"LKR {avg_expense:,.2f}"],
-                ["Top Spending Category", top_category],
-                ["Top Merchant", top_merchant]
-            ]
+                overview_data = [
+                    ["Metric", "Value"],
+                    ["Total Transactions", f"{transaction_count:,}"],
+                    ["Total Income", f"LKR {total_income:,.2f}"],
+                    ["Total Expenses", f"LKR {total_expenses:,.2f}"],
+                    ["Net Cash Flow", f"LKR {net_flow:,.2f}"],
+                    ["Savings Rate", f"{savings_rate:.1f}%"],
+                    ["Average Expense", f"LKR {avg_expense:,.2f}"],
+                    ["Top Spending Category", top_category],
+                    ["Top Merchant", top_merchant]
+                ]
+                
+            elif analysis_type == "Spending Patterns":
+                # Spending Patterns specific content
+                story.append(Paragraph("Spending Pattern Analysis", heading_style))
+                
+                # Day of week analysis
+                dow_spending = filtered_df[filtered_df['is_expense']].groupby('day_of_week')['amount_abs'].sum()
+                dow_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                dow_spending = dow_spending.reindex(dow_order, fill_value=0)
+                
+                highest_spending_day = dow_spending.idxmax() if not dow_spending.empty else "N/A"
+                lowest_spending_day = dow_spending.idxmin() if not dow_spending.empty else "N/A"
+                
+                # Category distribution
+                category_spending = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().sort_values(ascending=False)
+                top_3_categories = category_spending.head(3)
+                
+                patterns_data = [
+                    ["Pattern Metric", "Value"],
+                    ["Total Transactions Analyzed", f"{transaction_count:,}"],
+                    ["Highest Spending Day", f"{highest_spending_day} (LKR {dow_spending.max():,.2f})"],
+                    ["Lowest Spending Day", f"{lowest_spending_day} (LKR {dow_spending.min():,.2f})"],
+                    ["Top Category", f"{top_3_categories.index[0]} (LKR {top_3_categories.iloc[0]:,.2f})"],
+                    ["Weekend vs Weekday Ratio", f"{(dow_spending[['Saturday', 'Sunday']].sum() / dow_spending[['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']].sum() * 100):.1f}%"],
+                ]
+                
+                # Add day-of-week breakdown
+                story.append(Paragraph("Daily Spending Breakdown", subheading_style))
+                dow_data = [["Day", "Total Spending", "Avg per Transaction"]]
+                for day in dow_order:
+                    day_total = dow_spending.get(day, 0)
+                    day_count = len(filtered_df[(filtered_df['is_expense']) & (filtered_df['day_of_week'] == day)])
+                    day_avg = day_total / day_count if day_count > 0 else 0
+                    dow_data.append([day, f"LKR {day_total:,.2f}", f"LKR {day_avg:,.2f}"])
+                
+                overview_data = patterns_data
+                
+            elif analysis_type == "Trend Analysis":
+                # Trend Analysis specific content
+                story.append(Paragraph("Financial Trend Analysis", heading_style))
+                
+                # Calculate daily trends
+                daily_spending = filtered_df[filtered_df['is_expense']].groupby('date')['amount_abs'].sum()
+                if not daily_spending.empty:
+                    daily_spending = daily_spending.sort_index()
+                    trend_direction = "Increasing" if daily_spending.iloc[-1] > daily_spending.iloc[0] else "Decreasing"
+                    trend_change = ((daily_spending.iloc[-1] - daily_spending.iloc[0]) / daily_spending.iloc[0] * 100) if daily_spending.iloc[0] > 0 else 0
+                    avg_daily = daily_spending.mean()
+                    volatility = daily_spending.std() / avg_daily * 100 if avg_daily > 0 else 0
+                else:
+                    trend_direction = "Stable"
+                    trend_change = 0
+                    avg_daily = 0
+                    volatility = 0
+                
+                # Monthly patterns
+                monthly_avg = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.month)['amount_abs'].mean()
+                highest_month = monthly_avg.idxmax() if not monthly_avg.empty else "N/A"
+                lowest_month = monthly_avg.idxmin() if not monthly_avg.empty else "N/A"
+                month_names = {1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June',
+                             7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December'}
+                
+                trends_data = [
+                    ["Trend Metric", "Value"],
+                    ["Overall Trend Direction", trend_direction],
+                    ["Period Change", f"{trend_change:+.1f}%"],
+                    ["Average Daily Spending", f"LKR {avg_daily:,.2f}"],
+                    ["Spending Volatility", f"{volatility:.1f}%"],
+                    ["Highest Spending Month", f"{month_names.get(highest_month, 'N/A')}"],
+                    ["Lowest Spending Month", f"{month_names.get(lowest_month, 'N/A')}"],
+                    ["Analysis Period (Days)", f"{(date_range[1] - date_range[0]).days if len(date_range) == 2 else 'Full Period'}"]
+                ]
+                
+                overview_data = trends_data
+                
+            elif analysis_type == "Merchant Analysis":
+                # Merchant Analysis specific content
+                story.append(Paragraph("Merchant Spending Analysis", heading_style))
+                
+                # Merchant summary calculations
+                merchant_summary = filtered_df[filtered_df['is_expense']].groupby('merchant').agg({
+                    'amount_abs': ['sum', 'mean', 'count'],
+                    'date': ['min', 'max']
+                })
+                merchant_summary.columns = ['total_spent', 'avg_transaction', 'transaction_count', 'first_visit', 'last_visit']
+                merchant_summary = merchant_summary.sort_values('total_spent', ascending=False)
+                
+                top_merchant = merchant_summary.index[0] if not merchant_summary.empty else "N/A"
+                merchant_count = len(merchant_summary)
+                avg_merchant_spending = merchant_summary['total_spent'].mean() if not merchant_summary.empty else 0
+                
+                merchant_data = [
+                    ["Merchant Metric", "Value"],
+                    ["Total Unique Merchants", f"{merchant_count:,}"],
+                    ["Top Spending Merchant", f"{top_merchant}"],
+                    ["Top Merchant Amount", f"LKR {merchant_summary['total_spent'].iloc[0]:,.2f}" if not merchant_summary.empty else "LKR 0.00"],
+                    ["Average per Merchant", f"LKR {avg_merchant_spending:,.2f}"],
+                    ["Most Frequent Merchant", f"{merchant_summary.sort_values('transaction_count', ascending=False).index[0]}" if not merchant_summary.empty else "N/A"],
+                    ["Merchant Diversity", f"{merchant_count} unique merchants"]
+                ]
+                
+                # Add top 10 merchants table
+                story.append(Paragraph("Top 10 Merchants by Spending", subheading_style))
+                top_merchants_data = [["Rank", "Merchant", "Total Spent", "Avg Transaction", "Visit Count"]]
+                for i, (merchant, data) in enumerate(merchant_summary.head(10).iterrows(), 1):
+                    top_merchants_data.append([
+                        str(i),
+                        str(merchant)[:25] + "..." if len(str(merchant)) > 25 else str(merchant),
+                        f"LKR {data['total_spent']:,.2f}",
+                        f"LKR {data['avg_transaction']:,.2f}",
+                        f"{data['transaction_count']:,}"
+                    ])
+                
+                overview_data = merchant_data
+                
+            elif analysis_type == "Predictive Analytics":
+                # Predictive Analytics specific content
+                story.append(Paragraph("Predictive Financial Analysis", heading_style))
+                
+                # Calculate forecast data
+                daily_spending = filtered_df[filtered_df['is_expense']].groupby(filtered_df['date'].dt.date)['amount_abs'].sum()
+                if not daily_spending.empty:
+                    recent_trend = daily_spending.tail(30).mean()
+                    historical_avg = daily_spending.mean()
+                    trend_change = ((recent_trend - historical_avg) / historical_avg * 100) if historical_avg > 0 else 0
+                    
+                    # Forecast calculations
+                    forecast_30_days = recent_trend * 30
+                    current_monthly = daily_spending.tail(30).sum() if len(daily_spending) >= 30 else daily_spending.sum()
+                    predicted_change = ((forecast_30_days - current_monthly) / current_monthly * 100) if current_monthly > 0 else 0
+                    
+                    # Calculate confidence based on data quality and trend stability
+                    data_points = len(daily_spending)
+                    trend_variance = daily_spending.std() / daily_spending.mean() if daily_spending.mean() > 0 else 1.0
+                    data_confidence = min(data_points / 30, 1.0)
+                    stability_confidence = max(0.5, 1.0 - min(trend_variance, 0.5))
+                    forecast_confidence = (data_confidence + stability_confidence) / 2
+                    forecast_confidence = max(0.4, min(0.95, forecast_confidence))
+                else:
+                    recent_trend = 0
+                    forecast_30_days = 0
+                    predicted_change = 0
+                    forecast_confidence = 0.5
+                    trend_change = 0
+                
+                # Calculate forecast methodology description based on actual data
+                methodology_line1 = "Linear trend projection"
+                methodology_line2 = "confidence weighted"
+                if len(daily_spending) < 10:
+                    methodology_line1 = "Simple averaging"
+                    methodology_line2 = "limited data available"
+                elif trend_variance > 0.5:
+                    methodology_line1 = "Robust trend projection"
+                    methodology_line2 = "variance adjusted"
+                
+                predictive_data = [
+                    ["Predictive Metric", "Value"],
+                    ["Historical Daily Average", f"LKR {daily_spending.mean() if not daily_spending.empty else 0:,.2f}"],
+                    ["Recent Trend (30 days)", f"LKR {recent_trend:,.2f}/day"],
+                    ["Trend Direction", f"{'Increasing' if trend_change > 0 else 'Decreasing' if trend_change < 0 else 'Stable'}"],
+                    ["30-Day Forecast", f"LKR {forecast_30_days:,.2f}"],
+                    ["Predicted Monthly Change", f"{predicted_change:+.1f}%"],
+                    ["Forecast Confidence", f"{forecast_confidence:.1%}"],
+                    ["Data Points Used", f"{len(daily_spending) if not daily_spending.empty else 0} days"]
+                ]
+                
+                overview_data = predictive_data
+            
+            else:
+                # Default overview for other analysis types
+                story.append(Paragraph("General Analytics Summary", heading_style))
+                
+                avg_expense = filtered_df[filtered_df['is_expense']]['amount_abs'].mean() if not filtered_df[filtered_df['is_expense']].empty else 0
+                top_category = filtered_df[filtered_df['is_expense']].groupby('category')['amount_abs'].sum().idxmax() if not filtered_df[filtered_df['is_expense']].empty else "N/A"
+                
+                overview_data = [
+                    ["Metric", "Value"],
+                    ["Transactions", f"{transaction_count:,}"],
+                    ["Total Income", f"LKR {total_income:,.2f}"],
+                    ["Total Expenses", f"LKR {total_expenses:,.2f}"],
+                    ["Net Cash Flow", f"LKR {total_income - total_expenses:,.2f}"],
+                    ["Average Expense", f"LKR {avg_expense:,.2f}"],
+                    ["Top Spending Category", top_category]
+                ]
 
-            # Create table
-            table = Table(data, colWidths=[4*inch, 3*inch])
-            table.setStyle(TableStyle([
+            # Create main metrics table
+            table = Table(overview_data, colWidths=[4*inch, 3*inch])
+            table_style = TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -764,10 +977,48 @@ with col1:
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('BOX', (0, 0), (-1, -1), 2, colors.black),
                 ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4')),
-            ]))
+            ])
+            
+            table.setStyle(table_style)
             
             story.append(table)
             story.append(Spacer(1, 20))
+            
+            # Add analysis-specific detailed sections
+            if analysis_type == "Spending Patterns" and 'dow_data' in locals():
+                story.append(Paragraph("Daily Spending Breakdown", subheading_style))
+                dow_table = Table(dow_data, colWidths=[2*inch, 2.5*inch, 2.5*inch])
+                dow_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+                story.append(dow_table)
+                story.append(Spacer(1, 15))
+                
+            elif analysis_type == "Merchant Analysis" and 'top_merchants_data' in locals():
+                story.append(Paragraph("Top 10 Merchants Detail", subheading_style))
+                merchants_table = Table(top_merchants_data, colWidths=[0.5*inch, 2.5*inch, 1.5*inch, 1.5*inch, 1*inch])
+                merchants_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e74c3c')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+                story.append(merchants_table)
+                story.append(Spacer(1, 15))
+
+            # Footer
+            story.append(Spacer(1, 30))
+            story.append(Paragraph("Generated by FinTrack Analytics System", styles["Normal"]))
+            story.append(Paragraph(f"Report ID: {datetime.now().strftime('%Y%m%d_%H%M%S')}", styles["Italic"]))
 
             doc.build(story)
             buffer.seek(0)
