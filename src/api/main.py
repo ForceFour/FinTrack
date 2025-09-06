@@ -1,224 +1,196 @@
 """FastAPI application for FinTrack transaction processing"""
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 import uvicorn
+import logging
+import sys
+import os
 
-from ..workflows.transaction_workflow import TransactionWorkflow
-from ..schemas.transaction_schemas import RawTransaction
-from ..routes.workflow import router as workflow_router
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+from src.workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode, get_workflow_instance
+from src.schemas.transaction_schemas import RawTransaction
+
+# Import routers
+from src.routes.transactions import router as transactions_router
+from src.routes.auth import router as auth_router
+from src.routes.analytics import router as analytics_router
+from src.routes.suggestions import router as suggestions_router
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
     title="FinTrack API",
-    description="Financial Transaction Analysis and Processing System",
-    version="0.1.0"
+    description="Financial Transaction Analysis and Processing System with LangGraph",
+    version="2.0.0"
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include workflow routes
-app.include_router(workflow_router, prefix="/api/v1")
+# Include routers
+app.include_router(transactions_router)
+app.include_router(auth_router)
+app.include_router(analytics_router)
+app.include_router(suggestions_router)
 
-# Initialize workflow
-workflow = TransactionWorkflow()
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application on startup"""
+    logger.info("🚀 Starting FinTrack API...")
+    try:
+        # Initialize database
+        from src.core.database_config import init_database
+        await init_database()
+        logger.info("✅ FinTrack API startup complete")
+    except Exception as e:
+        logger.error(f"❌ Failed to start FinTrack API: {e}")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("🛑 Shutting down FinTrack API...")
+    try:
+        from src.core.database_config import close_database
+        await close_database()
+    except Exception as e:
+        logger.error(f"⚠️ Error during shutdown: {e}")
+    logger.info("✅ FinTrack API shutdown complete")
 
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {"message": "FinTrack API - Financial Transaction Analysis System"}
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "fintrack-api"}
 
-
-@app.post("/transactions/process")
-async def process_transactions(transactions: List[RawTransaction]):
-    """
-    Process raw transactions through the complete 6-agent pipeline
-    
-    Args:
-        transactions: List of raw transaction data
-        
-    Returns:
-        Complete processing results including classifications, insights, and suggestions
-    """
+@app.get("/api/health/full")
+async def full_health_check():
+    """Full system health check"""
     try:
-        result = await workflow.process_transactions(transactions)
+        # Check workflow system
+        try:
+            workflow = get_workflow_instance()
+            workflow_health = {"status": "healthy", "workflow": "operational"}
+        except Exception as e:
+            workflow_health = {"status": "unhealthy", "error": str(e)}
+
         return {
-            "status": "success",
-            "data": result,
-            "transactions_processed": len(transactions)
+            "status": "healthy" if workflow_health["status"] == "healthy" else "degraded",
+            "timestamp": datetime.utcnow().isoformat(),
+            "workflow": workflow_health
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Health check failed: {str(e)}")
 
-
-@app.post("/transactions/ingest")
-async def ingest_transactions(transactions: List[RawTransaction]):
-    """
-    Process transactions only through Ingestion Agent (Agent 1)
-    """
+@app.post("/api/v1/transactions/process")
+async def process_transaction(
+    transaction: RawTransaction,
+    mode: str = "full_pipeline",
+    user_id: str = "api_user"
+):
+    """Process a single transaction through the workflow"""
     try:
-        ingestion_agent = workflow.ingestion_agent
-        result = ingestion_agent.process(transactions)
-        return {
-            "status": "success",
-            "data": result,
-            "stage": "ingestion_complete"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+        workflow = get_workflow_instance()
 
+        # Convert mode string to WorkflowMode enum
+        try:
+            workflow_mode = WorkflowMode(mode)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid workflow mode: {mode}. Valid modes: {[m.value for m in WorkflowMode]}"
+            )
 
-@app.post("/transactions/classify")
-async def classify_transactions(transactions: List[Dict[str, Any]]):
-    """
-    Classify preprocessed transactions (Agents 2-3: NER/Merchant + Classifier)
-    """
-    try:
-        # Process through NER/Merchant Agent
-        ner_result = workflow.ner_merchant_agent.process(transactions)
-        
-        # Process through Classifier Agent
-        classifier_result = workflow.classifier_agent.process(ner_result)
-        
-        return {
-            "status": "success",
-            "data": classifier_result,
-            "stage": "classification_complete"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
-
-
-@app.post("/transactions/analyze")
-async def analyze_patterns(transactions: List[Dict[str, Any]]):
-    """
-    Analyze spending patterns (Agent 4: Pattern Analyzer)
-    """
-    try:
-        result = workflow.pattern_analyzer_agent.process(transactions)
-        return {
-            "status": "success",
-            "data": result,
-            "stage": "pattern_analysis_complete"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pattern analysis failed: {str(e)}")
-
-
-@app.post("/transactions/suggest")
-async def generate_suggestions(pattern_insights: List[Dict[str, Any]], budget_thresholds: Dict[str, float] = None):
-    """
-    Generate financial suggestions (Agent 5: Suggestion Agent)
-    """
-    try:
-        input_data = {
-            "pattern_insights": pattern_insights,
-            "budget_thresholds": budget_thresholds or {},
-            "user_preferences": {}
-        }
-        result = workflow.suggestion_agent.process(input_data)
-        return {
-            "status": "success",
-            "data": result,
-            "stage": "suggestions_complete"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Suggestion generation failed: {str(e)}")
-
-
-@app.post("/transactions/security-check")
-async def security_check(transactions: List[Dict[str, Any]], user_profile: Dict[str, Any] = None):
-    """
-    Perform security and anomaly checks (Agent 6: Safety Guard)
-    """
-    try:
-        input_data = {
-            "classified_transactions": transactions,
-            "user_profile": user_profile or {}
-        }
-        result = workflow.safety_guard_agent.process(input_data)
-        return {
-            "status": "success",
-            "data": result,
-            "stage": "security_check_complete"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Security check failed: {str(e)}")
-
-
-@app.post("/api/transactions/natural-language")
-async def process_natural_language_transaction(request: Dict[str, Any]):
-    """
-    Process natural language transaction input through conversational interface
-    
-    Args:
-        request: Dictionary containing user_input, user_id, and conversation_context
-        
-    Returns:
-        Dictionary with status, response, and conversation state
-    """
-    try:
-        user_input = request.get("user_input")
-        user_id = request.get("user_id", "default_user")
-        conversation_context = request.get("conversation_context", {})
-        
-        if not user_input:
-            raise HTTPException(status_code=400, detail="user_input is required")
-        
-        # Import and use the transaction service
-        from ..services.transaction_service import TransactionService
-        from ..core.database import get_database
-        
-        # Initialize service with database
-        db = get_database()
-        service = TransactionService(db)
-        
-        # Process the natural language input
-        result = await service.process_natural_language_transaction(
-            user_input=user_input,
+        # Execute workflow
+        result = await workflow.execute_workflow(
+            mode=workflow_mode,
+            user_input=transaction.description,
             user_id=user_id,
-            conversation_context=conversation_context
+            amount=transaction.amount,
+            date=transaction.date,
+            merchant=transaction.merchant
         )
-        
-        return result
-        
+
+        return {
+            "status": "success",
+            "message": "Transaction processed successfully",
+            "workflow_id": result.get("workflow_id"),
+            "execution_time": result.get("execution_time"),
+            "result": result.get("result", {})
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Natural language processing failed: {str(e)}")
+        logger.error(f"Transaction processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Transaction processing failed: {str(e)}")
 
+@app.get("/api/v1/workflow/modes")
+async def get_workflow_modes():
+    """Get available workflow modes"""
+    try:
+        modes = [{"value": mode.value, "name": mode.value.replace("_", " ").title()} for mode in WorkflowMode]
+        return {
+            "status": "success",
+            "modes": modes,
+            "default_mode": "full_pipeline"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow modes: {str(e)}")
 
-@app.get("/agents/status")
-async def get_agents_status():
-    """
-    Get status of all agents in the pipeline
-    """
-    return {
-        "agents": [
-            {"name": "Ingestion Agent", "status": "active", "description": "Normalizes raw transaction data"},
-            {"name": "NER/Merchant Agent", "status": "active", "description": "Extracts merchant information"},
-            {"name": "Classifier Agent", "status": "active", "description": "Predicts expense categories"},
-            {"name": "Pattern Analyzer Agent", "status": "active", "description": "Detects spending patterns"},
-            {"name": "Suggestion Agent", "status": "active", "description": "Generates financial recommendations"},
-            {"name": "Safety Guard Agent", "status": "active", "description": "Flags anomalies and security issues"}
-        ],
-        "workflow_status": "ready"
-    }
+@app.get("/api/v1/workflow/status")
+async def get_workflow_status():
+    """Get workflow system status and statistics"""
+    try:
+        workflow = get_workflow_instance()
+        stats = workflow.get_all_workflows_status()
 
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "workflow_statistics": stats
+        }
+    except Exception as e:
+        logger.error(f"Workflow status error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow status: {str(e)}")
+
+@app.get("/api/v1/agents/performance")
+async def get_agent_performance():
+    """Get agent performance statistics"""
+    try:
+        workflow = get_workflow_instance()
+        performance_stats = workflow.get_agent_performance_stats()
+
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "agent_performance": performance_stats
+        }
+    except Exception as e:
+        logger.error(f"Agent performance error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get agent performance: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Run the application
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
