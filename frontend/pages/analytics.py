@@ -34,6 +34,82 @@ def format_currency(amount, show_full_on_hover=True):
         return f"<span title='{full_value}'>{simple_value}</span>"
     return simple_value
 
+def shorten_category_name(category):
+    """Shorten category names for better chart display"""
+    category_mapping = {
+        'Food & Dining': 'Food',
+        'Transportation': 'Transport',
+        'Entertainment': 'Entertainment',
+        'Utilities': 'Utilities',
+        'Miscellaneous': 'Miscellaneous',
+        'Donations & Charity': 'Charity',
+        'Healthcare': 'Health',
+        'Shopping': 'Shopping',
+        'Education': 'Education',
+        'Fuel': 'Fuel',
+        'Salary': 'Salary',
+        'Investment': 'Investment',
+        'Freelance': 'Freelance',
+        'Business': 'Business',
+        'Insurance': 'Insurance',
+        'Travel': 'Travel',
+        'Groceries': 'Groceries',
+        'Bills': 'Bills',
+        'Income': 'Income',
+        'Cash': 'Cash',
+        'Credit': 'Credit',
+        'Bank': 'Bank',
+        'ATM': 'ATM',
+        'Online': 'Online',
+        'Mobile': 'Mobile',
+        'Transfer': 'Transfer',
+        'Rent': 'Rent',
+        'Loan': 'Loan',
+        'Interest': 'Interest',
+        'Fee': 'Fee',
+        'Tax': 'Tax',
+        'Refund': 'Refund',
+        'Subscription': 'Subscription'
+    }
+    
+    # If category is in mapping, use it
+    if category in category_mapping:
+        return category_mapping[category]
+    
+    # If not mapped, try to create a meaningful short name
+    category_lower = category.lower()
+    
+    # Common meaningful abbreviations
+    if 'food' in category_lower or 'dining' in category_lower or 'restaurant' in category_lower:
+        return 'Food'
+    elif 'transport' in category_lower or 'travel' in category_lower or 'uber' in category_lower or 'taxi' in category_lower:
+        return 'Transport'
+    elif 'health' in category_lower or 'medical' in category_lower or 'hospital' in category_lower:
+        return 'Health'
+    elif 'shop' in category_lower or 'store' in category_lower or 'retail' in category_lower:
+        return 'Shopping'
+    elif 'util' in category_lower or 'electric' in category_lower or 'water' in category_lower or 'gas' in category_lower:
+        return 'Utilities'
+    elif 'entertain' in category_lower or 'movie' in category_lower or 'game' in category_lower:
+        return 'Entertainment'
+    elif 'educat' in category_lower or 'school' in category_lower or 'university' in category_lower:
+        return 'Education'
+    elif 'insur' in category_lower:
+        return 'Insurance'
+    elif 'subscript' in category_lower or 'recurring' in category_lower:
+        return 'Subscription'
+    elif 'donat' in category_lower or 'charity' in category_lower:
+        return 'Charity'
+    elif 'misc' in category_lower or 'other' in category_lower:
+        return 'Miscellaneous'
+    else:
+        # For unknown categories, use first word or first 10 characters if single word
+        words = category.split()
+        if len(words) > 1:
+            return words[0][:10]  # First word, max 10 chars
+        else:
+            return category[:10]  # Single word, max 10 chars
+
 st.set_page_config(page_title="Analytics", page_icon="📈", layout="wide")
 
 st.title("Advanced Analytics")
@@ -352,15 +428,25 @@ elif analysis_type == "Spending Patterns":
         dow_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         dow_spending = dow_spending.reindex(dow_order, fill_value=0)
         
+        # Define distinct blue shades for each day - each day gets a different color
+        day_colors = ['#08306b', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7']
+        
+        # Create DataFrame for proper color mapping
+        dow_df = pd.DataFrame({
+            'Day': dow_spending.index,
+            'Amount': dow_spending.values
+        })
+        
         fig_dow = px.bar(
-            x=dow_spending.index,
-            y=dow_spending.values,
+            dow_df,
+            x='Day',
+            y='Amount',
             title="Spending by Day of Week",
-            labels={'x': 'Day', 'y': 'Amount (LKR)'},
-            color=dow_spending.values,
-            color_continuous_scale='Blues'
+            labels={'Amount': 'Amount (LKR)'},
+            color='Day',
+            color_discrete_sequence=day_colors
         )
-        fig_dow.update_layout(showlegend=False, coloraxis_showscale=False)
+        fig_dow.update_layout(showlegend=False)
         st.plotly_chart(fig_dow, use_container_width=True)
     
     with col2:
@@ -392,19 +478,44 @@ elif analysis_type == "Spending Patterns":
             labels={'x': 'Amount (LKR)', 'y': 'Frequency'}
         )
         fig_hist.update_traces(marker_color='lightcoral')
+        fig_hist.update_layout(
+            height=400,  # Match the height of the second chart
+            margin=dict(l=50, r=50, t=50, b=50)  # Consistent margins
+        )
         st.plotly_chart(fig_hist, use_container_width=True)
     
     with col2:
-        # Box plot by category
-        fig_box = px.box(
-            filtered_df[filtered_df['is_expense']],
-            x='category',
+        # Bar chart by category with shortened names
+        expense_data = filtered_df[filtered_df['is_expense']].copy()
+        expense_data['short_category'] = expense_data['category'].apply(shorten_category_name)
+        
+        # Group by shortened category and calculate total expenses
+        category_totals = expense_data.groupby('short_category')['amount_abs'].sum().reset_index()
+        category_totals = category_totals.sort_values('amount_abs', ascending=True)  # Sort for horizontal bar
+        
+        fig_bar = px.bar(
+            category_totals,
+            x='short_category',
             y='amount_abs',
             title="Expense Distribution by Category",
-            labels={'amount_abs': 'Amount (LKR)'}
+            labels={'amount_abs': 'Amount (LKR)', 'short_category': 'Category'},
+            color='amount_abs',
+            color_continuous_scale='viridis'
         )
-        fig_box.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_box, use_container_width=True)
+        fig_bar.update_layout(
+            height=400,
+            showlegend=False,
+            coloraxis_showscale=False,
+            margin=dict(l=50, r=50, t=50, b=120),  # Increased bottom margin for category names
+            xaxis=dict(
+                tickangle=-45,  # Rotate category names for better readability
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(
+                tickformat=',.0f'  # Format numbers with commas
+            )
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
 
 elif analysis_type == "Trend Analysis":
     st.subheader("Advanced Trend Analysis")
@@ -494,22 +605,25 @@ elif analysis_type == "Trend Analysis":
         full_week_data = pd.Series(index=range(7), data=0.0)  # Initialize with zeros
         full_week_data.update(weekly_avg)  # Update with actual values
         
-        # Create DataFrame for weekly plot
+        # Create DataFrame for weekly plot with distinct purple shades for each day
         weekly_df = pd.DataFrame({
             'Day': weekday_names,
-            'Average Spending': full_week_data.values
+            'Average_Spending': full_week_data.values
         })
+        
+        # Define distinct purple shades for each day - each day gets a different color
+        purple_colors = ['#3f007d', '#54278f', '#6a51a3', '#807dba', '#9e9ac8', '#bcbddc', '#dadaeb']
         
         fig_weekly = px.bar(
             weekly_df,
             x='Day',
-            y='Average Spending',
+            y='Average_Spending',
             title="Average Daily Spending Pattern",
-            color='Average Spending',
-            color_continuous_scale='Purples',
-            labels={'Average Spending': 'Amount (LKR)'}
+            labels={'Average_Spending': 'Amount (LKR)'},
+            color='Day',
+            color_discrete_sequence=purple_colors
         )
-        fig_weekly.update_layout(showlegend=False, coloraxis_showscale=False)
+        fig_weekly.update_layout(showlegend=False)
         st.plotly_chart(fig_weekly, use_container_width=True)
 
 elif analysis_type == "Merchant Analysis":
@@ -746,7 +860,6 @@ with col1:
             if len(date_range) == 2:
                 story.append(Paragraph(f"Date Range: {date_range[0]} to {date_range[1]}", styles["Normal"]))
             story.append(Paragraph(f"Amount Range: LKR {amount_range[0]:,.2f} to LKR {amount_range[1]:,.2f}", styles["Normal"]))
-            story.append(Paragraph(f"Categories: {', '.join(selected_categories)}", styles["Normal"]))
             story.append(Spacer(1, 20))
 
             # Common metrics for all reports
