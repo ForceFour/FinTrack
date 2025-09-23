@@ -1,6 +1,11 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "minimal_workflow": "langgraph_server:app"
-  }
+    "minimal_workflow": "langgraph_server:app",
+    "full_pipeline": "src.workflows.unified_workflow:get_workflow_instance().workflows.full_pipeline",
+    "quick_classification": "src.workflows.unified_workflow:get_workflow_instance().workflows.quick_class",
+    "ingestion_only": "src.workflows.unified_workflow:get_workflow_instance().workflows.ingestion_only",
+    "background_processing": "src.workflows.unified_workflow:get_workflow_instance().workflows.background"
+  },
+  "env": ".env"
 }
