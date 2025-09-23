@@ -15,9 +15,9 @@ import logging
 # Add project root to sys.path to resolve src module
 sys.path.append('E:\\IRWA_PROJECT\\FinTrack')
 
-# Attempt to import EnhancedClassifierAgent
+# Attempt to import UnifiedClassifierAgent
 try:
-    from src.agents.classifier_agent import EnhancedClassifierAgent
+    from src.agents.unified_classifier_agent import UnifiedClassifierAgent
     classifier_available = True
 except ModuleNotFoundError:
     st.error("Module 'classifier_agent' not found. Using fallback categorization. Please ensure 'classifier_agent.py' is in 'E:\\IRWA_PROJECT\\FinTrack\\src\\agents\\'.")
@@ -73,7 +73,7 @@ if 'transactions' in st.session_state and st.session_state.transactions:
 
     # Initialize the transaction classifier agent
     classifier_agent = TransactionClassificationAgent()
-    
+
     # Preprocess transactions
     expense_transactions = []
     for t in st.session_state.transactions:
@@ -88,14 +88,14 @@ if 'transactions' in st.session_state and st.session_state.transactions:
                 metadata={}
             )
             expense_transactions.append(preprocessed)
-    
+
     if expense_transactions:
         # Classify transactions using the agent
         classification_input = TransactionClassificationInput(
             preprocessed_transactions=expense_transactions
         )
         classification_output = classifier_agent.process(classification_input)
-        
+
         # Create DataFrame from classified transactions
         expense_data = []
         for ct in classification_output.classified_transactions:
@@ -108,12 +108,12 @@ if 'transactions' in st.session_state and st.session_state.transactions:
                 'category': original_txn.category or 'uncategorized',
                 'confidence': ct.classification_confidence
             })
-        
+
         expense_df = pd.DataFrame(expense_data)
-        
+
         # Calculate spending by category
         spending_by_category = expense_df.groupby('category')['amount'].sum().abs()
-        
+
         # Create pie chart
         fig = px.pie(
             values=spending_by_category.values,
@@ -124,7 +124,7 @@ if 'transactions' in st.session_state and st.session_state.transactions:
         )
         fig.update_traces(textinfo='percent+label')
         st.plotly_chart(fig, use_container_width=True)
-        
+
         # Display category-wise spending table
         st.markdown("#### Category-wise Spending Breakdown")
         spending_df = pd.DataFrame({
@@ -168,7 +168,7 @@ def fallback_categorize(description: str, amount: float, merchant: str = '') -> 
     else:
         return 'miscellaneous'
 
-# Add classify_transaction method to EnhancedClassifierAgent if available
+# Add classify_transaction method to UnifiedClassifierAgent if available
 if classifier_available:
     def classify_transaction(self, description: str, amount: float, merchant: str = '') -> Dict[str, str]:
         """Classify a single transaction using the process method"""
@@ -186,18 +186,18 @@ if classifier_available:
                 metadata={}
             )
             # Process as a single transaction
-            input_data = self.ClassifierAgentInput(merchant_transactions=[txn])
+            input_data = self.UnifiedClassifierInput(merchant_transactions=[txn])
             output = self.process(input_data)
             return {'category': output.classified_transactions[0].predicted_category.value}
         except Exception as e:
             logging.error(f"Classification failed: {e}")
             return {'category': 'miscellaneous'}
-    
-    import types
-    EnhancedClassifierAgent.classify_transaction = types.MethodType(classify_transaction, EnhancedClassifierAgent)
 
-# Initialize EnhancedClassifierAgent if available
-classifier = EnhancedClassifierAgent() if classifier_available else None
+    import types
+    UnifiedClassifierAgent.classify_transaction = types.MethodType(classify_transaction, UnifiedClassifierAgent)
+
+# Initialize UnifiedClassifierAgent if available
+classifier = UnifiedClassifierAgent() if classifier_available else None
 
 # Get and categorize transaction data
 df = pd.DataFrame(st.session_state.transactions)
