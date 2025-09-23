@@ -8,7 +8,7 @@ from datetime import datetime
 
 class LoginRequest(BaseModel):
     """User login request"""
-    email: EmailStr
+    username: str  # Can be username or email
     password: str
 
 class Token(BaseModel):
@@ -25,7 +25,7 @@ class TokenData(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     scopes: Optional[list] = []
-    
+
 class RefreshTokenRequest(BaseModel):
     """Refresh token request"""
     refresh_token: str

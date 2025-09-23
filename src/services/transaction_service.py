@@ -1,191 +1,358 @@
 """
-Transaction Service - Mock implementation
-TODO: Implement full transaction processing with database
+Transaction Service - Enhanced implementation with Database Persistence
+Handles transaction processing with UnifiedWorkflow AND database storage
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 from ..models.transaction import Transaction, TransactionCreate, TransactionResponse
+from ..db.operations import TransactionCRUD
 
 class TransactionService:
-    """Mock transaction service"""
-    
+    """Enhanced transaction service with database persistence"""
+
     def __init__(self, db):
         self.db = db
-    
+
     async def process_uploaded_transactions(self, df: pd.DataFrame, user_id: str) -> Dict[str, int]:
-        """Process uploaded transaction file THROUGH THE PIPELINE"""
+        """Process uploaded transaction file through the unified workflow pipeline AND save to database"""
         from ..agents.ingestion_agent import EnhancedIngestionAgent, IngestionAgentInput
-        from ..workflows.transaction_workflow import TransactionWorkflow
-        
-        # Initialize enhanced ingestion agent
-        ingestion_agent = EnhancedIngestionAgent()
-        
-        # Process through enhanced ingestion agent first
-        input_data = IngestionAgentInput(
-            input_type="structured",
-            dataframe=df
-        )
-        ingestion_result = ingestion_agent.process(input_data)
-        
-        if not ingestion_result.preprocessed_transactions:
+        from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
+
+        try:
+            # Initialize enhanced ingestion agent
+            ingestion_agent = EnhancedIngestionAgent()
+
+            # Process through enhanced ingestion agent first
+            input_data = IngestionAgentInput(
+                input_type="structured",
+                dataframe=df
+            )
+            ingestion_result = ingestion_agent.process(input_data)
+
+            if ingestion_result.status == "success" and ingestion_result.preprocessed_transactions:
+                # Convert processed transactions to database records
+                saved_count = 0
+                for transaction_data in ingestion_result.preprocessed_transactions:
+                    try:
+                        # Prepare data for database insertion
+                        db_data = {
+                            "user_id": user_id,
+                            "amount": transaction_data.get("amount", 0.0),
+                            "description": transaction_data.get("description", ""),
+                            "date": transaction_data.get("date", datetime.now()),
+                            "merchant": transaction_data.get("merchant"),
+                            "category": transaction_data.get("category"),
+                            "subcategory": transaction_data.get("subcategory"),
+                            "transaction_type": transaction_data.get("transaction_type", "debit"),
+                            "status": "completed",
+                            "processed_by_agent": "ingestion_agent",
+                            "processing_version": "1.0"
+                        }
+                        
+                        # Save to database
+                        await TransactionCRUD.create_transaction(self.db, db_data)
+                        saved_count += 1
+                        
+                    except Exception as e:
+                        print(f"⚠️ Failed to save transaction: {e}")
+                        continue
+
+                print(f"✅ Saved {saved_count} transactions to database")
+                return {
+                    "total": len(df),
+                    "processed": len(ingestion_result.preprocessed_transactions),
+                    "saved_to_db": saved_count,
+                    "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
+                    "errors": len(ingestion_result.errors)
+                }
+            else:
+                print(f"❌ Preprocessing failed: {ingestion_result.error}")
+                return {
+                    "total": len(df),
+                    "processed": 0,
+                    "saved_to_db": 0,
+                    "skipped": len(df),
+                    "errors": 1
+                }
+                
+        except Exception as e:
+            print(f"❌ Upload processing failed: {e}")
             return {
                 "total": len(df),
-                "new": 0,
-                "duplicates": len(df),
-                "insights": 0,
-                "suggestions": 0,
-                "alerts": 0
+                "processed": 0,
+                "saved_to_db": 0,
+                "skipped": len(df),
+                "errors": 1
             }
-        
-        # Process through the workflow starting from NER agent (skip redundant ingestion)
-        workflow = TransactionWorkflow()
-        result = await workflow.process_preprocessed_transactions(ingestion_result.preprocessed_transactions)
-        
-        # Store the processed data
-        processed_count = len(result["processed_transactions"])
-        
-        return {
-            "total": len(df),
-            "new": processed_count,
-            "duplicates": len(df) - processed_count,
-            "insights": len(result["insights"]),
-            "suggestions": len(result["suggestions"]),
-            "alerts": len(result["security_alerts"])
-        }
-    
-    async def process_natural_language_transaction(
-        self, 
-        user_input: str, 
-        user_id: str, 
-        conversation_context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Process natural language transaction input"""
-        from ..agents.ingestion_agent import EnhancedIngestionAgent, IngestionAgentInput
-        from ..workflows.transaction_workflow import TransactionWorkflow
-        
-        # Initialize enhanced ingestion agent
-        ingestion_agent = EnhancedIngestionAgent()
-        
-        # Process through enhanced ingestion agent (unstructured = conversation)
-        input_data = IngestionAgentInput(
-            input_type="unstructured",
-            natural_language_input=user_input,
-            conversation_context=conversation_context
-        )
-        ingestion_result = ingestion_agent.process(input_data)
-        
-        # If requires user input, return conversation response
-        if ingestion_result.requires_user_input:
-            return {
-                "status": "conversation_ongoing",
-                "response": ingestion_result.conversation_response,
-                "conversation_state": ingestion_result.conversation_state,
-                "requires_input": True
-            }
-        
-        # If transaction is complete, process through pipeline
-        if ingestion_result.preprocessed_transactions:
-            # Process through the workflow starting from NER agent (skip redundant ingestion)
-            workflow = TransactionWorkflow()
-            result = await workflow.process_preprocessed_transactions(ingestion_result.preprocessed_transactions)
-            
-            return {
-                "status": "completed",
-                "response": ingestion_result.conversation_response or "Transaction processed successfully!",
-                "processed_transactions": len(result["processed_transactions"]),
-                "insights": len(result["insights"]),
-                "suggestions": len(result["suggestions"]),
-                "alerts": len(result["security_alerts"]),
-                "requires_input": False
-            }
-        
-        # If processing failed
-        return {
-            "status": "failed",
-            "response": ingestion_result.conversation_response or "Failed to process transaction.",
-            "error": ingestion_result.metadata.get("error"),
-            "requires_input": False
-        }
-        
-    async def get_transactions(self, filters: Dict[str, Any]) -> Tuple[List[TransactionResponse], int]:
-        """Get transactions with filters"""
-        # Mock implementation - return empty list
-        return [], 0
-    
+
     async def create_transaction(self, transaction_data: Dict[str, Any]) -> TransactionResponse:
-        """Create new transaction"""
-        # Mock implementation
-        return TransactionResponse(
-            id="mock_id",
-            user_id=transaction_data.get("user_id", ""),
-            amount=transaction_data.get("amount", 0),
-            description=transaction_data.get("description", ""),
-            date=transaction_data.get("date", datetime.now().date()),
-            created_at=datetime.now()
-        )
-    
+        """Create a single transaction and save to database"""
+        try:
+            # Create transaction in database
+            db_transaction = await TransactionCRUD.create_transaction(self.db, transaction_data)
+            
+            # Convert to response format
+            return TransactionResponse(**db_transaction.to_dict())
+            
+        except Exception as e:
+            raise ValueError(f"Failed to create transaction: {str(e)}")
+
     async def get_transaction(self, transaction_id: str, user_id: str) -> Optional[TransactionResponse]:
-        """Get single transaction"""
-        # Mock implementation
+        """Get a specific transaction from database"""
+        db_transaction = await TransactionCRUD.get_transaction(self.db, transaction_id, user_id)
+        
+        if db_transaction:
+            return TransactionResponse(**db_transaction.to_dict())
         return None
-    
-    async def update_transaction(self, transaction_id: str, update_data: Dict[str, Any]) -> TransactionResponse:
-        """Update transaction"""
-        # Mock implementation
-        return TransactionResponse(
-            id=transaction_id,
-            user_id="mock_user",
-            amount=100,
-            description="Mock transaction",
-            date=datetime.now().date(),
-            created_at=datetime.now()
-        )
-    
+
+    async def get_transactions(self, filters: Dict[str, Any]) -> Tuple[List[TransactionResponse], int]:
+        """Get transactions from database with filtering and pagination"""
+        db_transactions, total = await TransactionCRUD.get_transactions(self.db, filters)
+        
+        transactions = [TransactionResponse(**t.to_dict()) for t in db_transactions]
+        return transactions, total
+
+    async def update_transaction(self, transaction_id: str, update_data: Dict[str, Any]) -> Optional[TransactionResponse]:
+        """Update a transaction in database"""
+        db_transaction = await TransactionCRUD.update_transaction(self.db, transaction_id, update_data)
+        
+        if db_transaction:
+            return TransactionResponse(**db_transaction.to_dict())
+        return None
+
     async def delete_transaction(self, transaction_id: str) -> bool:
-        """Delete transaction"""
-        # Mock implementation
-        return True
-    
+        """Delete a transaction from database"""
+        return await TransactionCRUD.delete_transaction(self.db, transaction_id)
+
     async def batch_create_transactions(self, transactions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Batch create transactions"""
-        # Mock implementation
-        return {
-            "created": len(transactions_data),
-            "failed": 0,
-            "errors": []
-        }
-    
+        """Create multiple transactions in database"""
+        return await TransactionCRUD.batch_create_transactions(self.db, transactions_data)
+
+    async def verify_transaction_ownership(self, transaction_ids: List[str], user_id: str) -> List:
+        """Verify transaction ownership"""
+        return await TransactionCRUD.verify_transaction_ownership(self.db, transaction_ids, user_id)
+
     async def batch_update_transactions(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Batch update transactions"""
-        # Mock implementation
+        updated = 0
+        failed = 0
+        errors = []
+        
+        for update in updates:
+            try:
+                transaction_id = update["id"]
+                update_data = update["data"]
+                
+                result = await self.update_transaction(transaction_id, update_data)
+                if result:
+                    updated += 1
+                else:
+                    failed += 1
+                    errors.append(f"Transaction {transaction_id} not found")
+                    
+            except Exception as e:
+                failed += 1
+                errors.append(f"Transaction {update.get('id', 'unknown')}: {str(e)}")
+        
         return {
-            "updated": len(updates),
-            "failed": 0,
-            "errors": []
+            "updated": updated,
+            "failed": failed,
+            "errors": errors
         }
-    
+
     async def batch_delete_transactions(self, transaction_ids: List[str]) -> Dict[str, Any]:
         """Batch delete transactions"""
-        # Mock implementation
+        deleted = 0
+        failed = 0
+        errors = []
+        
+        for transaction_id in transaction_ids:
+            try:
+                success = await self.delete_transaction(transaction_id)
+                if success:
+                    deleted += 1
+                else:
+                    failed += 1
+                    errors.append(f"Transaction {transaction_id} not found")
+                    
+            except Exception as e:
+                failed += 1
+                errors.append(f"Transaction {transaction_id}: {str(e)}")
+        
         return {
-            "deleted": len(transaction_ids),
-            "failed": 0,
-            "errors": []
+            "deleted": deleted,
+            "failed": failed,
+            "errors": errors
         }
-    
-    async def verify_transaction_ownership(self, transaction_ids: List[str], user_id: str) -> List[str]:
-        """Verify transaction ownership"""
-        # Mock implementation - return all as owned
-        return transaction_ids
-    
-    async def get_transaction_summary(self, user_id: str, start_date=None, end_date=None) -> Dict[str, Any]:
-        """Get transaction summary"""
-        # Mock implementation
+
+    async def get_transaction_summary(self, user_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
+        """Get transaction summary from database"""
+        return await TransactionCRUD.get_transaction_summary(self.db, user_id, start_date, end_date)
+
+    async def process_natural_language_transaction(
+        self,
+        text: str,
+        user_id: str,
+        conversation_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Process natural language transaction input through unified workflow"""
+        from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
+
+        try:
+            # Initialize unified workflow
+            workflow = UnifiedTransactionWorkflow()
+
+            # Execute workflow with quick classification mode for conversational input
+            result = await workflow.execute_workflow(
+                mode=WorkflowMode.QUICK_CLASSIFICATION,
+                user_input=text,
+                user_id=user_id
+            )
+
+            if result['status'] == 'success':
+                return {
+                    "status": "success",
+                    "message": "Transaction processed successfully",
+                    "workflow_id": result.get("workflow_id"),
+                    "execution_time": result.get("execution_time"),
+                    "extracted_data": result.get("result", {}),
+                    "conversation_id": conversation_context.get("conversation_id") if conversation_context else None
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "Failed to process transaction",
+                    "error": result.get("error", "Unknown error")
+                }
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Transaction processing failed: {str(e)}"
+            }
+
+    async def get_transaction_suggestions(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get transaction suggestions for a user"""
+        # Mock implementation - replace with actual database queries
+        suggestions = [
+            {
+                "id": f"suggestion_{i}",
+                "type": "category_suggestion",
+                "message": f"Consider categorizing similar transactions as 'Dining Out'",
+                "confidence": 0.85,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            for i in range(min(limit, 3))
+        ]
+        return suggestions
+
+    async def get_transaction_insights(self, user_id: str, period: str = "month") -> Dict[str, Any]:
+        """Get transaction insights and analytics"""
+        # Mock implementation - replace with actual analytics
         return {
-            "total_transactions": 0,
-            "total_amount": 0,
-            "average_amount": 0,
-            "categories": {}
+            "period": period,
+            "total_transactions": 45,
+            "total_amount": 1250.50,
+            "top_categories": [
+                {"category": "Dining", "amount": 450.25, "count": 15},
+                {"category": "Groceries", "amount": 320.75, "count": 12},
+                {"category": "Transportation", "amount": 180.50, "count": 8}
+            ],
+            "spending_trend": "increasing",
+            "anomalies_detected": 2,
+            "generated_at": datetime.utcnow().isoformat()
         }
+
+    async def validate_transaction_data(self, transaction_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Validate transaction data"""
+        errors = []
+
+        # Basic validation
+        if not transaction_data.get("description"):
+            errors.append("Description is required")
+
+        if not transaction_data.get("amount"):
+            errors.append("Amount is required")
+        elif not isinstance(transaction_data["amount"], (int, float)):
+            errors.append("Amount must be a number")
+
+        if not transaction_data.get("date"):
+            errors.append("Date is required")
+
+        return len(errors) == 0, errors
+
+    async def batch_process_transactions(
+        self,
+        transactions: List[Dict[str, Any]],
+        user_id: str,
+        mode: str = "full_pipeline"
+    ) -> Dict[str, Any]:
+        """Process multiple transactions in batch through unified workflow"""
+        from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
+
+        try:
+            # Convert mode string to WorkflowMode enum
+            try:
+                workflow_mode = WorkflowMode(mode)
+            except ValueError:
+                workflow_mode = WorkflowMode.FULL_PIPELINE
+
+            workflow = UnifiedTransactionWorkflow()
+            results = []
+
+            for i, transaction in enumerate(transactions):
+                try:
+                    # Validate transaction data
+                    is_valid, validation_errors = await self.validate_transaction_data(transaction)
+
+                    if not is_valid:
+                        results.append({
+                            "index": i,
+                            "status": "error",
+                            "errors": validation_errors
+                        })
+                        continue
+
+                    # Process through workflow
+                    result = await workflow.execute_workflow(
+                        mode=workflow_mode,
+                        user_input=transaction.get("description", ""),
+                        user_id=user_id,
+                        amount=transaction.get("amount"),
+                        date=transaction.get("date"),
+                        merchant=transaction.get("merchant")
+                    )
+
+                    results.append({
+                        "index": i,
+                        "status": result["status"],
+                        "workflow_id": result.get("workflow_id"),
+                        "execution_time": result.get("execution_time")
+                    })
+
+                except Exception as e:
+                    results.append({
+                        "index": i,
+                        "status": "error",
+                        "error": str(e)
+                    })
+
+            success_count = sum(1 for r in results if r["status"] == "success")
+
+            return {
+                "status": "completed",
+                "total_transactions": len(transactions),
+                "successful_transactions": success_count,
+                "failed_transactions": len(transactions) - success_count,
+                "results": results,
+                "processed_at": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Batch processing failed: {str(e)}",
+                "processed_at": datetime.utcnow().isoformat()
+            }
