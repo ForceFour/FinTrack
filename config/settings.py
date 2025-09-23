@@ -2,12 +2,18 @@
 
 import os
 from typing import Dict, Any, List
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Application settings"""
+    
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     # API Settings
     api_title: str = "FinTrack API"
@@ -26,6 +32,13 @@ class Settings(BaseSettings):
     
     # LangGraph Settings
     langgraph_api_key: str = Field(default="", env="LANGGRAPH_API_KEY")
+    
+    # LangChain/LangSmith Settings
+    langchain_tracing_v2: str = Field(default="false", env="LANGCHAIN_TRACING_V2")
+    langchain_endpoint: str = Field(default="https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
+    langchain_api_key: str = Field(default="", env="LANGCHAIN_API_KEY")
+    langchain_project: str = Field(default="fintrack-workflows", env="LANGCHAIN_PROJECT")
+    langsmith_api_key: str = Field(default="", env="LANGSMITH_API_KEY")
     
     # Security Settings
     secret_key: str = Field(default="your_secret_key_here", env="SECRET_KEY")
@@ -80,10 +93,6 @@ class Settings(BaseSettings):
             "alert_severity_threshold": "medium"
         }
     }
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 # Global settings instance
