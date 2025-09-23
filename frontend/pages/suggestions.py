@@ -17,12 +17,12 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-# Attempt to import UnifiedClassifierAgent
+# Attempt to import ClassifierAgent
 try:
-    from src.agents.unified_classifier_agent import UnifiedClassifierAgent
+    from src.agents.classifier_agent import ClassifierAgent
     classifier_available = True
 except ModuleNotFoundError:
-    st.error("Module 'unified_classifier_agent' not found. Using fallback categorization. Please ensure the agent is available.")
+    st.error("Module 'classifier_agent' not found. Using fallback categorization. Please ensure the agent is available.")
     classifier_available = False
 
 # Fallback if schemas are not available
@@ -82,15 +82,13 @@ st.markdown("### Personalized Recommendations & Smart Insights")
 st.subheader("Current Spending Distribution")
 if 'transactions' in st.session_state and st.session_state.transactions:
     try:
-        # Use the UnifiedClassifierAgent if available
+        # Use the ClassifierAgent if available
         if classifier_available:
             from src.schemas.transaction_schemas import MerchantTransaction
-            from src.agents.unified_classifier_agent import UnifiedClassifierAgent
+            from src.agents.classifier_agent import ClassifierAgent
 
-            # Initialize the unified classifier agent
-            classifier_agent = UnifiedClassifierAgent()
-
-            # Preprocess transactions for classification
+            # Initialize the classifier agent
+            classifier_agent = ClassifierAgent()            # Preprocess transactions for classification
             merchant_transactions = []
             for t in st.session_state.transactions:
                 if float(t['amount']) < 0:  # Only process expenses
@@ -204,7 +202,7 @@ def fallback_categorize(description: str, amount: float, merchant: str = '') -> 
     else:
         return 'miscellaneous'
 
-# Add classify_transaction method to UnifiedClassifierAgent if available
+# Add classify_transaction method to ClassifierAgent if available
 if classifier_available:
     def classify_transaction(self, description: str, amount: float, merchant: str = '') -> Dict[str, str]:
         """Classify a single transaction using the process method"""
@@ -241,10 +239,10 @@ if classifier_available:
             return {'category': 'miscellaneous'}
 
     import types
-    UnifiedClassifierAgent.classify_transaction = types.MethodType(classify_transaction, UnifiedClassifierAgent)
+    ClassifierAgent.classify_transaction = types.MethodType(classify_transaction, ClassifierAgent)
 
-# Initialize UnifiedClassifierAgent if available
-classifier = UnifiedClassifierAgent() if classifier_available else None
+# Initialize ClassifierAgent if available
+classifier = ClassifierAgent() if classifier_available else None
 
 # Get and categorize transaction data
 df = pd.DataFrame(st.session_state.transactions)
