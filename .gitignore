@@ -94,6 +94,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env.local
+.env.dev
+*.local.env
 
 # Spyder project settings
 .spyderproject
@@ -132,6 +135,7 @@ models/*.joblib
 models/*.pkl
 *.log
 logs/
+data/
 
 # Development files
 test_*.py

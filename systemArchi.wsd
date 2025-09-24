@@ -1,0 +1,157 @@
+@startuml FinTrack System Architecture
+
+title FinTrack - Agentic Expense Tracker System Architecture
+
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle uml2
+skinparam linetype ortho
+skinparam nodesep 15
+skinparam ranksep 25
+skinparam minlen 2
+
+' External Actors
+actor "User" as User #BBDEFB
+
+' Application Layer
+package "Frontend Layer" as Frontend #E3F2FD {
+    component [Dashboard Page] as Dashboard
+    component [Upload Page] as Upload
+    component [Analytics Page] as Analytics
+    component [Suggestions Page] as Suggestions
+    component [Category Management] as Categories
+    component [Security Monitor] as Security
+}
+
+package "Backend Layer" #E8F5E8 {
+    component [FastAPI Server] as API
+    component [LangGraph Orchestrator] as Orchestrator
+}
+
+' Data Processing Layer
+package "Data Processing Layer" #FFFDE7 {
+    component [Data Preprocessor\n(7-step pipeline)] as Preprocessor
+    component [File Parser\n(CSV/Excel)] as FileParser
+    component [NL Processor\n(Text extraction)] as NLProcessor
+    component [Validation Engine] as Validator
+}
+
+' AI Agent Pipeline
+package "AI Agent Pipeline" #FFF3E0 {
+    component [Ingestion\nAgent] as IngestionAgent
+    component [NER Merchant\nAgent] as NERAgent
+    component [Classifier\nAgent] as ClassifierAgent
+    component [Pattern Analyzer\nAgent] as PatternAgent
+    component [Suggestion\nAgent] as SuggestionAgent
+    component [Safety Guard\nAgent] as SafetyAgent
+}
+
+' AI/ML Infrastructure
+package "AI/ML Infrastructure" #FFEBEE {
+    component [LangChain Framework] as LangChain
+    component [Groq/OpenAI LLMs] as LLMs
+    component [LangSmith Tracing] as Tracing
+}
+
+' Cloud/Infrastructure Layer
+cloud "Cloud Platform" as Cloud #F3E5F5 {
+    rectangle "Container Orchestration\n(Docker)" as K8sOrch #E1BEE7
+    database "PostgreSQL Database" as DB #C8E6C9
+    storage "Object Storage\n(Models/Logs)" as ObjectStore #E0E0E0
+}
+
+' Main Flow
+User --> Frontend : Interact with UI
+Frontend --> API : HTTP API calls
+API --> Orchestrator : Workflow requests
+
+' Processing Pipeline
+Orchestrator --> IngestionAgent : Start pipeline
+IngestionAgent --> Preprocessor : Data preprocessing
+
+' Data Processing Flow - spread connections
+Preprocessor --> FileParser : Structured data
+FileParser .[hidden]. NLProcessor
+Preprocessor --> NLProcessor : Natural language  
+NLProcessor .[hidden]. Validator
+Preprocessor --> Validator : Data validation
+
+' AI Agent Pipeline Flow
+IngestionAgent --> NERAgent : Merchant extraction
+NERAgent --> ClassifierAgent : Transaction classification
+ClassifierAgent --> PatternAgent : Pattern analysis
+PatternAgent --> SuggestionAgent : Generate recommendations
+SuggestionAgent --> SafetyAgent : Security validation
+
+' AI Infrastructure connections - staggered
+IngestionAgent -[#FF6B6B]-> LangChain : LLM integration
+NERAgent -[#4ECDC4]-> LangChain : AI processing
+ClassifierAgent -[#45B7D1]-> LangChain : AI processing
+SuggestionAgent -[#FFA07A]-> LangChain : AI processing
+
+' LangChain to services
+LangChain --> LLMs : API calls
+LangChain --> Tracing : Workflow logging
+
+' Data persistence - different entry points to DB
+SafetyAgent -[#95E1D3]-> DB : Store processed transactions
+API -[#F38BA8]-> DB : CRUD operations
+Analytics -[#A8E6CF]-> DB : Query analytics data
+
+' Cloud deployment
+Frontend --> K8sOrch : Deploy frontend
+API --> K8sOrch : Deploy backend
+
+' Storage connections
+Tracing --> ObjectStore : Store logs
+LLMs --> ObjectStore : Model storage
+
+' Monitoring
+Tracing --> K8sOrch : Audit trails
+SafetyAgent --> K8sOrch : Security monitoring
+
+' Scalability indicators
+note right of K8sOrch
+    **Scalability Features:**
+    - Horizontal pod scaling
+    - Load balancing
+    - Auto-scaling groups
+end note
+
+note right of DB
+    **Database Scaling:**
+    - Connection pooling
+    - Read replicas
+    - Sharding support
+end note
+
+note right of LLMs
+    **AI Scaling:**
+    - Model versioning
+    - Batch processing
+    - GPU acceleration
+end note
+
+' Responsible AI considerations
+note as ResponsibleAI
+    **Responsible AI Features:**
+    - Confidence scoring on all decisions
+    - Bias detection in pattern analysis
+    - Data privacy controls
+    - Explainable AI outputs
+    - Security validation pipeline
+end note
+
+ResponsibleAI .. Tracing
+ResponsibleAI .. SafetyAgent
+
+' Legend
+legend right
+    |= Component |= Type |
+    | User Interface | Frontend |
+    | Business Logic | Backend |
+    | AI Processing | ML/AI |
+    | Data Processing | ETL |
+    | Infrastructure | Cloud |
+endlegend
+
+@enduml
