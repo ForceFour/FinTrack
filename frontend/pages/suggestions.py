@@ -13,19 +13,21 @@ import sys
 import logging
 
 # Add project root to sys.path to resolve src module
-sys.path.append('E:\\IRWA_PROJECT\\FinTrack')
+import os
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
 
-# Attempt to import EnhancedClassifierAgent
+# Attempt to import ClassifierAgent
 try:
-    from src.agents.classifier_agent import EnhancedClassifierAgent
+    from src.agents.classifier_agent import ClassifierAgent
     classifier_available = True
 except ModuleNotFoundError:
-    st.error("Module 'classifier_agent' not found. Using fallback categorization. Please ensure 'classifier_agent.py' is in 'E:\\IRWA_PROJECT\\FinTrack\\src\\agents\\'.")
+    st.error("Module 'classifier_agent' not found. Using fallback categorization. Please ensure the agent is available.")
     classifier_available = False
 
 # Fallback if schemas are not available
 try:
-    from src.schemas.transaction_schemas import MerchantTransaction, TransactionCategory
+    from src.schemas.transaction_schemas import MerchantTransaction, TransactionCategory, PaymentMethod
 except ModuleNotFoundError:
     class TransactionCategory:
         ESSENTIALS = 'essentials'
@@ -36,21 +38,32 @@ except ModuleNotFoundError:
         HEALTHCARE = 'healthcare'
         EDUCATION = 'education'
         MISCELLANEOUS = 'miscellaneous'
+
+    class PaymentMethod:
+        CREDIT_CARD = 'credit_card'
+        DEBIT_CARD = 'debit_card'
+        CASH = 'cash'
+        OTHER = 'other'
+
     class MerchantTransaction:
         def __init__(self, **kwargs):
-            self.description_cleaned = kwargs.get('description', '')
+            self.id = kwargs.get('id', '')
+            self.description_cleaned = kwargs.get('description_cleaned', '')
             self.amount = kwargs.get('amount', 0.0)
-            self.merchant_standardized = kwargs.get('merchant', '')
-            self.date = kwargs.get('date', datetime.now())
-            self.year = self.date.year
-            self.month = self.date.month
-            self.day = self.date.day
-            self.day_of_week = self.date.weekday()
-            self.payment_method = kwargs.get('payment_method', 'unknown')
-            self.has_discount = False
-            self.discount_percentage = 0.0
-            self.transaction_type = 'expense' if self.amount < 0 else 'income'
-            self.metadata = {}
+            self.merchant_standardized = kwargs.get('merchant_standardized', '')
+            date = kwargs.get('date', datetime.now())
+            if isinstance(date, str):
+                date = datetime.fromisoformat(date)
+            self.date = date
+            self.year = date.year
+            self.month = date.month
+            self.day = date.day
+            self.day_of_week = date.weekday()
+            self.payment_method = kwargs.get('payment_method', 'other')
+            self.has_discount = kwargs.get('has_discount', False)
+            self.discount_percentage = kwargs.get('discount_percentage', 0.0)
+            self.transaction_type = kwargs.get('transaction_type', 'expense' if self.amount < 0 else 'income')
+            self.metadata = kwargs.get('metadata', {})
             self.merchant_name = self.merchant_standardized
             self.is_merchant_known = bool(self.merchant_standardized)
 
@@ -68,75 +81,96 @@ st.markdown("### Personalized Recommendations & Smart Insights")
 # Current Spending Distribution Section
 st.subheader("Current Spending Distribution")
 if 'transactions' in st.session_state and st.session_state.transactions:
-    from src.agents.transaction_classifier_agent import TransactionClassificationAgent, TransactionClassificationInput
-    from src.schemas.transaction_schemas import PreprocessedTransaction
+    try:
+        # Use the ClassifierAgent if available
+        if classifier_available:
+            from src.schemas.transaction_schemas import MerchantTransaction
+            from src.agents.classifier_agent import ClassifierAgent
 
-    # Initialize the transaction classifier agent
-    classifier_agent = TransactionClassificationAgent()
-    
-    # Preprocess transactions
-    expense_transactions = []
-    for t in st.session_state.transactions:
-        if float(t['amount']) < 0:  # Only process expenses
-            preprocessed = PreprocessedTransaction(
-                id=t.get('id', str(len(expense_transactions))),
-                description_cleaned=t.get('description', ''),
-                amount=float(t['amount']),
-                merchant_standardized=t.get('merchant', ''),
-                date=t.get('date', datetime.now()),
-                category=t.get('category', None),
-                metadata={}
-            )
-            expense_transactions.append(preprocessed)
-    
-    if expense_transactions:
-        # Classify transactions using the agent
-        classification_input = TransactionClassificationInput(
-            preprocessed_transactions=expense_transactions
-        )
-        classification_output = classifier_agent.process(classification_input)
-        
-        # Create DataFrame from classified transactions
-        expense_data = []
-        for ct in classification_output.classified_transactions:
-            # Find original transaction
-            original_txn = next(t for t in expense_transactions if t.id == ct.transaction_id)
-            expense_data.append({
-                'amount': abs(float(original_txn.amount)),  # Make amount positive for visualization
-                'description': original_txn.description_cleaned,
-                'merchant': original_txn.merchant_standardized,
-                'category': original_txn.category or 'uncategorized',
-                'confidence': ct.classification_confidence
-            })
-        
-        expense_df = pd.DataFrame(expense_data)
-        
-        # Calculate spending by category
-        spending_by_category = expense_df.groupby('category')['amount'].sum().abs()
-        
-        # Create pie chart
-        fig = px.pie(
-            values=spending_by_category.values,
-            names=spending_by_category.index,
-            title="Current Spending Distribution",
-            hover_data=[spending_by_category.values],
-            labels={'hover_data_0': 'Amount (LKR)'}
-        )
-        fig.update_traces(textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Display category-wise spending table
-        st.markdown("#### Category-wise Spending Breakdown")
-        spending_df = pd.DataFrame({
-            'Category': spending_by_category.index,
-            'Amount (LKR)': spending_by_category.values,
-            'Percentage': (spending_by_category.values / spending_by_category.sum() * 100)
-        })
-        spending_df['Amount (LKR)'] = spending_df['Amount (LKR)'].round(2)
-        spending_df['Percentage'] = spending_df['Percentage'].round(2)
-        st.dataframe(spending_df.sort_values('Amount (LKR)', ascending=False), use_container_width=True)
-    else:
-        st.info("No expense transactions found in the data.")
+            # Initialize the classifier agent
+            classifier_agent = ClassifierAgent()            # Preprocess transactions for classification
+            merchant_transactions = []
+            for t in st.session_state.transactions:
+                if float(t['amount']) < 0:  # Only process expenses
+                    # Create MerchantTransaction object with proper date handling
+                    date = t.get('date', datetime.now())
+                    if isinstance(date, str):
+                        try:
+                            date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                        except ValueError:
+                            date = datetime.now()
+
+                    merchant_txn = MerchantTransaction(
+                        id=str(t.get('id', len(merchant_transactions))),
+                        description_cleaned=t.get('description', ''),
+                        amount=float(t['amount']),
+                        merchant_standardized=t.get('merchant', ''),
+                        date=date,
+                        year=date.year,
+                        month=date.month,
+                        day=date.day,
+                        day_of_week=date.weekday(),
+                        payment_method=t.get('payment_method', 'other'),
+                        has_discount=t.get('has_discount', False),
+                        discount_percentage=t.get('discount_percentage', 0.0),
+                        transaction_type='expense',
+                        metadata=t.get('metadata', {})
+                    )
+                    merchant_transactions.append(merchant_txn)
+
+            if merchant_transactions:
+                # Classify transactions using the unified agent
+                classification_input = classifier_agent.ClassifierAgentInput(
+                    merchant_transactions=merchant_transactions
+                )
+                classification_output = classifier_agent.process(classification_input)
+
+                # Create DataFrame from classified transactions
+                expense_data = []
+                for ct in classification_output.classified_transactions:
+                    # Find original transaction
+                    original_txn = next(t for t in merchant_transactions if t.id == ct.transaction_id)
+                    expense_data.append({
+                        'amount': abs(float(original_txn.amount)),  # Make amount positive for visualization
+                        'description': original_txn.description_cleaned,
+                        'merchant': original_txn.merchant_standardized,
+                        'category': ct.predicted_category.value if hasattr(ct.predicted_category, 'value') else str(ct.predicted_category),
+                        'confidence': ct.classification_confidence
+                    })
+
+                expense_df = pd.DataFrame(expense_data)
+
+                # Calculate spending by category
+                spending_by_category = expense_df.groupby('category')['amount'].sum().abs()
+
+                # Create pie chart
+                fig = px.pie(
+                    values=spending_by_category.values,
+                    names=spending_by_category.index,
+                    title="Current Spending Distribution",
+                    hover_data=[spending_by_category.values],
+                    labels={'hover_data_0': 'Amount (LKR)'}
+                )
+                fig.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Display category-wise spending table
+                st.markdown("#### Category-wise Spending Breakdown")
+                spending_df = pd.DataFrame({
+                    'Category': spending_by_category.index,
+                    'Amount (LKR)': spending_by_category.values,
+                    'Percentage': (spending_by_category.values / spending_by_category.sum() * 100)
+                })
+                spending_df['Amount (LKR)'] = spending_df['Amount (LKR)'].round(2)
+                spending_df['Percentage'] = spending_df['Percentage'].round(2)
+                st.dataframe(spending_df.sort_values('Amount (LKR)', ascending=False), use_container_width=True)
+            else:
+                st.info("No expense transactions found in the data.")
+        else:
+            st.warning("Unified classifier not available. Please check the agent installation.")
+    except Exception as e:
+        st.error(f"Error processing transactions: {e}")
+        st.info("Using fallback categorization...")
 else:
     st.warning("No transaction data available. Please upload transactions first.")
 
@@ -168,18 +202,24 @@ def fallback_categorize(description: str, amount: float, merchant: str = '') -> 
     else:
         return 'miscellaneous'
 
-# Add classify_transaction method to EnhancedClassifierAgent if available
+# Add classify_transaction method to ClassifierAgent if available
 if classifier_available:
     def classify_transaction(self, description: str, amount: float, merchant: str = '') -> Dict[str, str]:
         """Classify a single transaction using the process method"""
         try:
-            # Create a MerchantTransaction object
+            # Create a MerchantTransaction object with proper date handling
+            date = datetime.now()
             txn = MerchantTransaction(
+                id="temp_id",
                 description_cleaned=description,
                 amount=amount,
                 merchant_standardized=merchant,
-                date=datetime.now(),
-                payment_method='unknown',
+                date=date,
+                year=date.year,
+                month=date.month,
+                day=date.day,
+                day_of_week=date.weekday(),
+                payment_method='other',
                 has_discount=False,
                 discount_percentage=0.0,
                 transaction_type='expense' if amount < 0 else 'income',
@@ -188,16 +228,21 @@ if classifier_available:
             # Process as a single transaction
             input_data = self.ClassifierAgentInput(merchant_transactions=[txn])
             output = self.process(input_data)
-            return {'category': output.classified_transactions[0].predicted_category.value}
+            if output.classified_transactions:
+                category = output.classified_transactions[0].predicted_category
+                category_value = category.value if hasattr(category, 'value') else str(category)
+                return {'category': category_value}
+            else:
+                return {'category': 'miscellaneous'}
         except Exception as e:
             logging.error(f"Classification failed: {e}")
             return {'category': 'miscellaneous'}
-    
-    import types
-    EnhancedClassifierAgent.classify_transaction = types.MethodType(classify_transaction, EnhancedClassifierAgent)
 
-# Initialize EnhancedClassifierAgent if available
-classifier = EnhancedClassifierAgent() if classifier_available else None
+    import types
+    ClassifierAgent.classify_transaction = types.MethodType(classify_transaction, ClassifierAgent)
+
+# Initialize ClassifierAgent if available
+classifier = ClassifierAgent() if classifier_available else None
 
 # Get and categorize transaction data
 df = pd.DataFrame(st.session_state.transactions)
