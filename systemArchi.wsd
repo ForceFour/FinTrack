@@ -29,7 +29,7 @@ package "Backend Layer" #E8F5E8 {
 
 ' Data Processing Layer
 package "Data Processing Layer" #FFFDE7 {
-    component [Data Preprocessor\n(7-step pipeline)] as Preprocessor
+    component [Data Preprocessor\n(6-step pipeline)] as Preprocessor
     component [File Parser\n(CSV/Excel)] as FileParser
     component [NL Processor\n(Text extraction)] as NLProcessor
     component [Validation Engine] as Validator
@@ -71,7 +71,7 @@ IngestionAgent --> Preprocessor : Data preprocessing
 ' Data Processing Flow - spread connections
 Preprocessor --> FileParser : Structured data
 FileParser .[hidden]. NLProcessor
-Preprocessor --> NLProcessor : Natural language  
+Preprocessor --> NLProcessor : Natural language
 NLProcessor .[hidden]. Validator
 Preprocessor --> Validator : Data validation
 
