@@ -2,10 +2,10 @@
   "dependencies": ["."],
   "graphs": {
     "minimal_workflow": "langgraph_server:app",
-    "full_pipeline": "src.workflows.unified_workflow:get_workflow_instance().workflows.full_pipeline",
-    "quick_classification": "src.workflows.unified_workflow:get_workflow_instance().workflows.quick_class",
-    "ingestion_only": "src.workflows.unified_workflow:get_workflow_instance().workflows.ingestion_only",
-    "background_processing": "src.workflows.unified_workflow:get_workflow_instance().workflows.background"
+    "full_pipeline": "src.workflows.langgraph_exports:full_pipeline",
+    "quick_classification": "src.workflows.langgraph_exports:quick_classification",
+    "ingestion_only": "src.workflows.langgraph_exports:ingestion_only",
+    "background_processing": "src.workflows.langgraph_exports:background_processing"
   },
   "env": ".env"
 }

@@ -116,7 +116,10 @@ class TransactionProcessingNodes:
         state['retry_count'] = state.get('retry_count', 0)
 
         # Advanced metadata
-        state.processing_metadata.update({
+        if 'processing_metadata' not in state:
+            state['processing_metadata'] = {}
+
+        state['processing_metadata'].update({
             'version': '2.1_unified',
             'langgraph_enabled': True,
             'groq_enabled': bool(self.config.get('groq_api_key')),
@@ -137,7 +140,7 @@ class TransactionProcessingNodes:
             'timestamp': datetime.now().isoformat(),
             'action': 'workflow_initialized',
             'workflow_id': state['workflow_id'],
-            'metadata': state['workflow_metadata']
+            'metadata': state.get('processing_metadata', {})
         }
         state['processing_history'].append(processing_entry)
 
