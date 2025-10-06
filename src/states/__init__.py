@@ -20,7 +20,7 @@ class ProcessingStage(Enum):
 class TransactionProcessingState(TypedDict):
     """
     Main state for transaction processing workflow
-    
+
     This state flows through all nodes in the LangGraph workflow
     """
     # Input data - Enhanced for LangGraph workflow
@@ -29,57 +29,58 @@ class TransactionProcessingState(TypedDict):
     conversation_context: Dict[str, Any]  # Conversation context
     raw_input: Optional[str]  # Legacy field
     input_type: Optional[str]  # "structured" or "unstructured"
-    
+
     # Processing stage tracking
     current_stage: ProcessingStage
     processing_history: Annotated[List[Dict[str, Any]], operator.add]
-    
+
     # Enhanced processing tracking
     confidence_scores: Annotated[List[Dict[str, Any]], operator.add]  # Stage-wise confidence
     error_log: Annotated[List[Dict[str, Any]], operator.add]  # Error tracking
     processed_transactions: Optional[List[Dict[str, Any]]]  # Final processed transactions
     created_at: datetime  # Creation timestamp
-    
+
     # Extracted transaction data
     extracted_transaction: Optional[Dict[str, Any]]
     confidence_score: Optional[float]
     extraction_method: Optional[str]  # "llm", "regex", "manual"
-    
+
     # NLP Processing results
     nl_processing_result: Optional[Dict[str, Any]]
     nl_confidence: Optional[float]
-    
+
     # Ingestion results
     preprocessed_transactions: Optional[List[Dict[str, Any]]]
     ingestion_metadata: Optional[Dict[str, Any]]
     ingestion_confidence: Optional[float]  # Added for ingestion tracking
     data_quality_scores: Optional[Dict[str, Any]]  # Added for quality tracking
-    
+
     # NER results
     ner_entities: Optional[Dict[str, Any]]
     merchant_info: Optional[Dict[str, Any]]
     location_info: Optional[Dict[str, Any]]
-    
+
     # Classification results
     predicted_category: Optional[str]
     category_confidence: float
-    
+
     # Validation results
     validation_errors: Annotated[List[str], operator.add]
     is_valid: bool
-    
+
     # Final results
     final_transaction: Optional[Dict[str, Any]]
-    
+
     # Error handling
     errors: Annotated[List[Dict[str, Any]], operator.add]
     retry_count: int
-    
+
     # Metadata
     workflow_id: str
     started_at: datetime
     completed_at: Optional[datetime]
     total_processing_time: Optional[float]
+    processing_metadata: Optional[Dict[str, Any]]
 
 class ConversationState(TypedDict):
     """
@@ -88,20 +89,20 @@ class ConversationState(TypedDict):
     conversation_id: str
     user_input: str
     conversation_history: Annotated[List[Dict[str, str]], operator.add]
-    
+
     # Current transaction being built
     current_transaction: Dict[str, Any]
     missing_fields: List[str]
-    
+
     # Conversation flow
     conversation_stage: str  # "initial", "gathering", "confirmation", "completed"
     clarification_needed: bool
     follow_up_questions: List[str]
-    
+
     # Results
     extracted_data: Optional[Dict[str, Any]]
     confidence: float
-    
+
     # Final state
     is_complete: bool
     requires_human_review: bool
@@ -113,20 +114,20 @@ class BatchProcessingState(TypedDict):
     batch_id: str
     file_path: str
     file_type: str  # "csv", "excel", "json"
-    
+
     # Processing progress
     total_rows: int
     processed_rows: int
     failed_rows: int
-    
+
     # Results
     successful_transactions: Annotated[List[Dict[str, Any]], operator.add]
     failed_transactions: Annotated[List[Dict[str, Any]], operator.add]
-    
+
     # Batch metadata
     batch_confidence: float
     processing_summary: Dict[str, Any]
-    
+
     # Status
     is_complete: bool
     processing_errors: Annotated[List[str], operator.add]
