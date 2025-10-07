@@ -28,7 +28,7 @@ class UnifiedTransactionWorkflow:
     Unified LangGraph Workflow Manager for Complete Transaction Processing
 
     Features:
-    - 7 specialized AI agents with intelligent routing
+    - 6 specialized AI agents with intelligent routing
     - Multiple execution modes with optimization
     - Real-time processing with WebSocket support
     - Comprehensive error handling and recovery
@@ -129,7 +129,7 @@ class UnifiedTransactionWorkflow:
         return workflows
 
     def _build_full_pipeline(self) -> StateGraph:
-        """Build the complete 7-agent pipeline workflow with conditional routing"""
+        """Build the complete 10-agent pipeline workflow with conditional routing"""
         workflow = StateGraph(TransactionProcessingState)
 
         # Add all workflow nodes
@@ -138,6 +138,9 @@ class UnifiedTransactionWorkflow:
         workflow.add_node("🚀 Ingestion", self.nodes.ingestion_node)
         workflow.add_node("🏷️ NER Extraction", self.nodes.ner_extraction_node)
         workflow.add_node("📊 Classification", self.nodes.classification_node)
+        workflow.add_node("📈 Pattern Analysis", self.nodes.pattern_analyzer_node)
+        workflow.add_node("💡 Suggestion", self.nodes.suggestion_node)
+        workflow.add_node("🛡️ Safety Guard", self.nodes.safety_guard_node)
         workflow.add_node("✅ Validation", self.nodes.validation_node)
         workflow.add_node("🎯 Finalization", self.nodes.finalization_node)
 
@@ -165,7 +168,10 @@ class UnifiedTransactionWorkflow:
 
         # Continue with full processing
         workflow.add_edge("🏷️ NER Extraction", "📊 Classification")
-        workflow.add_edge("📊 Classification", "✅ Validation")
+        workflow.add_edge("📊 Classification", "📈 Pattern Analysis")
+        workflow.add_edge("📈 Pattern Analysis", "💡 Suggestion")
+        workflow.add_edge("💡 Suggestion", "🛡️ Safety Guard")
+        workflow.add_edge("🛡️ Safety Guard", "✅ Validation")
         workflow.add_edge("✅ Validation", "🎯 Finalization")
         workflow.add_edge("🎯 Finalization", END)
 

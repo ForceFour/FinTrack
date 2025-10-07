@@ -20,6 +20,7 @@ from src.routes.transactions import router as transactions_router
 from src.routes.auth import router as auth_router
 from src.routes.analytics import router as analytics_router
 from src.routes.suggestions import router as suggestions_router
+from src.routes.workflow import router as workflow_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +47,7 @@ app.include_router(transactions_router)
 app.include_router(auth_router)
 app.include_router(analytics_router)
 app.include_router(suggestions_router)
+app.include_router(workflow_router)
 
 @app.on_event("startup")
 async def startup_event():

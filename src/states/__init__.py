@@ -13,6 +13,9 @@ class ProcessingStage(Enum):
     INGESTION = "ingestion"
     NER_EXTRACTION = "ner_extraction"
     CLASSIFICATION = "classification"
+    PATTERN_ANALYSIS = "pattern_analysis"
+    SUGGESTION = "suggestion"
+    SAFETY_GUARD = "safety_guard"
     VALIDATION = "validation"
     COMPLETED = "completed"
     ERROR = "error"
@@ -63,6 +66,21 @@ class TransactionProcessingState(TypedDict):
     # Classification results
     predicted_category: Optional[str]
     category_confidence: float
+
+    # Pattern Analysis results
+    spending_patterns: Optional[Dict[str, Any]]
+    pattern_insights: Optional[Dict[str, Any]]
+    pattern_confidence: Optional[float]
+
+    # Suggestion results
+    budget_recommendations: Optional[List[Dict[str, Any]]]
+    spending_suggestions: Optional[List[Dict[str, Any]]]
+    suggestion_confidence: Optional[float]
+
+    # Safety Guard results
+    security_alerts: Optional[List[Dict[str, Any]]]
+    risk_assessment: Optional[Dict[str, Any]]
+    safety_confidence: Optional[float]
 
     # Validation results
     validation_errors: Annotated[List[str], operator.add]

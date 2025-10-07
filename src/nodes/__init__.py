@@ -693,6 +693,223 @@ class TransactionProcessingNodes:
 
         return state
 
+    def pattern_analyzer_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Pattern analysis node - analyzes spending patterns and trends
+        """
+        print(f"PATTERN ANALYSIS: Starting pattern analysis")
+
+        try:
+            from ..agents.pattern_analyzer_agent import PatternAnalyzerAgent
+
+            state['current_stage'] = ProcessingStage.PATTERN_ANALYSIS
+            pattern_agent = PatternAnalyzerAgent()
+
+            # Get processed transactions for analysis
+            transactions = state.get('processed_transactions', [])
+            if not transactions:
+                # Try preprocessed transactions and convert them
+                preprocessed = state.get('preprocessed_transactions', [])
+                if preprocessed:
+                    transactions = self._convert_to_classified_transactions(preprocessed)
+                elif state.get('final_transaction'):
+                    transactions = [state['final_transaction']]
+
+            if transactions:
+                # Analyze patterns using the process method
+                pattern_result = pattern_agent.process(transactions)
+
+                state['spending_patterns'] = pattern_result.get('spending_trends', {})
+                state['pattern_insights'] = pattern_result.get('pattern_insights', [])
+                state['pattern_confidence'] = 0.85  # Default confidence for pattern analysis
+
+                print(f"PATTERN ANALYSIS: Found {len(state['pattern_insights'])} pattern insights")
+            else:
+                state['spending_patterns'] = {}
+                state['pattern_insights'] = {}
+                state['pattern_confidence'] = 0.0
+                print(f"PATTERN ANALYSIS: No transactions to analyze")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'pattern_analysis',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'pattern_analysis_completed',
+                'data': {
+                    'patterns_found': len(state.get('spending_patterns', {})),
+                    'confidence': state.get('pattern_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'pattern_analysis',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Pattern analysis failed: {e}")
+
+        return state
+
+    def suggestion_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Suggestion node - generates budget recommendations and spending advice
+        """
+        print(f"SUGGESTION: Starting suggestion generation")
+
+        try:
+            from ..agents.suggestion_agent import SuggestionAgent, SuggestionAgentInput
+            from ..schemas.transaction_schemas import PatternInsight
+
+            state['current_stage'] = ProcessingStage.SUGGESTION
+            suggestion_agent = SuggestionAgent()
+
+            # Get pattern insights and prepare input
+            pattern_insights_data = state.get('pattern_insights', {})
+            transactions = state.get('processed_transactions', [])
+
+            # Convert pattern insights to PatternInsight objects
+            pattern_insights = []
+            if pattern_insights_data:
+                if isinstance(pattern_insights_data, list):
+                    # Already a list of insights
+                    for insight in pattern_insights_data:
+                        if isinstance(insight, dict):
+                            pattern_insights.append(PatternInsight(**insight))
+                elif isinstance(pattern_insights_data, dict):
+                    # Convert dict format to PatternInsight objects
+                    for key, value in pattern_insights_data.items():
+                        if isinstance(value, dict):
+                            pattern_insights.append(PatternInsight(
+                                insight_type=key,
+                                description=f"Pattern analysis for {key}",
+                                severity="medium",
+                                transactions_involved=[],
+                                metadata=value
+                            ))
+
+            # Default budget thresholds if not provided
+            budget_thresholds = state.get('budget_thresholds', {
+                'groceries': 300,
+                'dining': 200,
+                'entertainment': 150,
+                'shopping': 250,
+                'transportation': 100
+            })
+
+            # Create input for suggestion agent
+            input_data = SuggestionAgentInput(
+                pattern_insights=pattern_insights,
+                budget_thresholds=budget_thresholds,
+                user_preferences=state.get('user_preferences', {})
+            )
+
+            # Generate suggestions
+            result = suggestion_agent.process(input_data)
+
+            state['budget_recommendations'] = [suggestion.dict() for suggestion in result.suggestions if 'budget' in suggestion.title.lower()]
+            state['spending_suggestions'] = [suggestion.dict() for suggestion in result.suggestions if 'budget' not in suggestion.title.lower()]
+            state['suggestion_confidence'] = 0.85  # Default confidence
+
+            print(f"SUGGESTION: Generated {len(result.suggestions)} total suggestions")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'suggestion',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'suggestion_generation_completed',
+                'data': {
+                    'total_suggestions': len(result.suggestions),
+                    'budget_recommendations': len(state.get('budget_recommendations', [])),
+                    'spending_suggestions': len(state.get('spending_suggestions', [])),
+                    'alerts': len(result.alerts),
+                    'savings_opportunities': len(result.savings_opportunities),
+                    'confidence': state.get('suggestion_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'suggestion',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Suggestion generation failed: {e}")
+
+        return state
+
+    def safety_guard_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Safety guard node - performs anomaly detection and security validation
+        """
+        print(f"SAFETY GUARD: Starting security validation")
+
+        try:
+            from ..agents.safety_guard_agent import SafetyGuardAgent
+
+            state['current_stage'] = ProcessingStage.SAFETY_GUARD
+            safety_agent = SafetyGuardAgent()
+
+            # Get transactions for security analysis
+            transactions = state.get('processed_transactions', [])
+            if not transactions:
+                # Try preprocessed transactions and convert them
+                preprocessed = state.get('preprocessed_transactions', [])
+                if preprocessed:
+                    transactions = self._convert_to_classified_transactions(preprocessed)
+                elif state.get('final_transaction'):
+                    transactions = [state['final_transaction']]
+
+            if transactions:
+                # Perform security validation using the process method
+                from ..agents.safety_guard_agent import SafetyGuardAgentInput
+                input_data = SafetyGuardAgentInput(
+                    classified_transactions=transactions,
+                    user_profile=state.get('user_profile', {})
+                )
+                security_result = safety_agent.process(input_data)
+
+                state['security_alerts'] = security_result.security_alerts
+                state['risk_assessment'] = {'risk_score': security_result.risk_score}
+                state['safety_confidence'] = 0.9  # Default confidence for safety validation
+
+                print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts")
+            else:
+                state['security_alerts'] = []
+                state['risk_assessment'] = {}
+                state['safety_confidence'] = 0.0
+                print(f"SAFETY GUARD: No transactions to validate")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'safety_guard',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'security_validation_completed',
+                'data': {
+                    'alerts_found': len(state.get('security_alerts', [])),
+                    'confidence': state.get('safety_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'safety_guard',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Security validation failed: {e}")
+
+        return state
+
     def finalization_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
         Final node to complete the workflow
@@ -803,3 +1020,57 @@ class TransactionProcessingNodes:
             history_entry['data'] = data
 
         state['processing_history'].append(history_entry)
+
+    def _convert_to_classified_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
+        """
+        Convert preprocessed transaction dicts to ClassifiedTransaction objects
+        """
+        from ..schemas.transaction_schemas import ClassifiedTransaction, TransactionCategory, TransactionType, PaymentMethod
+
+        classified_transactions = []
+        for txn_dict in preprocessed_txns:
+            try:
+                # Parse date
+                date_str = txn_dict.get('date', datetime.now().isoformat())
+                if isinstance(date_str, str):
+                    try:
+                        parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        parsed_date = datetime.now()
+                else:
+                    parsed_date = date_str if isinstance(date_str, datetime) else datetime.now()
+
+                # Handle payment method - default to CASH for expenses if not valid
+                payment_method_str = txn_dict.get('payment_method', 'cash')
+                try:
+                    payment_method = PaymentMethod(payment_method_str)
+                except ValueError:
+                    # Default to CASH for invalid payment methods
+                    payment_method = PaymentMethod.CASH
+
+                # Create ClassifiedTransaction
+                classified_txn = ClassifiedTransaction(
+                    id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+                    date=parsed_date,
+                    year=parsed_date.year,
+                    month=parsed_date.month,
+                    day=parsed_date.day,
+                    day_of_week=parsed_date.weekday(),
+                    amount=float(txn_dict.get('amount', 0.0)),
+                    transaction_type=TransactionType.EXPENSE,  # Assume expense for now
+                    payment_method=payment_method,
+                    description_cleaned=txn_dict.get('description', ''),
+                    merchant_name=txn_dict.get('merchant_name'),
+                    merchant_standardized=txn_dict.get('merchant_name'),
+                    merchant_category=txn_dict.get('category'),
+                    is_merchant_known=bool(txn_dict.get('merchant_name')),
+                    predicted_category=TransactionCategory(txn_dict.get('category', 'miscellaneous')),
+                    prediction_confidence=0.8,
+                    category_probabilities={txn_dict.get('category', 'miscellaneous'): 0.8}
+                )
+                classified_transactions.append(classified_txn)
+            except Exception as e:
+                logger.warning(f"Failed to convert transaction {txn_dict.get('id')}: {e}")
+                continue
+
+        return classified_transactions
