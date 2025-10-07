@@ -30,6 +30,7 @@ class TransactionProcessingState(TypedDict):
     user_input: str  # Natural language input
     user_id: str  # User identifier
     conversation_context: Dict[str, Any]  # Conversation context
+    raw_transactions: Optional[List[Dict[str, Any]]]  # Structured transaction data
     raw_input: Optional[str]  # Legacy field
     input_type: Optional[str]  # "structured" or "unstructured"
 
