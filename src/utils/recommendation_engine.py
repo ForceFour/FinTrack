@@ -23,7 +23,7 @@ class SuggestionPriority(str, Enum):
 
 class RecommendationEngine:
     """Engine for generating financial recommendations and suggestions"""
-    
+
     def __init__(self):
         self.category_thresholds = {
             'food_dining': 500,
@@ -32,21 +32,21 @@ class RecommendationEngine:
             'transportation': 200,
             'entertainment': 150
         }
-    
+
     def generate_budget_alerts(self, insights: List[Dict[str, Any]], thresholds: Dict[str, float]) -> List[Dict[str, Any]]:
         """Generate budget alerts based on spending insights"""
         alerts = []
-        
+
         for insight in insights:
             if insight.get('insight_type') == 'spike':
                 category = insight.get('category')
                 spike_amount = insight.get('metadata', {}).get('amount', 0)
                 threshold = thresholds.get(category, 0)
-                
+
                 if spike_amount > threshold:
                     overspend_amount = spike_amount - threshold
                     overspend_percent = (overspend_amount / threshold * 100) if threshold > 0 else 0
-                    
+
                     alerts.append({
                         'type': SuggestionType.BUDGET_ALERT,
                         'category': category,
@@ -56,16 +56,16 @@ class RecommendationEngine:
                         'amount_exceeded': overspend_amount,
                         'percentage_exceeded': overspend_percent
                     })
-        
+
         return alerts
-    
+
     def generate_spending_reduction_suggestions(self, insights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Generate suggestions for reducing spending"""
         suggestions = []
-        
+
         for insight in insights:
             metadata = insight.get('metadata', {})
-            
+
             if insight.get('insight_type') == 'habit':
                 if 'weekend' in insight.get('description', '').lower():
                     suggestions.append({
@@ -80,41 +80,41 @@ class RecommendationEngine:
                             "Cook at home instead of dining out"
                         ]
                     })
-            
+
             elif insight.get('insight_type') == 'recurring':
                 frequency = metadata.get('frequency_days', 0)
                 amount = metadata.get('avg_amount', 0)
-                
-                if frequency <= 30 and amount > 50:  # Monthly recurring over $50
+
+                if frequency <= 30 and amount > 5:  # Any recurring expense over $5
                     monthly_cost = amount * (30 / frequency) if frequency > 0 else 0
                     suggestions.append({
                         'type': SuggestionType.SPENDING_REDUCTION,
                         'title': f"Review Recurring Expense: {metadata.get('merchant', 'Unknown')}",
                         'description': f"This recurring expense costs ${monthly_cost:.2f}/month. Consider if it's necessary.",
-                        'priority': SuggestionPriority.MEDIUM,
+                        'priority': SuggestionPriority.MEDIUM if amount > 20 else SuggestionPriority.LOW,
                         'potential_savings': monthly_cost * 0.5,  # Assume 50% could be saved if eliminated
                         'merchant': metadata.get('merchant'),
                         'monthly_cost': monthly_cost
                     })
-        
+
         return suggestions
-    
+
     def generate_subscription_alerts(self, insights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Generate alerts about subscription services"""
         alerts = []
-        
+
         subscription_keywords = ['spotify', 'netflix', 'amazon prime', 'gym', 'subscription']
-        
+
         for insight in insights:
             if insight.get('insight_type') == 'recurring':
                 metadata = insight.get('metadata', {})
                 merchant = metadata.get('merchant', '').lower()
-                
+
                 if any(keyword in merchant for keyword in subscription_keywords):
                     amount = metadata.get('avg_amount', 0)
                     frequency = metadata.get('frequency_days', 0)
                     annual_cost = amount * (365 / frequency) if frequency > 0 else 0
-                    
+
                     alerts.append({
                         'type': SuggestionType.SUBSCRIPTION_ALERT,
                         'title': f"Subscription Review: {metadata.get('merchant', 'Unknown')}",
@@ -129,13 +129,13 @@ class RecommendationEngine:
                             "Consider canceling if unused"
                         ]
                     })
-        
+
         return alerts
-    
+
     def generate_savings_opportunities(self, insights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Identify potential savings opportunities"""
         opportunities = []
-        
+
         # Analyze spending patterns for savings opportunities
         category_spending = {}
         for insight in insights:
@@ -143,12 +143,12 @@ class RecommendationEngine:
                 category = insight.get('category')
                 amount = insight.get('metadata', {}).get('amount', 0)
                 category_spending[category] = category_spending.get(category, 0) + amount
-        
+
         # Generate savings opportunities based on high spending categories
         for category, amount in category_spending.items():
             if amount > 200:  # Significant spending
                 savings_tips = self._get_category_savings_tips(category)
-                
+
                 opportunities.append({
                     'type': SuggestionType.SAVINGS_OPPORTUNITY,
                     'category': category,
@@ -159,9 +159,9 @@ class RecommendationEngine:
                     'tips': savings_tips,
                     'current_spending': amount
                 })
-        
+
         return opportunities
-    
+
     def _get_category_savings_tips(self, category: str) -> List[str]:
         """Get category-specific savings tips"""
         tips_map = {
@@ -196,9 +196,9 @@ class RecommendationEngine:
                 "Host entertainment at home"
             ]
         }
-        
+
         return tips_map.get(category, ["Look for discounts and deals", "Consider alternatives", "Budget carefully"])
-    
+
     def prioritize_suggestions(self, suggestions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort suggestions by priority and potential impact"""
         priority_order = {
@@ -207,18 +207,18 @@ class RecommendationEngine:
             SuggestionPriority.MEDIUM: 2,
             SuggestionPriority.LOW: 1
         }
-        
+
         def sort_key(suggestion):
             priority_score = priority_order.get(suggestion.get('priority'), 0)
             savings_score = suggestion.get('potential_savings', 0) / 100  # Normalize savings
             return (priority_score, savings_score)
-        
+
         return sorted(suggestions, key=sort_key, reverse=True)
-    
+
     def generate_budget_recommendations(self, insights: List[Dict[str, Any]], current_thresholds: Dict[str, float]) -> List[Dict[str, Any]]:
         """Generate budget adjustment recommendations"""
         recommendations = []
-        
+
         # Analyze spending patterns to suggest budget adjustments
         category_actuals = {}
         for insight in insights:
@@ -226,13 +226,13 @@ class RecommendationEngine:
                 category = insight.get('category')
                 amount = insight.get('metadata', {}).get('amount', 0)
                 category_actuals[category] = max(category_actuals.get(category, 0), amount)
-        
+
         for category, actual_spending in category_actuals.items():
             current_budget = current_thresholds.get(category, 0)
-            
+
             if actual_spending > current_budget * 1.2:  # Consistently over budget
                 suggested_budget = actual_spending * 1.1  # 10% buffer
-                
+
                 recommendations.append({
                     'type': SuggestionType.BUDGET_ADJUSTMENT,
                     'category': category,
@@ -243,10 +243,10 @@ class RecommendationEngine:
                     'suggested_budget': suggested_budget,
                     'reason': "Consistently exceeding current budget"
                 })
-            
+
             elif actual_spending < current_budget * 0.7:  # Significantly under budget
                 suggested_budget = actual_spending * 1.2  # 20% buffer
-                
+
                 recommendations.append({
                     'type': SuggestionType.BUDGET_ADJUSTMENT,
                     'category': category,
@@ -257,5 +257,24 @@ class RecommendationEngine:
                     'suggested_budget': suggested_budget,
                     'reason': "Consistently under current budget"
                 })
-        
+
+        # Handle income trend insights
+        for insight in insights:
+            if insight.get('insight_type') == 'trend':
+                metadata = insight.get('metadata', {})
+                trend_percentage = metadata.get('trend_percentage', 0)
+                category = insight.get('category', 'income')
+
+                if category == 'income' and trend_percentage < -20:  # Significant income decrease
+                    recommendations.append({
+                        'type': SuggestionType.BUDGET_ADJUSTMENT,
+                        'category': 'overall',
+                        'title': "Review Budget Due to Income Change",
+                        'description': f"Your income has decreased by {abs(trend_percentage):.1f}%. Consider adjusting your overall budget.",
+                        'priority': SuggestionPriority.HIGH,
+                        'current_budget': 0,  # Not category-specific
+                        'suggested_budget': 0,  # Not category-specific
+                        'reason': f"Income decreased by {abs(trend_percentage):.1f}%"
+                    })
+
         return recommendations
