@@ -15,14 +15,35 @@ class TransactionService:
     def __init__(self, db):
         self.db = db
 
+    def _map_db_to_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Map database enum values to Pydantic response values"""
+        mapped = data.copy()
+
+        # Map transaction_type
+        if mapped.get('transaction_type') == 'debit':
+            mapped['transaction_type'] = 'expense'
+        elif mapped.get('transaction_type') == 'credit':
+            mapped['transaction_type'] = 'income'
+
+        # Map status
+        if mapped.get('status') == 'completed':
+            mapped['status'] = 'processed'
+
+        # Convert date string to date object
+        if isinstance(mapped.get('date'), str):
+            from datetime import datetime
+            mapped['date'] = datetime.fromisoformat(mapped['date']).date()
+
+        return mapped
+
     async def process_uploaded_transactions(self, df: pd.DataFrame, user_id: str) -> Dict[str, int]:
         """Process uploaded transaction file through the unified workflow pipeline AND save to database"""
-        from ..agents.ingestion_agent import EnhancedIngestionAgent, IngestionAgentInput
+        from ..agents.ingestion_agent import IngestionAgent, IngestionAgentInput
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
         try:
             # Initialize enhanced ingestion agent
-            ingestion_agent = EnhancedIngestionAgent()
+            ingestion_agent = IngestionAgent()
 
             # Process through enhanced ingestion agent first
             input_data = IngestionAgentInput(
@@ -31,7 +52,7 @@ class TransactionService:
             )
             ingestion_result = ingestion_agent.process(input_data)
 
-            if ingestion_result.status == "success" and ingestion_result.preprocessed_transactions:
+            if ingestion_result.metadata.get("status") == "completed" and ingestion_result.preprocessed_transactions:
                 # Convert processed transactions to database records
                 saved_count = 0
                 for transaction_data in ingestion_result.preprocessed_transactions:
@@ -50,11 +71,11 @@ class TransactionService:
                             "processed_by_agent": "ingestion_agent",
                             "processing_version": "1.0"
                         }
-                        
+
                         # Save to database
                         await TransactionCRUD.create_transaction(self.db, db_data)
                         saved_count += 1
-                        
+
                     except Exception as e:
                         print(f"⚠️ Failed to save transaction: {e}")
                         continue
@@ -76,7 +97,7 @@ class TransactionService:
                     "skipped": len(df),
                     "errors": 1
                 }
-                
+
         except Exception as e:
             print(f"❌ Upload processing failed: {e}")
             return {
@@ -92,34 +113,41 @@ class TransactionService:
         try:
             # Create transaction in database
             db_transaction = await TransactionCRUD.create_transaction(self.db, transaction_data)
-            
-            # Convert to response format
-            return TransactionResponse(**db_transaction.to_dict())
-            
+
+            # Convert to response format with proper enum mapping
+            response_data = self._map_db_to_response(db_transaction.to_dict())
+
+            return TransactionResponse(**response_data)
+
         except Exception as e:
             raise ValueError(f"Failed to create transaction: {str(e)}")
 
     async def get_transaction(self, transaction_id: str, user_id: str) -> Optional[TransactionResponse]:
         """Get a specific transaction from database"""
         db_transaction = await TransactionCRUD.get_transaction(self.db, transaction_id, user_id)
-        
+
         if db_transaction:
-            return TransactionResponse(**db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction.to_dict())
+            return TransactionResponse(**response_data)
         return None
 
     async def get_transactions(self, filters: Dict[str, Any]) -> Tuple[List[TransactionResponse], int]:
         """Get transactions from database with filtering and pagination"""
         db_transactions, total = await TransactionCRUD.get_transactions(self.db, filters)
-        
-        transactions = [TransactionResponse(**t.to_dict()) for t in db_transactions]
+
+        transactions = []
+        for t in db_transactions:
+            response_data = self._map_db_to_response(t.to_dict())
+            transactions.append(TransactionResponse(**response_data))
         return transactions, total
 
     async def update_transaction(self, transaction_id: str, update_data: Dict[str, Any]) -> Optional[TransactionResponse]:
         """Update a transaction in database"""
         db_transaction = await TransactionCRUD.update_transaction(self.db, transaction_id, update_data)
-        
+
         if db_transaction:
-            return TransactionResponse(**db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction.to_dict())
+            return TransactionResponse(**response_data)
         return None
 
     async def delete_transaction(self, transaction_id: str) -> bool:
@@ -139,23 +167,23 @@ class TransactionService:
         updated = 0
         failed = 0
         errors = []
-        
+
         for update in updates:
             try:
                 transaction_id = update["id"]
                 update_data = update["data"]
-                
+
                 result = await self.update_transaction(transaction_id, update_data)
                 if result:
                     updated += 1
                 else:
                     failed += 1
                     errors.append(f"Transaction {transaction_id} not found")
-                    
+
             except Exception as e:
                 failed += 1
                 errors.append(f"Transaction {update.get('id', 'unknown')}: {str(e)}")
-        
+
         return {
             "updated": updated,
             "failed": failed,
@@ -167,7 +195,7 @@ class TransactionService:
         deleted = 0
         failed = 0
         errors = []
-        
+
         for transaction_id in transaction_ids:
             try:
                 success = await self.delete_transaction(transaction_id)
@@ -176,11 +204,11 @@ class TransactionService:
                 else:
                     failed += 1
                     errors.append(f"Transaction {transaction_id} not found")
-                    
+
             except Exception as e:
                 failed += 1
                 errors.append(f"Transaction {transaction_id}: {str(e)}")
-        
+
         return {
             "deleted": deleted,
             "failed": failed,

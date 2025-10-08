@@ -8,6 +8,8 @@ import {
   CheckCircleIcon,
   XCircleIcon,
 } from "@heroicons/react/24/outline";
+import AgentStatusWidget from "@/components/AgentStatusWidget";
+import ConversationalEntry from "@/components/ConversationalEntry";
 
 interface UploadResult {
   transactions_processed?: number;
@@ -21,12 +23,34 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { updateAgentStatus } = useApp();
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
+      setResult(null);
+      setError("");
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files && files[0]) {
+      setFile(files[0]);
       setResult(null);
       setError("");
     }
@@ -113,11 +137,17 @@ export default function UploadPage() {
         </p>
       </div>
 
+      {/* Agent Status */}
+      <AgentStatusWidget />
+
       {/* File Upload Section */}
       <div className="bg-white p-6 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4">Upload Transaction File</h3>
 
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors">
+        <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragOver ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}
+             onDragOver={handleDragOver}
+             onDragLeave={handleDragLeave}
+             onDrop={handleDrop}>
           <ArrowUpTrayIcon className="mx-auto h-12 w-12 text-gray-400" />
           <div className="mt-4">
             <label htmlFor="file-upload" className="cursor-pointer">
@@ -326,6 +356,14 @@ export default function UploadPage() {
             <li>payment_method: Payment method used</li>
           </ul>
         </div>
+      </div>
+
+      {/* Conversational Transaction Entry */}
+      <div className="bg-white p-6 rounded-lg shadow">
+        <ConversationalEntry onTransactionAdded={() => {
+          // Refresh data or show success message
+          console.log("Transaction added via conversation");
+        }} />
       </div>
     </div>
   );

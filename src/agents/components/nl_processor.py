@@ -10,6 +10,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("Environment variables loaded from .env file")
+except ImportError:
+    print("python-dotenv not available, environment variables may not be loaded from .env file")
+
 # LangChain imports with fallback
 try:
     from langchain_groq import ChatGroq
@@ -26,6 +34,14 @@ except ImportError:
     Field = None
 
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger.info("Environment variables loaded from .env file")
+except ImportError:
+    logger.warning("python-dotenv not available, environment variables may not be loaded from .env file")
 
 @dataclass
 class TransactionExtraction:
@@ -56,15 +72,15 @@ if LANGCHAIN_AVAILABLE:
 
 class NaturalLanguageProcessor:
     """Process natural language transaction descriptions with LLM support"""
-    
+
     def __init__(self, groq_api_key: Optional[str] = None):
         """Initialize the NL processor with optional LLM support"""
         self.llm = None
         self.extraction_chain = None
-        
+
         # Get API key from parameter or environment
         self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
-        
+
         # Initialize LangChain if available and API key provided
         if LANGCHAIN_AVAILABLE and self.groq_api_key:
             try:
@@ -86,10 +102,10 @@ class NaturalLanguageProcessor:
                 logger.warning("LangChain not available, using regex extraction only")
             elif not self.groq_api_key:
                 logger.warning("No Groq API key found, using regex extraction only")
-    
+
     def _setup_extraction_chain(self):
         """Set up the LangChain extraction chain"""
-        
+
         # Create the prompt template
         extraction_prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a financial transaction analysis expert. Extract transaction information from natural language text.
@@ -97,7 +113,7 @@ class NaturalLanguageProcessor:
 Today's date is {today_date}.
 
 Extract the following information:
-- date: Convert relative dates (yesterday, today, Monday, etc.) to YYYY-MM-DD format
+- date: Convert relative dates (yesterday, today, this month, last month, Monday, etc.) to YYYY-MM-DD format. For "this month", use today's date. If no date mentioned, set to null.
 - amount: Extract monetary amount with currency symbol or description
 - description: Clean, descriptive transaction description
 - merchant: Store, restaurant, or service provider name
@@ -113,43 +129,43 @@ Examples:
 Input: "I spent $25 at Starbucks yesterday using my credit card"
 Output: {{"date": "2024-01-14", "amount": "$25", "description": "Coffee purchase at Starbucks", "merchant": "Starbucks", "category": "food_dining", "payment_method": "credit_card", "offer_discount": null, "location": null, "confidence": 0.9}}
 
-Input: "Grocery shopping $120 at Walmart"
-Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "merchant": "Walmart", "category": "groceries", "payment_method": null, "offer_discount": null, "location": null, "confidence": 0.8}}
+Input: "Grocery shopping $120 at Walmart this month"
+Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shopping", "merchant": "Walmart", "category": "groceries", "payment_method": null, "offer_discount": null, "location": null, "confidence": 0.8}}
 """),
             ("human", "Extract transaction information from: {input_text}")
         ])
-        
+
         # Set up output parser
         output_parser = JsonOutputParser(pydantic_object=LangChainTransactionExtraction)
-        
+
         # Create the chain
         self.extraction_chain = extraction_prompt | self.llm | output_parser
         logger.info("LangChain extraction chain set up successfully")
-    
+
     def extract_with_llm(self, text: str) -> TransactionExtraction:
         """Extract transaction info using LLM"""
         if not self.extraction_chain:
             logger.info("LLM not available, falling back to regex extraction")
             return self.extract_with_regex(text)
-        
+
         try:
             logger.info(f"Processing with LLM: {text[:50]}...")
-            
+
             # Get today's date for relative date processing
             today_date = datetime.now().strftime("%Y-%m-%d")
-            
+
             # Invoke the extraction chain
             result = self.extraction_chain.invoke({
                 "input_text": text,
                 "today_date": today_date
             })
-            
+
             logger.info(f"LLM extraction successful: {result}")
-            
+
             # Extract confidence and log it prominently
             llm_confidence = result.get("confidence", 0.8)
             print(f"LLM CONFIDENCE: {llm_confidence:.2f} | Input: '{text[:60]}{'...' if len(text) > 60 else ''}' | Method: LLM")
-            
+
             # Convert to our TransactionExtraction format
             return TransactionExtraction(
                 date=result.get("date"),
@@ -162,16 +178,16 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 location=result.get("location"),
                 confidence=llm_confidence
             )
-            
+
         except Exception as e:
             logger.warning(f"LLM extraction failed: {e}, falling back to regex")
             return self.extract_with_regex(text)
-    
+
     def extract_with_regex(self, text: str) -> TransactionExtraction:
         """Fallback extraction using regex patterns"""
         try:
             logger.info(f"🔍 Processing with regex: {text[:50]}...")
-            
+
             # Amount patterns
             amount_patterns = [
                 r'[\$₹€£¥]\s*(\d+(?:\.\d{2})?)',
@@ -180,14 +196,14 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 r'spent\s+[\$₹€£¥]?\s*(\d+(?:\.\d{2})?)',
                 r'cost\s+[\$₹€£¥]?\s*(\d+(?:\.\d{2})?)'
             ]
-            
+
             # Merchant patterns
             merchant_patterns = [
                 r'at\s+([A-Za-z][A-Za-z\s&\'-]+?)(?:\s+(?:store|restaurant|cafe|shop|mall|center|outlet|branch))?(?:\s|$|,|\.|for|using|with)',
                 r'from\s+([A-Za-z][A-Za-z\s&\'-]+?)(?:\s+(?:store|restaurant|cafe|shop|mall|center|outlet|branch))?(?:\s|$|,|\.|for|using|with)',
                 r'(?:bought|purchased|ordered)\s+(?:from\s+)?([A-Za-z][A-Za-z\s&\'-]+?)(?:\s+(?:store|restaurant|cafe|shop|mall|center|outlet|branch))?(?:\s|$|,|\.|for|using|with)'
             ]
-            
+
             # Category keywords
             category_keywords = {
                 'food_dining': ['restaurant', 'cafe', 'coffee', 'dinner', 'lunch', 'breakfast', 'food', 'eat', 'dining', 'pizza', 'burger', 'starbucks', 'mcdonalds'],
@@ -199,7 +215,7 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 'healthcare': ['doctor', 'hospital', 'pharmacy', 'medicine', 'medical', 'health', 'dental'],
                 'travel': ['hotel', 'flight', 'airline', 'booking', 'travel', 'vacation', 'trip']
             }
-            
+
             # Payment method patterns
             payment_patterns = {
                 'credit_card': ['credit card', 'visa', 'mastercard', 'amex', 'discover'],
@@ -209,9 +225,9 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 'bank_transfer': ['bank transfer', 'wire', 'ach'],
                 'check': ['check', 'cheque']
             }
-            
+
             text_lower = text.lower()
-            
+
             # Extract amount
             amount = None
             for pattern in amount_patterns:
@@ -224,7 +240,7 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                     else:
                         amount = match.group(0)
                     break
-            
+
             # Extract merchant
             merchant = None
             for pattern in merchant_patterns:
@@ -232,33 +248,33 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 if match:
                     merchant = match.group(1).strip().title()
                     break
-            
+
             # Extract category
             category = 'miscellaneous'  # default
             for cat, keywords in category_keywords.items():
                 if any(keyword in text_lower for keyword in keywords):
                     category = cat
                     break
-            
+
             # Extract payment method
             payment_method = None
             for method, keywords in payment_patterns.items():
                 if any(keyword in text_lower for keyword in keywords):
                     payment_method = method
                     break
-            
+
             # Extract date (simplified - just check for relative dates)
             date = None
             if 'yesterday' in text_lower:
                 date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             elif 'today' in text_lower or 'this morning' in text_lower or 'this afternoon' in text_lower:
                 date = datetime.now().strftime("%Y-%m-%d")
-            
+
             # Generate description
             description = text.strip()
             if len(description) > 100:
                 description = description[:97] + "..."
-            
+
             # Calculate confidence based on extracted fields
             confidence = 0.0
             if amount:
@@ -271,7 +287,7 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 confidence += 0.1
             if date:
                 confidence += 0.1
-            
+
             result = TransactionExtraction(
                 date=date,
                 amount=amount,
@@ -283,30 +299,30 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 location=None,
                 confidence=confidence
             )
-            
+
             # Log confidence prominently for regex extraction
             print(f"REGEX CONFIDENCE: {confidence:.2f} | Input: '{text[:60]}{'...' if len(text) > 60 else ''}' | Method: REGEX")
             logger.info(f"Regex extraction successful: confidence={confidence}")
             return result
-            
+
         except Exception as e:
             logger.error(f"Regex extraction failed: {e}")
             return TransactionExtraction(
                 description=text,
                 confidence=0.1
             )
-    
+
     def process_input(self, text: str) -> Dict[str, Any]:
         """Main method to process natural language input"""
         try:
             logger.info(f"Starting NL processing for: {text[:50]}...")
-            
+
             # Try LLM first if available, fallback to regex
             if self.extraction_chain:
                 extraction = self.extract_with_llm(text)
             else:
                 extraction = self.extract_with_regex(text)
-            
+
             # Convert to dictionary format
             result = {
                 'date': extraction.date,
@@ -321,14 +337,14 @@ Output: {{"date": null, "amount": "$120", "description": "Grocery shopping", "me
                 'raw_input': text,
                 'extraction_method': 'llm' if self.extraction_chain else 'regex'
             }
-            
+
             logger.info(f"NL processing completed with confidence: {extraction.confidence}")
-            
+
             # Prominent confidence logging for pipeline tracking
             print(f"FINAL CONFIDENCE: {extraction.confidence:.2f} | Extraction Method: {result['extraction_method'].upper()} | Ready for NER Agent")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Failed to process input: {e}")
             return {
