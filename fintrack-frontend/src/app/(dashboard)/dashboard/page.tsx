@@ -293,7 +293,7 @@ export default function DashboardPage() {
                           : "text-green-600"
                       }
                     >
-                      ${Math.abs(transaction.amount).toFixed(2)}
+                      {transaction.amount < 0 ? "-" : "+"}${Math.abs(transaction.amount).toFixed(2)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
