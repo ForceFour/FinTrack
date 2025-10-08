@@ -543,7 +543,12 @@ async def process_natural_language_transaction(
                 response_lines = ["✅ Transactions recorded successfully!\n"]
                 for i, tx in enumerate(created_transactions, 1):
                     response_lines.append(f"📝 Transaction {i}: {tx.description}")
-                    response_lines.append(f"💰 ${abs(tx.amount):.2f}")
+                    # Show amount with sign and type indicator
+                    amount_str = f"${abs(tx.amount):.2f}"
+                    if tx.amount < 0:
+                        response_lines.append(f"� Expense: -{amount_str}")
+                    else:
+                        response_lines.append(f"💰 Income: +{amount_str}")
                     response_lines.append(f"📅 {tx.date}")
                     if tx.merchant:
                         response_lines.append(f"🏪 {tx.merchant}")
@@ -660,7 +665,7 @@ async def _parse_natural_language_transaction(
     amount_patterns = [
         r'for\s+(\d+(?:\.\d{2})?)\s*(?:rs|inr|usd|\$|dollars?|bucks?|rupees?)',  # for 123 rs
         r'at\s+(\d+(?:\.\d{2})?)\s*(?:rs|inr|usd|\$|dollars?|bucks?|rupees?)',  # at 123 rs
-        r'(\d+(?:\.\d{2})?)\s*(?:rs|inr|usd|\$|dollars?|bucks?|rupees?)\s+(?:and|&|,|\s|$)',  # 123 rs and
+        r'(\d+(?:\.\d{2})?)\s*(?:rs|inr|usd|\$|dollars?|bucks?|rupees?)(?:\s|$)',  # 123 rs (more flexible)
         r'\$\s*(\d+(?:\.\d{2})?)',  # $123
         r'(\d+(?:\.\d{2})?)\s*dollars?',  # 123 dollars
         r'(\d+(?:\.\d{2})?)\s*bucks?',  # 123 bucks
@@ -678,29 +683,161 @@ async def _parse_natural_language_transaction(
         if not part:
             continue
 
-        # Extract amount from this part
+        # Try LLM-based extraction first (primary method for agentic AI)
+        transaction = None
+        try:
+            from ..agents.components.nl_processor import NaturalLanguageProcessor
+            nl_processor = NaturalLanguageProcessor()
+            llm_extraction = nl_processor.process_input(part)
+
+            if llm_extraction and llm_extraction.get('confidence', 0) >= 0.7:
+                # Use LLM extraction results
+                transaction = {
+                    "amount": None,  # Will be processed below
+                    "description": llm_extraction.get('description') or part.strip(),
+                    "date": llm_extraction.get('date'),
+                    "merchant": llm_extraction.get('merchant'),
+                    "category": llm_extraction.get('category')
+                }
+
+                # Validate and post-process the date from LLM extraction
+                llm_date = llm_extraction.get('date')
+                if llm_date:
+                    # Check if date is in proper YYYY-MM-DD format
+                    import re
+                    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(llm_date)):
+                        # Invalid or incomplete date format, set to None for regex fallback
+                        logger.warning(f"LLM returned invalid date format '{llm_date}' for '{part}', falling back to regex date parsing")
+                        transaction["date"] = None
+                    else:
+                        # Valid date format, keep it
+                        transaction["date"] = llm_date
+
+                # Process amount from LLM extraction
+                if llm_extraction.get('amount'):
+                    # Extract numeric amount from LLM result
+                    import re
+                    amount_match = re.search(r'(\d+(?:\.\d{2})?)', str(llm_extraction.get('amount')))
+                    if amount_match:
+                        amount = float(amount_match.group(1))
+                        # Determine if income or expense based on keywords in original text
+                        part_lower = part.lower()
+
+                        # Separate keyword lists for better classification
+                        income_keywords = [
+                            "earned", "received", "income", "credit", "deposit", "salary", "wage", "payroll",
+                            "refund", "reimbursement", "bonus", "commission", "tips", "tip", "freelance", "payment received",
+                            "paid me", "got paid", "made", "collected", "withdrawal", "transfer in", "cashback",
+                            "interest", "dividend", "royalty", "prize", "award", "grant", "stipend", "allowance",
+                            "pension", "social security", "unemployment", "gift", "inheritance", "lottery",
+                            "settlement", "compensation", "profit", "revenue", "sales", "consulting", "contract",
+                            "rental income", "lease income"  # More specific for income context
+                        ]
+
+                        expense_keywords = [
+                            "spent", "paid", "bought", "purchased", "cost", "fee", "bill", "rent payment",
+                            "mortgage", "insurance", "utility", "gas", "electricity", "water", "internet",
+                            "phone", "subscription", "membership", "donation", "taxes", "fine", "penalty"
+                        ]
+
+                        # Check for explicit expense keywords first
+                        has_expense_keywords = any(word in part_lower for word in expense_keywords)
+                        has_income_keywords = any(word in part_lower for word in income_keywords)
+
+                        # Special handling for ambiguous words
+                        # "got paid" should always be income, not expense
+                        if "got paid" in part_lower:
+                            has_expense_keywords = False
+                            has_income_keywords = True
+
+                        # If explicit expense keywords found, it's an expense
+                        if has_expense_keywords:
+                            amount = -amount  # Definitely expense
+                        # If income keywords found but no expense keywords, it's income
+                        elif has_income_keywords:
+                            pass  # Keep as positive (income)
+                        # Default to expense if ambiguous
+                        else:
+                            amount = -amount  # Default to expense
+                        transaction["amount"] = amount
+                        logger.info(f"LLM extracted amount: {amount} for '{part}' (confidence: {llm_extraction.get('confidence', 0)})")
+
+                if transaction["amount"] is not None:
+                    transactions.append(transaction)
+                    continue  # Successfully used LLM extraction
+                else:
+                    logger.warning(f"LLM extraction incomplete for '{part}', falling back to regex")
+            else:
+                logger.info(f"LLM extraction low confidence ({llm_extraction.get('confidence', 0) if llm_extraction else 0}), falling back to regex")
+
+        except Exception as e:
+            logger.warning(f"LLM extraction failed for '{part}': {e}, falling back to regex")
+
+        # Fallback to regex + keyword logic (current implementation)
         part_lower = part.lower()
         amount = None
         for pattern in amount_patterns:
             match = re.search(pattern, part_lower)
             if match:
                 amount = float(match.group(1))
-                if not any(word in part_lower for word in ["earned", "received", "income", "credit", "deposit", "salary", "refund"]):
-                    amount = -amount  # Expenses are negative
+                # Check for income keywords - expanded comprehensive list
+                income_keywords = [
+                    "earned", "received", "income", "credit", "deposit", "salary", "wage", "payroll",
+                    "refund", "reimbursement", "bonus", "commission", "tips", "tip", "freelance", "payment received",
+                    "paid me", "got paid", "made", "collected", "withdrawal", "transfer in", "cashback",
+                    "interest", "dividend", "royalty", "prize", "award", "grant", "stipend", "allowance",
+                    "pension", "social security", "unemployment", "gift", "inheritance", "lottery",
+                    "settlement", "compensation", "profit", "revenue", "sales", "consulting", "contract",
+                    "rental income", "lease income"  # More specific for income context
+                ]
+
+                expense_keywords = [
+                    "spent", "paid", "bought", "purchased", "cost", "fee", "bill", "rent payment",
+                    "mortgage", "insurance", "utility", "gas", "electricity", "water", "internet",
+                    "phone", "subscription", "membership", "donation", "taxes", "fine", "penalty"
+                ]
+
+                # Check for explicit expense keywords first
+                has_expense_keywords = any(word in part_lower for word in expense_keywords)
+                has_income_keywords = any(word in part_lower for word in income_keywords)
+
+                # Special handling for ambiguous words
+                # "got paid" should always be income, not expense
+                if "got paid" in part_lower:
+                    has_expense_keywords = False
+                    has_income_keywords = True
+
+                # If explicit expense keywords found, it's an expense
+                if has_expense_keywords:
+                    amount = -amount  # Definitely expense
+                # If income keywords found but no expense keywords, it's income
+                elif has_income_keywords:
+                    pass  # Keep as positive (income)
+                # Default to expense if ambiguous
+                else:
+                    amount = -amount  # Default to expense
                 break
 
         if amount is None:
             continue  # Skip parts without amounts
 
+        # Initialize transaction dictionary for regex fallback
+        transaction = {
+            "amount": amount,
+            "description": part.strip(),
+            "date": None,  # Will be set below
+            "merchant": None,  # Will be set below
+            "category": None  # Will be set below
+        }
+
         # Extract date from this part
-        tx_date = None
         today = datetime.now().date()
-        if any(word in part_lower for word in ["today", "this morning", "this afternoon", "this evening"]):
-            tx_date = today.isoformat()
+        if any(word in part_lower for word in ["today", "this morning", "this afternoon", "this evening", "this month"]):
+            transaction["date"] = today.isoformat()
         elif any(word in part_lower for word in ["yesterday"]):
-            tx_date = (today - timedelta(days=1)).isoformat()
+            transaction["date"] = (today - timedelta(days=1)).isoformat()
         elif "last" in part_lower and "week" in part_lower:
-            tx_date = (today - timedelta(days=7)).isoformat()
+            transaction["date"] = (today - timedelta(days=7)).isoformat()
         else:
             # Look for date patterns in this part
             date_patterns = [
@@ -724,20 +861,24 @@ async def _parse_natural_language_transaction(
                             if month:
                                 year = datetime.now().year  # Assume current year
                                 parsed_date = datetime(year, month, day).date()
-                                tx_date = parsed_date.isoformat()
+                                transaction["date"] = parsed_date.isoformat()
                                 break
                         elif pattern.startswith(r'(\d{4})'):  # YYYY/MM/DD
                             year, month, day = map(int, match.groups())
                             parsed_date = datetime(year, month, day).date()
-                            tx_date = parsed_date.isoformat()
+                            transaction["date"] = parsed_date.isoformat()
                             break
                         else:  # Assume MM/DD/YYYY
                             month, day, year = map(int, match.groups())
                             parsed_date = datetime(year, month, day).date()
-                            tx_date = parsed_date.isoformat()
+                            transaction["date"] = parsed_date.isoformat()
                             break
                     except ValueError:
                         continue
+
+        # Set default date to today if no date was found
+        if transaction.get("date") is None:
+            transaction["date"] = today.isoformat()
 
         # Extract merchant from the original part (before cleaning)
         merchant = None
@@ -809,14 +950,6 @@ async def _parse_natural_language_transaction(
             else:
                 description = "Purchase"
 
-        # Initialize transaction dictionary
-        transaction = {
-            "amount": amount,
-            "description": description.strip(),
-            "date": tx_date,
-            "merchant": merchant
-        }
-
         # Infer merchant from description if not already found
         if not transaction.get("merchant"):
             description_lower = transaction["description"].lower()
@@ -842,32 +975,71 @@ async def _parse_natural_language_transaction(
         # Infer category using simple keyword-based classification
         if transaction.get("description") and not transaction.get("category"):
             try:
-                # Fallback to simple rules
+                # Check if this is an income transaction (positive amount)
+                is_income = transaction.get("amount", 0) > 0
                 description_lower = transaction["description"].lower()
-                categories = {
-                    "food": ["restaurant", "cafe", "coffee", "lunch", "dinner", "eat", "food", "milkshake", "barista"],
-                    "shopping": ["clothes", "dress", "shirt", "shoes", "store", "shopping", "jumpsuit"],
-                    "transportation": ["uber", "lyft", "taxi", "bus", "train", "gas", "fuel"],
-                    "entertainment": ["netflix", "spotify", "movie", "game", "concert"],
-                    "utilities": ["electric", "water", "internet", "phone", "gas bill"]
-                }
-                for category, keywords in categories.items():
-                    if any(keyword in description_lower for keyword in keywords):
-                        transaction["category"] = category.title()
-                        break
+
+                if is_income:
+                    # Income categories
+                    income_categories = {
+                        "salary": ["salary", "wage", "payroll", "paycheck", "compensation"],
+                        "rental income": ["rent", "rental", "lease", "tenant", "property income"],
+                        "freelance": ["freelance", "consulting", "contract", "gig", "side hustle"],
+                        "investment": ["dividend", "interest", "capital gain", "stock", "bond", "investment"],
+                        "business": ["business", "revenue", "sales", "profit", "commission"],
+                        "gift": ["gift", "inheritance", "lottery", "prize", "award", "grant"],
+                        "refund": ["refund", "reimbursement", "tax refund", "cashback"],
+                        "other income": ["other", "miscellaneous", "additional", "bonus", "tip"]
+                    }
+                    for category, keywords in income_categories.items():
+                        if any(keyword in description_lower for keyword in keywords):
+                            transaction["category"] = category.title()
+                            break
+                else:
+                    # Expense categories
+                    expense_categories = {
+                        "food": ["restaurant", "cafe", "coffee", "lunch", "dinner", "eat", "food", "milkshake", "barista"],
+                        "shopping": ["clothes", "dress", "shirt", "shoes", "store", "shopping", "jumpsuit"],
+                        "transportation": ["uber", "lyft", "taxi", "bus", "train", "gas", "fuel"],
+                        "entertainment": ["netflix", "spotify", "movie", "game", "concert"],
+                        "utilities": ["electric", "water", "internet", "phone", "gas bill"]
+                    }
+                    for category, keywords in expense_categories.items():
+                        if any(keyword in description_lower for keyword in keywords):
+                            transaction["category"] = category.title()
+                            break
 
                 # If still no category, try merchant-based inference
                 if not transaction.get("category") and transaction.get("merchant"):
                     merchant_lower = transaction["merchant"].lower()
-                    if "barista" in merchant_lower or "coffee" in merchant_lower:
-                        transaction["category"] = "Food"
-                    elif "uber" in merchant_lower or "lyft" in merchant_lower:
-                        transaction["category"] = "Transportation"
+                    if is_income:
+                        # For income transactions, merchant might represent the source
+                        if any(word in merchant_lower for word in ["employer", "company", "client", "customer"]):
+                            transaction["category"] = "Salary"
+                        elif any(word in merchant_lower for word in ["bank", "investment", "brokerage"]):
+                            transaction["category"] = "Investment"
+                        elif any(word in merchant_lower for word in ["tenant", "renter"]):
+                            transaction["category"] = "Rental Income"
+                        else:
+                            transaction["category"] = "Other Income"
+                    else:
+                        # Expense merchant inference
+                        if "barista" in merchant_lower or "coffee" in merchant_lower:
+                            transaction["category"] = "Food"
+                        elif "uber" in merchant_lower or "lyft" in merchant_lower:
+                            transaction["category"] = "Transportation"
 
             except Exception as e:
                 logger.warning(f"Category classification failed: {e}")
 
         transactions.append(transaction)
+
+    # Auto-assign today's date for transactions without explicit dates
+    today = datetime.now().date().isoformat()
+    for tx in transactions:
+        if not tx.get("date"):
+            tx["date"] = today
+            logger.info(f"Auto-assigned today's date ({today}) to transaction: {tx.get('description', 'Unknown')}")
 
     return transactions
 
