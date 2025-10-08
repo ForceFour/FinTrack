@@ -916,7 +916,6 @@ with col1:
                 ]
                 
                 # Add day-of-week breakdown
-                story.append(Paragraph("Daily Spending Breakdown", subheading_style))
                 dow_data = [["Day", "Total Spending", "Avg per Transaction"]]
                 for day in dow_order:
                     day_total = dow_spending.get(day, 0)
@@ -991,7 +990,6 @@ with col1:
                 ]
                 
                 # Add top 10 merchants table
-                story.append(Paragraph("Top 10 Merchants by Spending", subheading_style))
                 top_merchants_data = [["Rank", "Merchant", "Total Spent", "Avg Transaction", "Visit Count"]]
                 for i, (merchant, data) in enumerate(merchant_summary.head(10).iterrows(), 1):
                     top_merchants_data.append([
