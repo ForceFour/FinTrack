@@ -277,3 +277,7 @@ class IngestionAgent:
                     return value
 
         return PaymentMethod.OTHER
+
+
+# Alias for backward compatibility
+EnhancedIngestionAgent = IngestionAgent
