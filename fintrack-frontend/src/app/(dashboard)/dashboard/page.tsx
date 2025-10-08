@@ -305,6 +305,37 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* AI-Generated Insights */}
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h3 className="text-lg font-semibold mb-4">AI-Generated Insights</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <InsightCard
+            icon="📊"
+            title="Spending Pattern Detected"
+            message="You spend most on dining and entertainment on weekends. Consider setting a weekly dining budget."
+            type="info"
+          />
+          <InsightCard
+            icon="📈"
+            title="Monthly Trend"
+            message="Your grocery spending has increased 15% this month. This might be due to inflation or changed shopping habits."
+            type="warning"
+          />
+          <InsightCard
+            icon="🎯"
+            title="Unusual Activity"
+            message="Unusual spending pattern detected at electronics stores. Verify these transactions for accuracy."
+            type="warning"
+          />
+          <InsightCard
+            icon="💡"
+            title="Budget Recommendation"
+            message="Consider setting a budget limit for restaurant expenses. You're currently 23% over your typical spending."
+            type="success"
+          />
+        </div>
+      </div>
     </div>
   );
 }

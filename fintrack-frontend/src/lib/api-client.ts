@@ -1,6 +1,8 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
+import { ConversationContext } from "./types";
+
 export interface ApiResponse<T = unknown> {
   status: string;
   data?: T;
@@ -35,7 +37,9 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface ConversationContext {
+
+
+export interface ConversationContextRequest {
   previous_transactions?: Transaction[];
   user_preferences?: Record<string, unknown>;
   session_id?: string;
