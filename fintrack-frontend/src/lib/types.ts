@@ -4,17 +4,18 @@
 
 export interface Transaction {
   id?: string;
+  user_id?: string;
   amount: number;
   description: string;
   date: string;
-  merchant?: string;
-  category?: string;
-  subcategory?: string;
-  transaction_type?: "debit" | "credit" | "income" | "expense";
+  merchant?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  transaction_type: string; // Changed from union type to string to match Supabase
   status?: string;
-  payment_method?: string;
-  account_type?: string;
-  confidence?: number;
+  payment_method?: string | null;
+  account_type?: string | null;
+  confidence?: number | null;
   created_at?: string;
   updated_at?: string;
 }

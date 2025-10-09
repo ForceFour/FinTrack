@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { apiClient } from "@/lib/api-client";
+import { useState, useEffect, useCallback } from "react";
+import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
+import { useApp } from "@/app/providers";
 import AgentStatusWidget from "@/components/AgentStatusWidget";
 import {
   LineChart,
@@ -32,22 +33,27 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { auth } = useApp();
 
-  useEffect(() => {
-    loadTransactions();
-  }, []);
+  const loadTransactions = useCallback(async () => {
+    if (!auth.user) return;
 
-  const loadTransactions = async () => {
     setLoading(true);
-    const response = await apiClient.getTransactions({ limit: 100 });
+    const response = await getTransactions(auth.user.id, {}, 1, 100);
 
-    if (response.status === "success" && response.data) {
-      setTransactions(response.data.transactions || []);
+    if (response.error) {
+      setError(response.error);
     } else {
-      setError(response.error || "Failed to load transactions");
+      setTransactions(response.data || []);
     }
     setLoading(false);
-  };
+  }, [auth.user]);
+
+  useEffect(() => {
+    if (auth.isAuthenticated && auth.user) {
+      loadTransactions();
+    }
+  }, [auth.isAuthenticated, auth.user, loadTransactions]);
 
   // Calculate metrics
   const expenses = transactions.filter(
