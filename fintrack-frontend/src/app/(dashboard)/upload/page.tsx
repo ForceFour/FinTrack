@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, ChangeEvent } from "react";
-import { apiClient } from "@/lib/api-client";
 import { useApp } from "@/app/providers";
 import {
   ArrowUpTrayIcon,
@@ -92,19 +91,18 @@ export default function UploadPage() {
     }
 
     try {
-      const response = await apiClient.uploadTransactions(file);
+      // TODO: Implement Supabase-based transaction upload
+      // This would involve:
+      // 1. Parsing CSV file
+      // 2. Processing transactions with AI (if needed)
+      // 3. Creating transactions in Supabase
 
-      if (response.status === "success") {
-        setResult(response.data);
-        setProgress(100);
-      } else {
-        setError(response.error || "Upload failed");
-        // Mark agents as error
-        agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
-      }
+      setError("Transaction upload is not yet implemented with Supabase. This feature is coming soon!");
+      agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
     } catch (err) {
+      console.error("Upload error:", err);
       setError("Upload failed. Please try again.");
-      agents.forEach((agent) => updateAgentStatus({ [agent]: err}));
+      agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
     } finally {
       clearInterval(progressInterval);
       setUploading(false);

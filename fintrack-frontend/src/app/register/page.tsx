@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiClient } from "@/lib/api-client";
+import { signUp } from "@/lib/auth";
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -47,18 +47,18 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const response = await apiClient.register({
-        username: formData.username,
+      const response = await signUp({
         email: formData.email,
         password: formData.password,
+        username: formData.username,
         full_name: formData.full_name,
       });
 
-      if (response.status === "success") {
+      if (response.error) {
+        setError(response.error);
+      } else {
         // Registration successful, redirect to login
         router.push("/login?registered=true");
-      } else {
-        setError(response.error || "Registration failed");
       }
     } catch (err) {
       setError("Registration failed. Please try again.");
