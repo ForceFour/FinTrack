@@ -1,24 +1,28 @@
 /**
  * Type definitions for FinTrack application
+ * Now using generated Supabase database types for type safety
  */
 
-export interface Transaction {
-  id?: string;
-  amount: number;
-  description: string;
-  date: string;
-  merchant?: string;
-  category?: string;
-  subcategory?: string;
-  transaction_type?: "debit" | "credit" | "income" | "expense";
-  status?: string;
-  payment_method?: string;
-  account_type?: string;
-  confidence?: number;
-  created_at?: string;
-  updated_at?: string;
+import type {
+  Transaction,
+  TransactionInsert,
+  TransactionUpdate,
+  Profile,
+  ProfileInsert,
+  ProfileUpdate
+} from './supabase'
+
+// Re-export database types for easier importing
+export type {
+  Transaction,
+  TransactionInsert,
+  TransactionUpdate,
+  Profile,
+  ProfileInsert,
+  ProfileUpdate
 }
 
+// Legacy interfaces - keeping for backward compatibility but should migrate to database types
 export interface User {
   id: string;
   username: string;

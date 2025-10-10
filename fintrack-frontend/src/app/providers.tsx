@@ -8,12 +8,12 @@ import {
   ReactNode,
 } from "react";
 import { AuthState, AgentStatus } from "@/lib/types";
-import { apiClient } from "@/lib/api-client";
+import { signIn, signOut, onAuthStateChange } from "@/lib/auth";
 
 interface AppContextType {
   auth: AuthState;
   agentStatus: AgentStatus;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateAgentStatus: (status: Partial<AgentStatus>) => void;
 }
@@ -38,62 +38,57 @@ export function Providers({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    // Check for existing token on mount
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      apiClient.setToken(token);
-      // Verify token and get user profile
-      apiClient.getUserProfile().then((response) => {
-        if (response.status === "success" && response.data) {
-          setAuth({
-            user: response.data,
-            token,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } else {
-          // Token invalid, clear it
-          localStorage.removeItem("access_token");
-          setAuth({
-            user: null,
-            token: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-        }
-      });
-    } else {
-      setAuth((prev) => ({ ...prev, isLoading: false }));
-    }
+    // Listen to auth state changes
+    const { data: { subscription } } = onAuthStateChange((user) => {
+      if (user) {
+        setAuth({
+          user: {
+            id: user.id,
+            username: user.user_metadata?.username || user.email || '',
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || '',
+          },
+          token: null, // Supabase handles tokens internally
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        setAuth({
+          user: null,
+          token: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (
-    username: string,
+    email: string,
     password: string
   ): Promise<boolean> => {
-    const response = await apiClient.login(username, password);
-
-    if (response.status === "success" && response.data) {
-      setAuth({
-        user: response.data.user,
-        token: response.data.access_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+    try {
+      const response = await signIn({ email, password });
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      // Auth state will be updated via onAuthStateChange listener
       return true;
+    } catch (error) {
+      console.error("Login error:", error);
+      return false;
     }
-
-    return false;
   };
 
-  const logout = () => {
-    apiClient.logout();
-    setAuth({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-    });
+  const logout = async () => {
+    try {
+      await signOut();
+      // Auth state will be updated via onAuthStateChange listener
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   const updateAgentStatus = (status: Partial<AgentStatus>) => {
