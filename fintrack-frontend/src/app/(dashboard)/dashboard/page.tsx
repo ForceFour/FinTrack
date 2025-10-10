@@ -57,10 +57,10 @@ export default function DashboardPage() {
 
   // Calculate metrics
   const expenses = transactions.filter(
-    (t) => t.transaction_type === "expense" || t.amount < 0
+    (t) => t.transaction_type === "DEBIT" || t.amount < 0
   );
   const income = transactions.filter(
-    (t) => t.transaction_type === "income" || t.amount > 0
+    (t) => t.transaction_type === "CREDIT" || t.amount > 0
   );
 
   const totalExpenses = expenses.reduce(
