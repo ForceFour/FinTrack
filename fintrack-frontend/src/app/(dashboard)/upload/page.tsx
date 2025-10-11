@@ -2,6 +2,7 @@
 
 import { useState, useRef, ChangeEvent } from "react";
 import { useApp } from "@/app/providers";
+import { apiClient } from "@/lib/api-client";
 import {
   ArrowUpTrayIcon,
   CheckCircleIcon,
@@ -24,7 +25,7 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateAgentStatus } = useApp();
+  const { updateAgentStatus, refreshTransactions } = useApp();
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -91,17 +92,29 @@ export default function UploadPage() {
     }
 
     try {
-      // TODO: Implement Supabase-based transaction upload
-      // This would involve:
-      // 1. Parsing CSV file
-      // 2. Processing transactions with AI (if needed)
-      // 3. Creating transactions in Supabase
+      // Upload file to backend API for AI processing
+      const response = await apiClient.uploadTransactions(file);
 
-      setError("Transaction upload is not yet implemented with Supabase. This feature is coming soon!");
-      agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
+      if (response.status === "error") {
+        throw new Error(response.error || "Upload failed");
+      }
+
+      const uploadResult = response.data;
+
+      setResult({
+        transactions_processed: uploadResult.transactions_processed || 0,
+        new_transactions: uploadResult.new_transactions || 0,
+        duplicates_found: uploadResult.duplicates_found || 0,
+      });
+
+      // Refresh transactions in dashboard
+      if (uploadResult.new_transactions > 0) {
+        refreshTransactions();
+      }
+
     } catch (err) {
       console.error("Upload error:", err);
-      setError("Upload failed. Please try again.");
+      setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
       agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
     } finally {
       clearInterval(progressInterval);

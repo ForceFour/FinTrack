@@ -12,41 +12,28 @@ from ...core.database_config import Base
 
 class UserORM(Base):
     """
-    SQLAlchemy ORM model for users table
+    SQLAlchemy ORM model for profiles table (Supabase auth.users integration)
     """
-    __tablename__ = "users"
+    __tablename__ = "profiles"
 
-    # Primary key
+    # Primary key - matches Supabase auth.users.id
     id = Column(
-        String, 
-        primary_key=True, 
-        default=lambda: str(uuid.uuid4()),
+        String,
+        primary_key=True,
         index=True
     )
-    
-    # User credentials
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
-    
+
     # User profile
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
     full_name = Column(String(255), nullable=True)
-    
-    # Account status
-    is_active = Column(Boolean, default=True, nullable=False)
-    is_verified = Column(Boolean, default=False, nullable=False)
-    
-    # Preferences (stored as JSON string)
-    preferences = Column(Text, nullable=True)  # JSON string
-    
+
     # Timestamps
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-    last_login = Column(DateTime, nullable=True)
-    
+    created_at = Column(DateTime, default=func.now(), nullable=True)
+
     def __repr__(self):
         return f"<UserORM(id='{self.id}', username='{self.username}', email='{self.email}')>"
-    
+
     def to_dict(self):
         """Convert to dictionary for API responses (excluding sensitive data)"""
         return {

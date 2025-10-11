@@ -223,34 +223,50 @@ class IngestionAgent:
                 transaction_date = datetime.now()
 
             # Create transaction object
-            transaction = PreprocessedTransaction(
-                id=transaction_id,
-                date=transaction_date,
-                year=int(row.get('year', transaction_date.year)),
-                month=int(row.get('month', transaction_date.month)),
-                day=int(row.get('day', transaction_date.day)),
-                day_of_week=int(row.get('day_of_week', transaction_date.weekday())),
-                amount=float(row.get('amount', 0.0)),
-                transaction_type=TransactionType(row.get('transaction_type', 'expense')),
-                payment_method=self._determine_payment_method(row),
-                description_cleaned=str(row.get('description_clean', '')),
-                has_discount=bool(row.get('offer_applied', 0)),
-                discount_percentage=float(row.get('discount_percent', 0.0)) if row.get('discount_percent') else None,
-                metadata={
-                    'is_outlier': bool(row.get('is_outlier', 0)),
-                    'amount_log': float(row.get('amount_log', 0.0)),
-                    'discount_value': float(row.get('discount_value', 0.0)),
-                    'effective_amount': float(row.get('effective_amount', row.get('amount', 0.0))),
-                    'merchant_encoded': float(row.get('merchant_encoded', 0.0)),
-                    'original_amount': float(row.get('original_amount', row.get('amount', 0.0))),
-                    'processed_features': {k: v for k, v in row.items() if k.startswith(('pay_', 'cat_'))},
-                    'preprocessing_pipeline': 'comprehensive'
-                }
-            )
-
-            transactions.append(transaction)
+            try:
+                transaction = PreprocessedTransaction(
+                    id=transaction_id,
+                    date=transaction_date,
+                    year=self._safe_int(row.get('year', transaction_date.year)),
+                    month=self._safe_int(row.get('month', transaction_date.month)),
+                    day=self._safe_int(row.get('day', transaction_date.day)),
+                    day_of_week=self._safe_int(row.get('day_of_week', transaction_date.weekday())),
+                    amount=float(row.get('amount', 0.0)),
+                    transaction_type=TransactionType(row.get('transaction_type', 'expense')),
+                    payment_method=self._determine_payment_method(row),
+                    description_cleaned=str(row.get('description_clean', '')),
+                    has_discount=bool(row.get('offer_applied', 0)),
+                    discount_percentage=float(row.get('discount_percent', 0.0)) if row.get('discount_percent') and not pd.isna(row.get('discount_percent')) else None,
+                    metadata={
+                        'is_outlier': bool(row.get('is_outlier', 0)),
+                        'amount_log': float(row.get('amount_log', 0.0)) if not pd.isna(row.get('amount_log')) else 0.0,
+                        'discount_value': float(row.get('discount_value', 0.0)) if not pd.isna(row.get('discount_value')) else 0.0,
+                        'effective_amount': float(row.get('effective_amount', row.get('amount', 0.0))) if not pd.isna(row.get('effective_amount')) else float(row.get('amount', 0.0)),
+                        'merchant_encoded': float(row.get('merchant_encoded', 0.0)) if not pd.isna(row.get('merchant_encoded')) else 0.0,
+                        'original_amount': float(row.get('original_amount', row.get('amount', 0.0))) if not pd.isna(row.get('original_amount')) else float(row.get('amount', 0.0)),
+                        'processed_features': {k: v for k, v in row.items() if k.startswith(('pay_', 'cat_')) and v is not None and not pd.isna(v) and str(v) != 'nan'},
+                        'preprocessing_pipeline': 'comprehensive'
+                    }
+                )
+                transactions.append(transaction)
+            except Exception as e:
+                logger.warning(f"Failed to create transaction for row {idx}: {e}. Row data: {dict(row)}")
+                continue
 
         return transactions
+
+    def _safe_int(self, value: Any, default: int = 0) -> int:
+        """Safely convert value to int, handling NaN and None values"""
+        if pd.isna(value) or value is None or (isinstance(value, float) and np.isnan(value)):
+            return default
+        try:
+            # Convert to float first to handle string representations of floats
+            float_val = float(value)
+            if np.isnan(float_val):
+                return default
+            return int(float_val)
+        except (ValueError, TypeError, OverflowError):
+            return default
 
     def _determine_payment_method(self, row: pd.Series) -> PaymentMethod:
         """Determine payment method from one-hot encoded columns"""

@@ -33,7 +33,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { auth } = useApp();
+  const { auth, onTransactionsRefresh } = useApp();
 
   const loadTransactions = useCallback(async () => {
     if (!auth.user) return;
@@ -54,6 +54,14 @@ export default function DashboardPage() {
       loadTransactions();
     }
   }, [auth.isAuthenticated, auth.user, loadTransactions]);
+
+  // Listen for transaction refresh events
+  useEffect(() => {
+    const unsubscribe = onTransactionsRefresh(() => {
+      loadTransactions();
+    });
+    return unsubscribe;
+  }, [onTransactionsRefresh, loadTransactions]);
 
   // Calculate metrics
   const expenses = transactions.filter(

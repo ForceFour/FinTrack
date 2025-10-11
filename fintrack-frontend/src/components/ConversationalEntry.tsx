@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { apiClient } from "@/lib/api-client";
 import { ConversationMessage, ConversationContext } from "@/lib/types";
 import { SendIcon, MessageCircleIcon, BotIcon, UserIcon, RefreshCwIcon } from "lucide-react";
+import { useApp } from "@/app/providers";
 
 interface ConversationalEntryProps {
   onTransactionAdded?: () => void;
@@ -16,6 +17,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
   const [conversationContext, setConversationContext] = useState<ConversationContext>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { refreshTransactions } = useApp();
 
   // Check if we have a pending transaction that needs more info
   const contextData = conversationContext as { pending_transaction?: unknown; missing_fields?: unknown };
@@ -77,7 +79,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
         // Handle different response types
         if (data.status === "completed" && data.transaction_processed) {
           // Transaction was successfully created
-          onTransactionAdded?.();
+          refreshTransactions();
 
           // Add a follow-up message with next steps
           const nextStepsMessage: ConversationMessage = {

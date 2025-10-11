@@ -1,5 +1,6 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || "v1";
 
 import { ConversationContext } from "./types";
 
@@ -55,7 +56,7 @@ class APIClient {
   private token: string | null = null;
 
   constructor() {
-    this.baseUrl = `${API_BASE_URL}/api`;
+    this.baseUrl = `${API_BASE_URL}/api/${API_VERSION}`;
 
     // Try to load token from localStorage if available
     if (typeof window !== "undefined") {

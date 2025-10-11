@@ -6,14 +6,16 @@ Handles transaction processing with UnifiedWorkflow AND database storage
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, date
 import pandas as pd
+from supabase import Client
 from ..models.transaction import Transaction, TransactionCreate, TransactionResponse
 from ..db.operations import TransactionCRUD
+
 
 class TransactionService:
     """Enhanced transaction service with database persistence"""
 
-    def __init__(self, db):
-        self.db = db
+    def __init__(self, client: Client):
+        self.client = client
 
     def _map_db_to_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Map database enum values to Pydantic response values"""
@@ -29,10 +31,15 @@ class TransactionService:
         if mapped.get('status') == 'completed':
             mapped['status'] = 'processed'
 
-        # Convert date string to date object
+        # Convert date string to date object if needed
         if isinstance(mapped.get('date'), str):
             from datetime import datetime
-            mapped['date'] = datetime.fromisoformat(mapped['date']).date()
+            try:
+                # Try parsing as ISO format
+                mapped['date'] = datetime.fromisoformat(mapped['date'].replace('Z', '+00:00')).date()
+            except:
+                # If parsing fails, keep as string
+                pass
 
         return mapped
 
@@ -57,27 +64,25 @@ class TransactionService:
                 saved_count = 0
                 for transaction_data in ingestion_result.preprocessed_transactions:
                     try:
-                        # Prepare data for database insertion
+                        # Prepare data for database insertion - only use basic columns that exist
                         db_data = {
                             "user_id": user_id,
-                            "amount": transaction_data.get("amount", 0.0),
-                            "description": transaction_data.get("description", ""),
-                            "date": transaction_data.get("date", datetime.now()),
-                            "merchant": transaction_data.get("merchant"),
-                            "category": transaction_data.get("category"),
-                            "subcategory": transaction_data.get("subcategory"),
-                            "transaction_type": transaction_data.get("transaction_type", "debit"),
-                            "status": "completed",
-                            "processed_by_agent": "ingestion_agent",
-                            "processing_version": "1.0"
+                            "amount": transaction_data.amount,
+                            "description": transaction_data.description_cleaned,
+                            "date": transaction_data.date.isoformat(),
+                            "merchant": None,
+                            "category": None,
+                            "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
+                            "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
+                            "status": "completed"
                         }
 
                         # Save to database
-                        await TransactionCRUD.create_transaction(self.db, db_data)
+                        await TransactionCRUD.create_transaction(self.client, db_data)
                         saved_count += 1
 
                     except Exception as e:
-                        print(f"⚠️ Failed to save transaction: {e}")
+                        print(f"⚠️ Failed to save transaction: {e}. Transaction data: {transaction_data}")
                         continue
 
                 print(f"✅ Saved {saved_count} transactions to database")
@@ -86,10 +91,11 @@ class TransactionService:
                     "processed": len(ingestion_result.preprocessed_transactions),
                     "saved_to_db": saved_count,
                     "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
-                    "errors": len(ingestion_result.errors)
+                    "errors": 1 if ingestion_result.metadata.get("status") == "failed" else 0
                 }
             else:
-                print(f"❌ Preprocessing failed: {ingestion_result.error}")
+                error_msg = ingestion_result.metadata.get("error", "Unknown error")
+                print(f"❌ Preprocessing failed: {error_msg}")
                 return {
                     "total": len(df),
                     "processed": 0,
@@ -112,10 +118,10 @@ class TransactionService:
         """Create a single transaction and save to database"""
         try:
             # Create transaction in database
-            db_transaction = await TransactionCRUD.create_transaction(self.db, transaction_data)
+            db_transaction = await TransactionCRUD.create_transaction(self.client, transaction_data)
 
             # Convert to response format with proper enum mapping
-            response_data = self._map_db_to_response(db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction)
 
             return TransactionResponse(**response_data)
 
@@ -124,43 +130,43 @@ class TransactionService:
 
     async def get_transaction(self, transaction_id: str, user_id: str) -> Optional[TransactionResponse]:
         """Get a specific transaction from database"""
-        db_transaction = await TransactionCRUD.get_transaction(self.db, transaction_id, user_id)
+        db_transaction = await TransactionCRUD.get_transaction(self.client, transaction_id, user_id)
 
         if db_transaction:
-            response_data = self._map_db_to_response(db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction)
             return TransactionResponse(**response_data)
         return None
 
     async def get_transactions(self, filters: Dict[str, Any]) -> Tuple[List[TransactionResponse], int]:
         """Get transactions from database with filtering and pagination"""
-        db_transactions, total = await TransactionCRUD.get_transactions(self.db, filters)
+        db_transactions, total = await TransactionCRUD.get_transactions(self.client, filters)
 
         transactions = []
         for t in db_transactions:
-            response_data = self._map_db_to_response(t.to_dict())
+            response_data = self._map_db_to_response(t)
             transactions.append(TransactionResponse(**response_data))
         return transactions, total
 
     async def update_transaction(self, transaction_id: str, update_data: Dict[str, Any]) -> Optional[TransactionResponse]:
         """Update a transaction in database"""
-        db_transaction = await TransactionCRUD.update_transaction(self.db, transaction_id, update_data)
+        db_transaction = await TransactionCRUD.update_transaction(self.client, transaction_id, update_data)
 
         if db_transaction:
-            response_data = self._map_db_to_response(db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction)
             return TransactionResponse(**response_data)
         return None
 
     async def delete_transaction(self, transaction_id: str) -> bool:
         """Delete a transaction from database"""
-        return await TransactionCRUD.delete_transaction(self.db, transaction_id)
+        return await TransactionCRUD.delete_transaction(self.client, transaction_id)
 
     async def batch_create_transactions(self, transactions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Create multiple transactions in database"""
-        return await TransactionCRUD.batch_create_transactions(self.db, transactions_data)
+        return await TransactionCRUD.batch_create_transactions(self.client, transactions_data)
 
     async def verify_transaction_ownership(self, transaction_ids: List[str], user_id: str) -> List:
         """Verify transaction ownership"""
-        return await TransactionCRUD.verify_transaction_ownership(self.db, transaction_ids, user_id)
+        return await TransactionCRUD.verify_transaction_ownership(self.client, transaction_ids, user_id)
 
     async def batch_update_transactions(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Batch update transactions"""
@@ -217,7 +223,7 @@ class TransactionService:
 
     async def get_transaction_summary(self, user_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
         """Get transaction summary from database"""
-        return await TransactionCRUD.get_transaction_summary(self.db, user_id, start_date, end_date)
+        return await TransactionCRUD.get_transaction_summary(self.client, user_id, start_date, end_date)
 
     async def process_natural_language_transaction(
         self,
