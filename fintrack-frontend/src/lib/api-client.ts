@@ -206,6 +206,7 @@ class APIClient {
   async uploadTransactions(file: File) {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("file_type", "csv"); // Add file_type parameter
 
     try {
       const response = await fetch(`${this.baseUrl}/transactions/upload`, {
@@ -216,14 +217,19 @@ class APIClient {
         body: formData,
       });
 
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorData}`);
+      }
+
       const data = await response.json();
 
       return {
-        status: response.ok ? "success" : "error",
-        data: response.ok ? data : undefined,
-        error: !response.ok ? data.message || data.detail : undefined,
+        status: "success",
+        data: data,
       };
     } catch (error) {
+      console.error("Upload transaction error:", error);
       return {
         status: "error",
         error: error instanceof Error ? error.message : "Upload failed",

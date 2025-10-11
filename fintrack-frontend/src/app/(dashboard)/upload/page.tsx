@@ -92,8 +92,11 @@ export default function UploadPage() {
     }
 
     try {
+      // Create a new File object to avoid reference issues
+      const fileToUpload = new File([file], file.name, { type: file.type });
+
       // Upload file to backend API for AI processing
-      const response = await apiClient.uploadTransactions(file);
+      const response = await apiClient.uploadTransactions(fileToUpload);
 
       if (response.status === "error") {
         throw new Error(response.error || "Upload failed");
@@ -111,6 +114,8 @@ export default function UploadPage() {
       if (uploadResult.new_transactions > 0) {
         refreshTransactions();
       }
+
+      setProgress(100);
 
     } catch (err) {
       console.error("Upload error:", err);

@@ -4,7 +4,7 @@ Handles transaction processing with UnifiedWorkflow AND database storage
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import pandas as pd
 from supabase import Client
 from ..models.transaction import Transaction, TransactionCreate, TransactionResponse
@@ -49,6 +49,9 @@ class TransactionService:
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
         try:
+            # Check for duplicates before processing
+            duplicates_found = await self._check_for_duplicates(df, user_id)
+
             # Initialize enhanced ingestion agent for initial preprocessing
             ingestion_agent = IngestionAgent()
 
@@ -81,17 +84,32 @@ class TransactionService:
                     user_id=user_id
                 )
 
-                print(f"Workflow result status: {workflow_result.get('status')}")
-                print(f"Workflow result keys: {list(workflow_result.keys())}")
                 if 'result' in workflow_result:
+                    print(f"WORKFLOW RESULT: {workflow_result}")
                     print(f"Result keys: {list(workflow_result['result'].keys())}")
-                    print(f"Processed transactions count: {len(workflow_result['result'].get('processed_transactions', []))}")
+                    processed_txns = workflow_result['result'].get('processed_transactions', [])
+                    print(f"Processed transactions count: {len(processed_txns)}")
+                    if processed_txns:
+                        print(f"First processed transaction: {processed_txns[0]}")
+                        print(f"Transaction type: {type(processed_txns[0])}")
+                        if hasattr(processed_txns[0], 'transaction_type'):
+                            print(f"Transaction type value: {processed_txns[0].transaction_type}")
+                    else:
+                        print("NO PROCESSED TRANSACTIONS FOUND IN WORKFLOW RESULT!")
+                        print(f"Full result: {workflow_result['result']}")
 
                 if workflow_result.get("status") == "success" and workflow_result.get("result", {}).get("processed_transactions"):
+                    print("SUCCESS: Found processed_transactions, saving to database")
                     # Now save the fully processed transactions to database
                     saved_count = 0
                     for transaction_data in workflow_result["result"]["processed_transactions"]:
                         try:
+                            # Check if this transaction is a duplicate
+                            is_duplicate = await self._is_duplicate_transaction(transaction_data, user_id)
+                            if is_duplicate:
+                                print(f"Skipping duplicate transaction: {transaction_data.description_cleaned}")
+                                continue  # Skip duplicates
+
                             # Prepare data for database insertion with merchant and category
                             db_data = {
                                 "user_id": user_id,
@@ -105,6 +123,7 @@ class TransactionService:
                                 "status": "completed"
                             }
 
+                            print(f"Saving transaction: {db_data}")
                             # Save to database
                             await TransactionCRUD.create_transaction(self.client, db_data)
                             saved_count += 1
@@ -114,22 +133,53 @@ class TransactionService:
                             continue
 
                     print(f"Saved {saved_count} transactions to database")
+                    total_processed = len(workflow_result["result"]["processed_transactions"])
                     return {
                         "total": len(df),
-                        "processed": len(ingestion_result.preprocessed_transactions),
+                        "processed": total_processed,
                         "saved_to_db": saved_count,
-                        "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
-                        "errors": 1 if workflow_result.get("status") != "success" else 0
+                        "skipped": duplicates_found,
+                        "errors": 0
                     }
                 else:
-                    error_msg = workflow_result.get("error", "Workflow processing failed")
-                    print(f"Workflow processing failed: {error_msg}")
+                    print(f"WORKFLOW ISSUE: status={workflow_result.get('status')}, has_processed_txns={bool(workflow_result.get('result', {}).get('processed_transactions'))}")
+                    if 'error' in workflow_result:
+                        print(f"Workflow error: {workflow_result['error']}")
+                    # Fallback: try to save preprocessed transactions
+                    print("Trying fallback: saving preprocessed transactions")
+                    saved_count = 0
+                    for transaction_data in ingestion_result.preprocessed_transactions:
+                        try:
+                            # Prepare data for database insertion
+                            db_data = {
+                                "user_id": user_id,
+                                "amount": transaction_data.amount,
+                                "description": transaction_data.description_cleaned,
+                                "date": transaction_data.date.isoformat() if hasattr(transaction_data.date, 'isoformat') else str(transaction_data.date),
+                                "merchant": getattr(transaction_data, 'merchant_name', None),
+                                "category": getattr(transaction_data, 'category', 'miscellaneous'),
+                                "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
+                                "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
+                                "status": "completed"
+                            }
+
+                            print(f"Fallback saving transaction: {db_data}")
+                            # Save to database
+                            await TransactionCRUD.create_transaction(self.client, db_data)
+                            saved_count += 1
+
+                        except Exception as e:
+                            print(f"Warning: Failed to save fallback transaction: {e}")
+                            continue
+
+                    print(f"Fallback saved {saved_count} transactions to database")
+                    total_processed = len(ingestion_result.preprocessed_transactions)
                     return {
                         "total": len(df),
-                        "processed": len(ingestion_result.preprocessed_transactions),
-                        "saved_to_db": 0,
-                        "skipped": len(df),
-                        "errors": 1
+                        "processed": total_processed,
+                        "saved_to_db": saved_count,
+                        "skipped": duplicates_found,
+                        "errors": 1 if workflow_result.get("status") != "success" else 0
                     }
             else:
                 error_msg = ingestion_result.metadata.get("error", "Unknown error")
@@ -152,16 +202,112 @@ class TransactionService:
                 "errors": 1
             }
 
-    async def create_transaction(self, transaction_data: Dict[str, Any]) -> TransactionResponse:
+    async def _check_for_duplicates(self, df: pd.DataFrame, user_id: str) -> int:
+        """Check for duplicate transactions in the uploaded data and against existing database"""
+        duplicates = 0
+        seen_in_upload = set()
+
+        # First check for duplicates within the uploaded data itself
+        for _, row in df.iterrows():
+            # Create a unique key based on date, amount, and description
+            key = (
+                str(row.get('date', '')),
+                float(row.get('amount', 0)),
+                str(row.get('description', '')).strip().lower()
+            )
+
+            if key in seen_in_upload:
+                duplicates += 1
+            else:
+                seen_in_upload.add(key)
+
+        # Also check against existing database transactions
+        # This is a preliminary check - the full check happens during individual processing
+        try:
+            existing = self.client.table("transactions").select("date,amount,description").eq("user_id", user_id).execute()
+            existing_keys = set()
+
+            for tx in existing.data or []:
+                key = (
+                    str(tx.get('date', '')),
+                    float(tx.get('amount', 0)),
+                    str(tx.get('description', '')).strip().lower()
+                )
+                existing_keys.add(key)
+
+            # Check uploaded data against existing database
+            for _, row in df.iterrows():
+                key = (
+                    str(row.get('date', '')),
+                    float(row.get('amount', 0)),
+                    str(row.get('description', '')).strip().lower()
+                )
+                if key in existing_keys:
+                    duplicates += 1
+
+        except Exception as e:
+            print(f"Warning: Could not check against existing database transactions: {e}")
+
+        return duplicates
+
+    async def _is_duplicate_transaction(self, transaction_data, user_id: str) -> bool:
+        """Check if a transaction already exists in the database"""
+        try:
+            # Query for existing transactions with similar characteristics
+            existing = self.client.table("transactions").select("*").eq("user_id", user_id).execute()
+
+            # Normalize the new transaction data
+            new_amount = transaction_data.amount
+            new_date_str = transaction_data.date.date().isoformat() if hasattr(transaction_data.date, 'date') else str(transaction_data.date).split(' ')[0]
+            new_desc = transaction_data.description_cleaned.strip().lower()
+            new_merchant = (getattr(transaction_data, 'merchant_name', '') or getattr(transaction_data, 'merchant', '')).strip().lower()
+
+            for existing_tx in existing.data or []:
+                # Check multiple criteria for duplicates:
+                # 1. Exact amount match
+                amount_match = abs(existing_tx['amount'] - new_amount) < 0.01
+
+                # 2. Date match (normalize to YYYY-MM-DD format)
+                existing_date_str = str(existing_tx['date']).split('T')[0].split(' ')[0]
+                date_match = existing_date_str == new_date_str
+
+                # 3. Description similarity (case-insensitive, strip whitespace)
+                existing_desc = existing_tx['description'].strip().lower()
+                desc_match = existing_desc == new_desc
+
+                # 4. Merchant match (if available)
+                existing_merchant = existing_tx.get('merchant', '').strip().lower()
+                merchant_match = existing_merchant == new_merchant and existing_merchant != ''
+
+                # Debug logging for duplicate detection
+                if amount_match and date_match:
+                    print(f"DUPLICATE CHECK: Amount and date match for transaction: {new_desc}")
+                    if desc_match:
+                        print(f"DUPLICATE FOUND: Description match - {new_desc}")
+                        return True
+                    if merchant_match:
+                        print(f"DUPLICATE FOUND: Merchant match - {new_merchant}")
+                        return True
+                    # For high-value transactions, be more strict
+                    if abs(new_amount) > 1000:
+                        print(f"DUPLICATE FOUND: High-value transaction - {new_amount}")
+                        return True
+
+            return False
+        except Exception as e:
+            print(f"Error checking for duplicates: {e}")
+            # In case of error, don't block the transaction
+            return False
+
+    async def create_transaction(self, transaction_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a single transaction and save to database"""
         try:
             # Create transaction in database
             db_transaction = await TransactionCRUD.create_transaction(self.client, transaction_data)
 
-            # Convert to response format with proper enum mapping
-            response_data = self._map_db_to_response(db_transaction)
-
-            return TransactionResponse(**response_data)
+            # Return the raw database response instead of trying to map to TransactionResponse
+            # to avoid Pydantic validation issues
+            return db_transaction
 
         except Exception as e:
             raise ValueError(f"Failed to create transaction: {str(e)}")

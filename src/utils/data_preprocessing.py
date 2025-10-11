@@ -75,11 +75,8 @@ class DataPreprocessor:
         # Step 3: Amount Handling
         df3 = self._step3_amount_handling(df2)
 
-        # Step 3.5: Transaction Type Classification
-        df3_5 = self._step3_5_transaction_type_classification(df3)
-
         # Step 4: Discounts
-        df4 = self._step4_discounts(df3_5)
+        df4 = self._step4_discounts(df3)
 
         # Step 5: Encoding
         df5 = self._step5_encoding(df4)
@@ -87,7 +84,7 @@ class DataPreprocessor:
         # Step 6: Description Cleaning
         df6 = self._step6_description_cleaning(df5)
 
-        # Step 7: Drop unwanted columns & rearrange
+        # Step 7: Column management - Drop unwanted columns, rearrange
         df_final = self._step7_column_management(df6)
 
         logger.info(f"Preprocessing complete. Final shape: {df_final.shape}")
@@ -173,13 +170,14 @@ class DataPreprocessor:
         else:
             description_lower = pd.Series([''] * len(df))
 
-        # Income patterns
+        # Income patterns - high confidence indicators
         income_patterns = [
             r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
             r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
             r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
             r'\b(social.*security|unemployment|pension|benefits)\b',
-            r'\b(gift.*received|inheritance|lottery|settlement)\b'
+            r'\b(gift.*received|inheritance|lottery|settlement)\b',
+            r'\b(rental.*income|property.*income|business.*income)\b'
         ]
 
         for pattern in income_patterns:
@@ -202,7 +200,13 @@ class DataPreprocessor:
             r'\b(amazon|walmart|target|costco|home.*depot|lowes|ikea)\b',
             r'\b(starbucks|mcdonalds|subway|wendys|chipotle|panera)\b',
             r'\b(netflix|spotify|hulu|electric|internet|phone|insurance)\b',
-            r'\b(donation|charity|gift.*given|contribution)\b'
+            r'\b(donation|charity|gift.*given|contribution)\b',
+            r'\b(loan.*repayment|installment|emi|mortgage)\b',
+            r'\b(medical|hospital|doctor|pharmacy|healthcare)\b',
+            r'\b(beauty|salon|cosmetics|spa|haircut)\b',
+            r'\b(entertainment|movie|cinema|theater|concert)\b',
+            r'\b(furniture|appliance|household|home)\b',
+            r'\b(subscription|renewal|membership|service)\b'
         ]
 
         for pattern in expense_patterns:
@@ -211,6 +215,14 @@ class DataPreprocessor:
             df.loc[mask, 'transaction_type'] = 'expense'
             # Make amounts negative for expenses
             df.loc[mask & (df['amount'] > 0), 'amount'] = -df.loc[mask & (df['amount'] > 0), 'amount']
+
+        # Amount-based classification: Very large amounts (>10k) are likely income
+        df.loc[(df['amount'] > 10000) & (df['amount'] >= 0), 'transaction_type'] = 'income'
+
+        # Amount-based classification: Small amounts (<100) with expense descriptions are expenses
+        expense_desc_mask = description_lower.str.contains(r'\b(paid|spent|purchased|bought|charged)\b', regex=True, na=False)
+        df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'transaction_type'] = 'expense'
+        df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'amount'] = -df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'amount']
 
         # Force negative amounts to be expenses (overrides other classifications)
         df.loc[df['amount'] < 0, 'transaction_type'] = 'expense'

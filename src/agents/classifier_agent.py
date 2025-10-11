@@ -15,6 +15,7 @@ from ..schemas.transaction_schemas import (
     MerchantTransaction,
     ClassifiedTransaction,
     TransactionCategory,
+    TransactionType,
     PreprocessedTransaction
 )
 from ..models.category_classifier import CategoryClassifier
@@ -184,7 +185,7 @@ class ClassifierAgent:
             'investment': ['dividend', 'interest', 'investment', 'capital gains'],
             'business': ['revenue', 'sales', 'business income', 'commission', 'royalty'],
             'government': ['pension', 'allowance', 'government payment'],
-            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund'],
+            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund', 'income', 'received', 'rental'],
             'sri_lankan': ['epf', 'etf', 'gratuity', 'festival bonus', 'overtime']
         }
 
@@ -363,8 +364,14 @@ class ClassifierAgent:
 
         # Merchant category from NER agent
         if transaction.merchant_category:
-            confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
-            return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            # Check if merchant_category is a valid TransactionCategory
+            try:
+                TransactionCategory(transaction.merchant_category)
+                confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
+                return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            except ValueError:
+                # Invalid category, skip this signal
+                pass
 
         return None, 0.0
 
@@ -517,6 +524,10 @@ class ClassifierAgent:
     def _analyze_keywords_for_type(self, description: str) -> Dict[str, Any]:
         """Analyze keywords for transaction type"""
 
+        # Special case for rental income
+        if 'rental' in description:
+            return {'type': 'income', 'confidence': 0.95, 'reason': 'Income keyword: rental'}
+
         # Check income keywords
         for category, keywords in self.income_keywords.items():
             for keyword in keywords:
@@ -649,7 +660,7 @@ class ClassifierAgent:
                     description_cleaned=txn.description_cleaned,
                     has_discount=txn.has_discount,
                     discount_percentage=txn.discount_percentage,
-                    transaction_type=txn.transaction_type,
+                    transaction_type=TransactionType(txn_type),  # Use predicted transaction type
                     metadata=txn.metadata.copy(),
                     merchant_name=txn.merchant_name,
                     merchant_standardized=txn.merchant_standardized,

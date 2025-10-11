@@ -5,6 +5,7 @@ import logging
 from typing import Dict, Any, List
 from datetime import datetime
 import uuid
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +396,7 @@ class TransactionProcessingNodes:
                     amount_value = raw_txn.get('amount', '0')
                     if isinstance(amount_value, str):
                         amount_value = amount_value.replace('$', '').replace(',', '')
+
                     preprocessed_txn = {
                         'id': raw_txn.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
                         'amount': float(amount_value),
@@ -403,7 +405,7 @@ class TransactionProcessingNodes:
                         'date': raw_txn.get('date', datetime.now().isoformat()),
                         'category': category,
                         'payment_method': raw_txn.get('payment_method', 'unknown'),
-                        'transaction_type': raw_txn.get('transaction_type', 'expense'),
+                        'transaction_type': 'expense',  # Default, will be determined by ClassifierAgent
                         'has_discount': False,
                         'metadata': {
                             'processed_by': 'raw_transaction_ingestion',
@@ -688,9 +690,9 @@ class TransactionProcessingNodes:
 
     def classification_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
-        Transaction classification node - handles multiple transactions
+        Transaction classification node using the ClassifierAgent
         """
-        print(f"CLASSIFICATION: Starting transaction classification")
+        print(f"CLASSIFICATION: Starting transaction classification with ClassifierAgent")
 
         try:
             state['current_stage'] = ProcessingStage.CLASSIFICATION
@@ -704,43 +706,28 @@ class TransactionProcessingNodes:
             # Get preprocessed transactions to classify
             preprocessed_txns = state.get('preprocessed_transactions', [])
             if preprocessed_txns:
-                # Convert to classified transactions with proper categorization
-                classified_transactions = []
-                for txn in preprocessed_txns:
-                    # Enhanced classification based on description, merchant, and existing category
-                    description = txn.get('description', '').lower()
-                    merchant = txn.get('merchant_name', '').lower()
-                    existing_category = txn.get('category', '').lower()
+                # Import ClassifierAgent
+                try:
+                    from ..agents.classifier_agent import ClassifierAgent, ClassifierAgentInput
+                    classifier_agent = ClassifierAgent()
+                except Exception as e:
+                    logger.error(f"Failed to import ClassifierAgent: {e}")
+                    # Fallback to simple classification
+                    return self._fallback_classification(state)
 
-                    # If we already have a good category from CSV, use it
-                    if existing_category and existing_category not in ['miscellaneous', 'unknown', '']:
-                        # Map CSV categories to standard categories
-                        category_mapping = {
-                            'donations & charity': 'RELIGIOUS_DONATIONS',
-                            'fitness & wellness (gym, spa)': 'HEALTHCARE',
-                            'household (furniture, appliances)': 'SHOPPING',
-                            'shopping (clothes, electronics)': 'SHOPPING',
-                            'travel & accommodation': 'TRAVEL',
-                            'beauty & personal care (salons, cosmetics)': 'HEALTHCARE',
-                            'business expenses': 'MISCELLANEOUS',
-                            'miscellaneous': 'MISCELLANEOUS'
-                        }
-                        category = category_mapping.get(existing_category, 'MISCELLANEOUS')
-                        confidence = 0.95  # High confidence for structured data
-                    else:
-                        # Enhanced keyword-based classification
-                        category, confidence = self._classify_transaction(description, merchant)
+                # Convert preprocessed transactions to MerchantTransaction objects
+                merchant_transactions = self._convert_to_merchant_transactions(preprocessed_txns)
 
-                    # Create classified transaction
-                    classified_txn = self._convert_single_transaction_to_classified_object(txn, category, confidence)
-                    classified_transactions.append(classified_txn)
+                # Use ClassifierAgent for comprehensive classification
+                input_data = ClassifierAgentInput(merchant_transactions=merchant_transactions)
+                result = classifier_agent.process(input_data)
 
                 # Store the classified transactions
-                state['processed_transactions'] = classified_transactions
+                state['processed_transactions'] = result.classified_transactions
                 state['predicted_category'] = 'multiple_categories'  # For backward compatibility
-                state['category_confidence'] = 0.8
+                state['category_confidence'] = sum(result.confidence_scores) / len(result.confidence_scores) if result.confidence_scores else 0.8
 
-                print(f"CLASSIFICATION: Classified {len(classified_transactions)} transactions")
+                print(f"CLASSIFICATION: ClassifierAgent processed {len(result.classified_transactions)} transactions")
             else:
                 # Fallback to single transaction classification
                 extracted_transaction = state.get('extracted_transaction', {})
@@ -762,7 +749,7 @@ class TransactionProcessingNodes:
             }
             state['processing_history'].append(processing_entry)
 
-            print(f"CLASSIFICATION: Classified as '{state.get('predicted_category', 'unknown')}' with {state.get('category_confidence', 0.0):.2f} confidence")
+            print(f"CLASSIFICATION: Completed with {state.get('category_confidence', 0):.2f} average confidence")
 
         except Exception as e:
             error_info = {
@@ -773,6 +760,106 @@ class TransactionProcessingNodes:
             }
             state['errors'].append(error_info)
             logger.error(f"Classification failed: {e}")
+            # Fallback to simple classification
+            return self._fallback_classification(state)
+
+        return state
+
+    def _convert_to_merchant_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
+        """
+        Convert preprocessed transaction dicts to MerchantTransaction objects for ClassifierAgent
+        """
+        from ..schemas.transaction_schemas import MerchantTransaction, TransactionType, PaymentMethod
+
+        merchant_transactions = []
+        for txn_dict in preprocessed_txns:
+            try:
+                # Parse date
+                date_str = txn_dict.get('date', datetime.now().isoformat())
+                if isinstance(date_str, str):
+                    try:
+                        parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        parsed_date = datetime.now()
+                else:
+                    parsed_date = date_str if isinstance(date_str, datetime) else datetime.now()
+
+                # Handle payment method
+                payment_method_str = txn_dict.get('payment_method', 'cash')
+                try:
+                    payment_method = PaymentMethod(payment_method_str)
+                except ValueError:
+                    payment_method = PaymentMethod.CASH
+
+                # Handle transaction type
+                transaction_type_str = txn_dict.get('transaction_type', 'expense')
+                try:
+                    transaction_type = TransactionType(transaction_type_str)
+                except ValueError:
+                    transaction_type = TransactionType.EXPENSE
+
+                # Create MerchantTransaction
+                merchant_txn = MerchantTransaction(
+                    id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+                    date=parsed_date,
+                    year=parsed_date.year,
+                    month=parsed_date.month,
+                    day=parsed_date.day,
+                    day_of_week=parsed_date.weekday(),
+                    amount=float(txn_dict.get('amount', 0.0)),
+                    transaction_type=transaction_type,
+                    payment_method=payment_method,
+                    description_cleaned=txn_dict.get('description', ''),
+                    merchant_name=txn_dict.get('merchant_name'),
+                    merchant_standardized=txn_dict.get('merchant_name'),
+                    merchant_category=txn_dict.get('category'),
+                    is_merchant_known=bool(txn_dict.get('merchant_name')),
+                    has_discount=txn_dict.get('has_discount', False),
+                    metadata=txn_dict.get('metadata', {})
+                )
+                merchant_transactions.append(merchant_txn)
+            except Exception as e:
+                logger.warning(f"Failed to convert transaction {txn_dict.get('id')}: {e}")
+                continue
+
+        return merchant_transactions
+
+    def _fallback_classification(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Fallback classification using simple keyword-based approach
+        """
+        print("CLASSIFICATION: Using fallback classification method")
+
+        preprocessed_txns = state.get('preprocessed_transactions', [])
+        if preprocessed_txns:
+            classified_transactions = []
+            for txn in preprocessed_txns:
+                description = txn.get('description', '').lower()
+                merchant = txn.get('merchant_name', '').lower()
+                existing_category = txn.get('category', '').lower()
+
+                if existing_category and existing_category not in ['miscellaneous', 'unknown', '']:
+                    category_mapping = {
+                        'donations & charity': 'RELIGIOUS_DONATIONS',
+                        'fitness & wellness (gym, spa)': 'HEALTHCARE',
+                        'household (furniture, appliances)': 'SHOPPING',
+                        'shopping (clothes, electronics)': 'SHOPPING',
+                        'travel & accommodation': 'TRAVEL',
+                        'beauty & personal care (salons, cosmetics)': 'HEALTHCARE',
+                        'business expenses': 'MISCELLANEOUS',
+                        'miscellaneous': 'MISCELLANEOUS'
+                    }
+                    category = category_mapping.get(existing_category, 'MISCELLANEOUS')
+                    confidence = 0.95
+                else:
+                    category, confidence = self._classify_transaction(description, merchant)
+
+                classified_txn = self._convert_single_transaction_to_classified_object(txn, category, confidence)
+                classified_transactions.append(classified_txn)
+
+            state['processed_transactions'] = classified_transactions
+            state['predicted_category'] = 'multiple_categories'
+            state['category_confidence'] = 0.8
 
         return state
 
@@ -1397,3 +1484,56 @@ class TransactionProcessingNodes:
 
         # Default fallback
         return 'MISCELLANEOUS', 0.3
+
+    def _determine_transaction_type(self, description: str, amount: float) -> str:
+        """
+        Determine transaction type (income/expense) based on description and amount
+        """
+        description_lower = description.lower()
+
+        # Income patterns - high confidence indicators
+        income_patterns = [
+            r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
+            r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
+            r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
+            r'\b(social.*security|unemployment|pension|benefits)\b',
+            r'\b(gift.*received|inheritance|lottery|settlement)\b',
+            r'\b(rental.*income|property.*income|business.*income)\b'
+        ]
+
+        # Check for income patterns
+        for pattern in income_patterns:
+            if re.search(pattern, description_lower, re.IGNORECASE):
+                return 'income'
+
+        # Expense patterns
+        expense_patterns = [
+            r'\b(purchased?|bought|paid|spent|charged|debit|withdrawal)\b',
+            r'\b(shopping|store|grocery|restaurant|gas|fuel|utility|bill)\b',
+            r'\b(amazon|walmart|target|costco|home.*depot|lowes|ikea)\b',
+            r'\b(starbucks|mcdonalds|subway|wendys|chipotle|panera)\b',
+            r'\b(netflix|spotify|hulu|electric|internet|phone|insurance)\b',
+            r'\b(donation|charity|gift.*given|contribution)\b',
+            r'\b(loan.*repayment|installment|emi|mortgage)\b',
+            r'\b(medical|hospital|doctor|pharmacy|healthcare)\b',
+            r'\b(beauty|salon|cosmetics|spa|haircut)\b',
+            r'\b(entertainment|movie|cinema|theater|concert)\b',
+            r'\b(furniture|appliance|household|home)\b',
+            r'\b(subscription|renewal|membership|service)\b'
+        ]
+
+        # Check for expense patterns
+        for pattern in expense_patterns:
+            if re.search(pattern, description_lower, re.IGNORECASE):
+                return 'expense'
+
+        # Amount-based classification: Very large amounts (>10k) are likely income
+        if amount > 10000:
+            return 'income'
+
+        # Amount-based classification: Small amounts (<100) with expense-like descriptions are expenses
+        if amount < 100 and re.search(r'\b(paid|spent|purchased|bought|charged)\b', description_lower, re.IGNORECASE):
+            return 'expense'
+
+        # Default based on amount sign
+        return 'income' if amount > 0 else 'expense'

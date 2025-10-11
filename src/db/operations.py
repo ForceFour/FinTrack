@@ -21,15 +21,20 @@ class TransactionCRUD:
     ) -> Dict[str, Any]:
         """Create a new transaction in the database"""
         try:
+            print(f"DEBUG: Creating transaction with data: {transaction_data}")
             # Insert transaction using Supabase client
             response = client.table("transactions").insert(transaction_data).execute()
+            print(f"DEBUG: Supabase response: {response}")
 
             if response.data:
+                print(f"DEBUG: Transaction created successfully: {response.data[0]}")
                 return response.data[0]
             else:
+                print("DEBUG: No data in response")
                 raise ValueError("Failed to create transaction")
 
         except Exception as e:
+            print(f"DEBUG: Transaction creation failed: {str(e)}")
             raise ValueError(f"Transaction creation failed: {str(e)}")
 
     @staticmethod
