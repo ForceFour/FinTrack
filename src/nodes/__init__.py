@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Import states first
 try:
     from ..states import TransactionProcessingState, ProcessingStage
+    from ..schemas.transaction_schemas import TransactionCategory, TransactionType, PaymentMethod
     logger.info("States imported successfully")
 except Exception as e:
     logger.error(f"Failed to import states: {e}")
@@ -89,7 +90,7 @@ class TransactionProcessingNodes:
                 self.nl_processor = None
                 logger.warning("NL Processor not available")
 
-            logger.info("🔧 Transaction Processing Nodes initialized")
+            logger.info("Transaction Processing Nodes initialized")
         except Exception as e:
             logger.warning(f"Some agents failed to initialize: {e}")
             # Continue with limited functionality for testing
@@ -346,15 +347,63 @@ class TransactionProcessingNodes:
                 # Process raw transactions directly
                 preprocessed_txns = []
                 for raw_txn in raw_transactions:
+                    # Extract merchant from description if not provided in merchant column
+                    merchant_name = raw_txn.get('merchant', '').strip()
+                    if not merchant_name or merchant_name.lower() in ['unknown', 'unknown merchant']:
+                        # Try to extract from description
+                        description = raw_txn.get('description', '')
+                        if ' from ' in description.lower():
+                            # Extract merchant from "Purchased ... from [Merchant]" pattern
+                            parts = description.lower().split(' from ')
+                            if len(parts) > 1:
+                                merchant_name = parts[1].strip()
+                                # Clean up common endings
+                                merchant_name = merchant_name.split(' (')[0].strip()  # Remove parentheses
+                        elif ' at ' in description.lower():
+                            # Extract merchant from "at [Merchant]" pattern
+                            parts = description.lower().split(' at ')
+                            if len(parts) > 1:
+                                merchant_name = parts[1].strip()
+                        else:
+                            # Fallback to first meaningful word
+                            words = description.split()
+                            if words:
+                                merchant_name = words[0].strip()
+
+                    # Extract category from description if not provided in category column
+                    category = raw_txn.get('category', '').strip()
+                    if not category or category.lower() in ['miscellaneous', 'unknown']:
+                        # Try to extract from description
+                        description = raw_txn.get('description', '')
+                        if 'purchased ' in description.lower():
+                            # Extract category from "Purchased [category] from ..." pattern
+                            purchased_part = description.lower().split('purchased ')[1].split(' from ')[0].strip()
+                            category = purchased_part
+                            # Map to standard categories
+                            category_mapping = {
+                                'donations & charity': 'donations_charity',
+                                'fitness & wellness (gym, spa)': 'fitness_wellness',
+                                'household (furniture, appliances)': 'household',
+                                'shopping (clothes, electronics)': 'shopping',
+                                'travel & accommodation': 'travel_accommodation',
+                                'beauty & personal care (salons, cosmetics)': 'beauty_personal_care',
+                                'business expenses': 'business_expenses'
+                            }
+                            category = category_mapping.get(category.lower(), category.lower().replace(' ', '_'))
+
                     # Convert raw transaction dict to preprocessed format
+                    amount_value = raw_txn.get('amount', '0')
+                    if isinstance(amount_value, str):
+                        amount_value = amount_value.replace('$', '').replace(',', '')
                     preprocessed_txn = {
                         'id': raw_txn.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
-                        'amount': float(raw_txn.get('amount', '0').replace('$', '').replace(',', '')),
-                        'merchant_name': raw_txn.get('description', '').split(' at ')[-1] if ' at ' in raw_txn.get('description', '') else raw_txn.get('description', '').split()[0] if raw_txn.get('description') else 'Unknown',
+                        'amount': float(amount_value),
+                        'merchant_name': merchant_name,
                         'description': raw_txn.get('description', ''),
                         'date': raw_txn.get('date', datetime.now().isoformat()),
-                        'category': 'miscellaneous',  # Will be classified later
+                        'category': category,
                         'payment_method': raw_txn.get('payment_method', 'unknown'),
+                        'transaction_type': raw_txn.get('transaction_type', 'expense'),
                         'has_discount': False,
                         'metadata': {
                             'processed_by': 'raw_transaction_ingestion',
@@ -483,7 +532,7 @@ class TransactionProcessingNodes:
                 state['error_log'] = []
             state['error_log'].append(error_info)
             state['current_stage'] = ProcessingStage.ERROR
-            logger.error(f"❌ Ingestion failed: {e}")
+            logger.error(f"Ingestion failed: {e}")
 
         return state
 
@@ -645,6 +694,12 @@ class TransactionProcessingNodes:
 
         try:
             state['current_stage'] = ProcessingStage.CLASSIFICATION
+            # Initialize errors list if not present
+            if 'errors' not in state:
+                state['errors'] = []
+            # Initialize processing_history if not present
+            if 'processing_history' not in state:
+                state['processing_history'] = []
 
             # Get preprocessed transactions to classify
             preprocessed_txns = state.get('preprocessed_transactions', [])
@@ -652,29 +707,29 @@ class TransactionProcessingNodes:
                 # Convert to classified transactions with proper categorization
                 classified_transactions = []
                 for txn in preprocessed_txns:
-                    # Simple rule-based classification based on description and merchant
+                    # Enhanced classification based on description, merchant, and existing category
                     description = txn.get('description', '').lower()
                     merchant = txn.get('merchant_name', '').lower()
+                    existing_category = txn.get('category', '').lower()
 
-                    # Classify based on keywords
-                    if any(keyword in description or keyword in merchant for keyword in ['starbucks', 'coffee', 'latte']):
-                        category = 'food_dining'
-                        confidence = 0.9
-                    elif any(keyword in description or keyword in merchant for keyword in ['mcdonalds', 'burger', 'lunch', 'dinner']):
-                        category = 'food_dining'
-                        confidence = 0.9
-                    elif any(keyword in description or keyword in merchant for keyword in ['whole foods', 'groceries', 'grocery']):
-                        category = 'groceries'
-                        confidence = 0.95
-                    elif any(keyword in description or keyword in merchant for keyword in ['netflix', 'subscription']):
-                        category = 'subscriptions'
-                        confidence = 0.98
-                    elif any(keyword in description or keyword in merchant for keyword in ['uber', 'taxi', 'ride']):
-                        category = 'transportation'
-                        confidence = 0.9
+                    # If we already have a good category from CSV, use it
+                    if existing_category and existing_category not in ['miscellaneous', 'unknown', '']:
+                        # Map CSV categories to standard categories
+                        category_mapping = {
+                            'donations & charity': 'RELIGIOUS_DONATIONS',
+                            'fitness & wellness (gym, spa)': 'HEALTHCARE',
+                            'household (furniture, appliances)': 'SHOPPING',
+                            'shopping (clothes, electronics)': 'SHOPPING',
+                            'travel & accommodation': 'TRAVEL',
+                            'beauty & personal care (salons, cosmetics)': 'HEALTHCARE',
+                            'business expenses': 'MISCELLANEOUS',
+                            'miscellaneous': 'MISCELLANEOUS'
+                        }
+                        category = category_mapping.get(existing_category, 'MISCELLANEOUS')
+                        confidence = 0.95  # High confidence for structured data
                     else:
-                        category = 'miscellaneous'
-                        confidence = 0.3
+                        # Enhanced keyword-based classification
+                        category, confidence = self._classify_transaction(description, merchant)
 
                     # Create classified transaction
                     classified_txn = self._convert_single_transaction_to_classified_object(txn, category, confidence)
@@ -717,7 +772,7 @@ class TransactionProcessingNodes:
                 'error_type': type(e).__name__
             }
             state['errors'].append(error_info)
-            logger.error(f"❌ Classification failed: {e}")
+            logger.error(f"Classification failed: {e}")
 
         return state
 
@@ -1195,6 +1250,13 @@ class TransactionProcessingNodes:
         except ValueError:
             payment_method = PaymentMethod.CASH
 
+        # Handle transaction type
+        transaction_type_str = txn_dict.get('transaction_type', 'expense')
+        try:
+            transaction_type = TransactionType(transaction_type_str)
+        except ValueError:
+            transaction_type = TransactionType.EXPENSE
+
         # Create ClassifiedTransaction object
         classified_txn = ClassifiedTransaction(
             id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
@@ -1204,16 +1266,134 @@ class TransactionProcessingNodes:
             day=parsed_date.day,
             day_of_week=parsed_date.weekday(),
             amount=float(txn_dict.get('amount', 0.0)),
-            transaction_type=TransactionType.EXPENSE,  # Assume expense
+            transaction_type=transaction_type,  # Use the determined transaction type
             payment_method=payment_method,
             description_cleaned=txn_dict.get('description', ''),
             merchant_name=txn_dict.get('merchant_name', 'Unknown'),
             merchant_standardized=txn_dict.get('merchant_name', 'Unknown'),
             merchant_category=category,
             is_merchant_known=bool(txn_dict.get('merchant_name')),
-            predicted_category=TransactionCategory(category),
+            predicted_category=TransactionCategory[category],
             prediction_confidence=confidence,
             category_probabilities={category: confidence}
         )
 
         return classified_txn
+
+    def _classify_transaction(self, description: str, merchant: str) -> tuple[str, float]:
+        """
+        Enhanced transaction classification based on description and merchant keywords
+        Returns (category, confidence) tuple
+        """
+        # Convert to lowercase for matching
+        description_lower = description.lower()
+        merchant_lower = merchant.lower()
+
+        # Comprehensive category keywords with weights - mapped to valid TransactionCategory values
+        category_keywords = {
+            'FOOD_DINING': {
+                'keywords': ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonalds', 'burger', 'lunch', 'dinner',
+                           'pizza', 'sushi', 'taco', 'subway', 'wendys', 'kfc', 'food', 'meal', 'eat', 'dining'],
+                'merchant_keywords': ['starbucks', 'mcdonalds', 'subway', 'wendys', 'kfc', 'dominos', 'papa johns',
+                                    'chipotle', 'panera', 'dunkin', 'tim hortons', 'cafe', 'restaurant'],
+                'weight': 0.9
+            },
+            'GROCERIES': {
+                'keywords': ['grocery', 'supermarket', 'market', 'store', 'whole foods', 'trader joes', 'safeway',
+                           'kroger', 'walmart', 'target', 'costco', 'aldi', 'lidl', 'food lion', 'publix'],
+                'merchant_keywords': ['whole foods', 'trader joes', 'safeway', 'kroger', 'walmart', 'target',
+                                    'costco', 'aldi', 'lidl', 'food lion', 'publix', 'giant', 'stop & shop'],
+                'weight': 0.95
+            },
+            'SHOPPING': {
+                'keywords': ['shopping', 'store', 'mall', 'retail', 'amazon', 'ebay', 'etsy', 'clothes', 'clothing',
+                           'shoes', 'accessories', 'jewelry', 'department store', 'boutique', 'furniture', 'appliance'],
+                'merchant_keywords': ['amazon', 'ebay', 'etsy', 'macy', 'nordstrom', 'bloomingdales', 'saks',
+                                    'neiman marcus', 'dillard', 'jcpenney', 'kohls', 'old navy', 'gap', 'h&m',
+                                    'ikea', 'bed bath & beyond', 'home depot', 'lowes'],
+                'weight': 0.85
+            },
+            'ENTERTAINMENT': {
+                'keywords': ['movie', 'cinema', 'theater', 'netflix', 'spotify', 'hulu', 'disney', 'amazon prime',
+                           'hbo', 'showtime', 'entertainment', 'game', 'gaming', 'concert', 'event'],
+                'merchant_keywords': ['netflix', 'spotify', 'hulu', 'disney', 'amazon prime', 'hbo', 'showtime',
+                                    'steam', 'epic games', 'playstation', 'xbox', 'nintendo'],
+                'weight': 0.9
+            },
+            'TRANSPORTATION': {
+                'keywords': ['uber', 'lyft', 'taxi', 'ride', 'bus', 'train', 'subway', 'metro', 'gas', 'fuel',
+                           'shell', 'exxon', 'chevron', 'bp', 'mobil', 'parking', 'toll'],
+                'merchant_keywords': ['uber', 'lyft', 'shell', 'exxon', 'chevron', 'bp', 'mobil', 'valero',
+                                    'speedway', 'sunoco', 'citgo', 'arco'],
+                'weight': 0.9
+            },
+            'UTILITIES': {
+                'keywords': ['electric', 'gas', 'water', 'internet', 'phone', 'mobile', 'cable', 'utility',
+                           'comcast', 'verizon', 'att', 'tmobile', 'sprint', 'utility bill'],
+                'merchant_keywords': ['comcast', 'verizon', 'att', 'tmobile', 'sprint', 'duke energy', 'dominion',
+                                    'southern company', 'pge', 'con edison'],
+                'weight': 0.95
+            },
+            'HEALTHCARE': {
+                'keywords': ['doctor', 'hospital', 'pharmacy', 'medical', 'dental', 'health', 'clinic', 'medicine',
+                           'prescription', 'insurance', 'cvs', 'walgreens', 'rite aid', 'gym', 'fitness', 'spa',
+                           'massage', 'yoga', 'pilates', 'workout', 'exercise', 'wellness', 'salon', 'hair', 'nail', 'beauty'],
+                'merchant_keywords': ['cvs', 'walgreens', 'rite aid', 'walmart pharmacy', 'kaiser', 'anthem',
+                                    'united healthcare', 'aetna', 'cigna', 'planet fitness', 'la fitness', 'equinox',
+                                    'great clips', 'supercuts', 'ulta', 'sephora'],
+                'weight': 0.9
+            },
+            'TRAVEL': {
+                'keywords': ['hotel', 'airbnb', 'booking', 'travel', 'flight', 'airline', 'vacation', 'trip',
+                           'lodging', 'resort', 'motel', 'inn', 'accommodation'],
+                'merchant_keywords': ['airbnb', 'booking.com', 'expedia', 'hotels.com', 'marriott', 'hilton',
+                                    'hyatt', 'ihg', 'wyndham', 'choice hotels'],
+                'weight': 0.9
+            },
+            'EDUCATION': {
+                'keywords': ['school', 'university', 'college', 'education', 'tuition', 'book', 'course', 'class',
+                           'training', 'workshop', 'seminar'],
+                'merchant_keywords': ['amazon books', 'barnes & noble', 'chegg', 'course hero', 'udemy', 'coursera'],
+                'weight': 0.8
+            },
+            'SUBSCRIPTIONS': {
+                'keywords': ['subscription', 'monthly', 'recurring', 'membership', 'club', 'service', 'plan'],
+                'merchant_keywords': ['netflix', 'spotify', 'hulu', 'amazon prime', 'disney+', 'hbo max',
+                                    'paramount+', 'peacock', 'apple music', 'youtube premium'],
+                'weight': 0.95
+            },
+            'RELIGIOUS_DONATIONS': {
+                'keywords': ['donation', 'charity', 'contribution', 'gift', 'nonprofit', 'foundation', 'church',
+                           'temple', 'mosque', 'synagogue', 'red cross', 'unicef', 'rotary'],
+                'merchant_keywords': ['red cross', 'unicef', 'salvation army', 'goodwill', 'habitat for humanity',
+                                    'american cancer society', 'world wildlife fund', 'rotary club'],
+                'weight': 0.9
+            }
+        }
+
+        # Score each category
+        category_scores = {}
+        for category, rules in category_keywords.items():
+            score = 0.0
+
+            # Check description keywords
+            for keyword in rules['keywords']:
+                if keyword in description_lower:
+                    score += rules['weight'] * 0.6  # Description matches are important
+
+            # Check merchant keywords
+            for keyword in rules['merchant_keywords']:
+                if keyword in merchant_lower:
+                    score += rules['weight'] * 0.8  # Merchant matches are very important
+
+            if score > 0:
+                category_scores[category] = score
+
+        # Return the highest scoring category
+        if category_scores:
+            best_category = max(category_scores, key=category_scores.get)
+            confidence = min(category_scores[best_category] / 1.0, 0.95)  # Cap at 0.95
+            return best_category, confidence
+
+        # Default fallback
+        return 'MISCELLANEOUS', 0.3

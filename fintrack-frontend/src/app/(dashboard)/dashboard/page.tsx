@@ -65,10 +65,10 @@ export default function DashboardPage() {
 
   // Calculate metrics
   const expenses = transactions.filter(
-    (t) => t.transaction_type === "DEBIT" || t.amount < 0
+    (t) => t.transaction_type === "expense"
   );
   const income = transactions.filter(
-    (t) => t.transaction_type === "CREDIT" || t.amount > 0
+    (t) => t.transaction_type === "income"
   );
 
   const totalExpenses = expenses.reduce(
@@ -79,6 +79,15 @@ export default function DashboardPage() {
   const netCashFlow = totalIncome - totalExpenses;
   const avgTransaction =
     transactions.length > 0 ? totalExpenses / expenses.length : 0;
+
+  // Calculate additional metrics for deltas
+  const expenseRatio = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
+  const uniqueDays = new Set(transactions.map(t => format(new Date(t.date), "yyyy-MM-dd"))).size;
+  const transactionsPerDay = uniqueDays > 0 ? transactions.length / uniqueDays : 0;
+
+  // Calculate benchmarks for income and avg transaction
+  const incomePerDay = uniqueDays > 0 ? totalIncome / uniqueDays : 0;
+  const avgTransactionCategory = avgTransaction < 25 ? "Low" : avgTransaction < 100 ? "Medium" : "High";
 
   // Category breakdown
   const categoryData = expenses.reduce((acc: Record<string, number>, t) => {
@@ -142,32 +151,32 @@ export default function DashboardPage() {
         <MetricCard
           title="Total Expenses"
           value={`$${totalExpenses.toFixed(2)}`}
-          delta="-12.5%"
-          deltaType="negative"
+          delta={`${expenseRatio.toFixed(1)}% of income`}
+          deltaType="neutral"
         />
         <MetricCard
           title="Total Income"
           value={`$${totalIncome.toFixed(2)}`}
-          delta="+8.3%"
-          deltaType="positive"
+          delta={`$${incomePerDay.toFixed(2)} per day`}
+          deltaType="neutral"
         />
         <MetricCard
           title="Net Cash Flow"
           value={`$${netCashFlow.toFixed(2)}`}
-          delta={`${((netCashFlow / totalIncome) * 100).toFixed(1)}%`}
+          delta={totalIncome > 0 ? `${((netCashFlow / totalIncome) * 100).toFixed(1)}% savings` : "N/A"}
           deltaType={netCashFlow >= 0 ? "positive" : "negative"}
         />
         <MetricCard
           title="Avg Transaction"
           value={`$${avgTransaction.toFixed(2)}`}
-          delta="+5.2%"
-          deltaType="positive"
+          delta={`${avgTransactionCategory} spending`}
+          deltaType="neutral"
         />
         <MetricCard
           title="Total Transactions"
           value={transactions.length.toString()}
-          delta="+23"
-          deltaType="positive"
+          delta={`${transactionsPerDay.toFixed(1)} per day`}
+          deltaType="neutral"
         />
       </div>
 
@@ -302,12 +311,12 @@ export default function DashboardPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <span
                       className={
-                        transaction.amount < 0
+                        transaction.transaction_type === "expense"
                           ? "text-red-600"
                           : "text-green-600"
                       }
                     >
-                      {transaction.amount < 0 ? "-" : "+"}${Math.abs(transaction.amount).toFixed(2)}
+                      {transaction.transaction_type === "expense" ? "-" : "+"}${Math.abs(transaction.amount).toFixed(2)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
@@ -363,7 +372,7 @@ function MetricCard({
   title: string;
   value: string;
   delta?: string;
-  deltaType?: "positive" | "negative";
+  deltaType?: "positive" | "negative" | "neutral";
 }) {
   return (
     <div className="bg-white p-6 rounded-lg shadow">
@@ -372,7 +381,11 @@ function MetricCard({
       {delta && (
         <p
           className={`text-sm mt-2 ${
-            deltaType === "positive" ? "text-green-600" : "text-red-600"
+            deltaType === "positive"
+              ? "text-green-600"
+              : deltaType === "negative"
+              ? "text-red-600"
+              : "text-gray-600"
           }`}
         >
           {delta}

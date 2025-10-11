@@ -195,9 +195,22 @@ class DataPreprocessor:
             r'\b(p2p|peer.*to.*peer|venmo|zelle|cashapp|paypal.*transfer)\b'
         ]
 
-        for pattern in transfer_patterns:
+        # Expense patterns (override income classification based on description)
+        expense_patterns = [
+            r'\b(purchased?|bought|paid|spent|charged|debit|withdrawal)\b',
+            r'\b(shopping|store|grocery|restaurant|gas|fuel|utility|bill)\b',
+            r'\b(amazon|walmart|target|costco|home.*depot|lowes|ikea)\b',
+            r'\b(starbucks|mcdonalds|subway|wendys|chipotle|panera)\b',
+            r'\b(netflix|spotify|hulu|electric|internet|phone|insurance)\b',
+            r'\b(donation|charity|gift.*given|contribution)\b'
+        ]
+
+        for pattern in expense_patterns:
             mask = description_lower.str.contains(pattern, regex=True, na=False)
-            df.loc[mask, 'transaction_type'] = 'transfer'
+            # Override to expense if description matches expense patterns
+            df.loc[mask, 'transaction_type'] = 'expense'
+            # Make amounts negative for expenses
+            df.loc[mask & (df['amount'] > 0), 'amount'] = -df.loc[mask & (df['amount'] > 0), 'amount']
 
         # Force negative amounts to be expenses (overrides other classifications)
         df.loc[df['amount'] < 0, 'transaction_type'] = 'expense'
@@ -260,11 +273,15 @@ class DataPreprocessor:
 
         # Category (few values → One-hot)
         if 'category' in df.columns:
+            # Preserve original category before encoding
+            df['category_original'] = df['category']
             df = pd.get_dummies(df, columns=['category'], prefix='cat')
             logger.debug("Applied one-hot encoding to category")
 
         # Merchant (many values → Frequency Encode)
         if 'merchant' in df.columns:
+            # Preserve original merchant before encoding
+            df['merchant_original'] = df['merchant']
             merchant_freq = df['merchant'].value_counts(normalize=True)  # normalized frequency
             df['merchant_encoded'] = df['merchant'].map(merchant_freq)
             logger.debug(f"Applied frequency encoding to {len(merchant_freq)} unique merchants")

@@ -244,6 +244,8 @@ class IngestionAgent:
                         'effective_amount': float(row.get('effective_amount', row.get('amount', 0.0))) if not pd.isna(row.get('effective_amount')) else float(row.get('amount', 0.0)),
                         'merchant_encoded': float(row.get('merchant_encoded', 0.0)) if not pd.isna(row.get('merchant_encoded')) else 0.0,
                         'original_amount': float(row.get('original_amount', row.get('amount', 0.0))) if not pd.isna(row.get('original_amount')) else float(row.get('amount', 0.0)),
+                        'original_category': str(row.get('category_original', '')) if row.get('category_original') and not pd.isna(row.get('category_original')) else '',
+                        'original_merchant': str(row.get('merchant_original', '')) if row.get('merchant_original') and not pd.isna(row.get('merchant_original')) else '',
                         'processed_features': {k: v for k, v in row.items() if k.startswith(('pay_', 'cat_')) and v is not None and not pd.isna(v) and str(v) != 'nan'},
                         'preprocessing_pipeline': 'comprehensive'
                     }

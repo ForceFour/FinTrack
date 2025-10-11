@@ -54,7 +54,7 @@ class UnifiedTransactionWorkflow:
                     api_key=self.config.langsmith_api_key,
                     api_url=self.config.langsmith_endpoint
                 )
-                logger.info("🎯 LangSmith client initialized for workflow tracing")
+                logger.info("LangSmith client initialized for workflow tracing")
             except Exception as e:
                 logger.warning(f"LangSmith client initialization failed: {e}")
                 self.config.enable_tracing = False
@@ -91,13 +91,13 @@ class UnifiedTransactionWorkflow:
         # Background task queue
         self.background_tasks = {}
 
-        logger.info("🚀 UnifiedTransactionWorkflow initialized successfully")
-        logger.info(f"🔧 Configuration: {len(self.workflows)} modes, tracing={'enabled' if self.config.enable_tracing else 'disabled'}")
+        logger.info("UnifiedTransactionWorkflow initialized successfully")
+        logger.info(f"Configuration: {len(self.workflows)} modes, tracing={'enabled' if self.config.enable_tracing else 'disabled'}")
 
     def _initialize_checkpointer(self):
         """Initialize the appropriate checkpointer based on configuration"""
         # Temporarily disable checkpointer to avoid version compatibility issues
-        logger.info("💾 Using memory-only checkpointer for better compatibility")
+        logger.info("Using memory-only checkpointer for better compatibility")
         return MemorySaver()
 
     def _build_all_workflows(self) -> Dict[str, StateGraph]:
@@ -120,7 +120,7 @@ class UnifiedTransactionWorkflow:
             # Background processing workflow
             workflows[WorkflowMode.BACKGROUND_PROCESSING.value] = self._build_background_processing()
 
-            logger.info(f"✅ Built {len(workflows)} workflow modes successfully")
+            logger.info(f"Built {len(workflows)} workflow modes successfully")
 
         except Exception as e:
             logger.error(f"❌ Failed to build workflows: {e}")
@@ -256,7 +256,7 @@ class UnifiedTransactionWorkflow:
 
     def _routing_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Intelligent routing node to determine processing path"""
-        logger.info("🔀 ROUTER: Determining optimal processing path")
+        logger.info("ROUTER: Determining optimal processing path")
 
         try:
             # Check ingestion results
@@ -313,13 +313,13 @@ class UnifiedTransactionWorkflow:
         state["async_task_id"] = f"bg_task_{uuid.uuid4().hex[:8]}"
         state["processing_mode"] = "background"
 
-        logger.info(f"🔧 BACKGROUND INIT: Started async task {state['async_task_id']}")
+        logger.info(f"BACKGROUND INIT: Started async task {state['async_task_id']}")
 
         return self.nodes.initialize_workflow_node(state)
 
     def _background_ingestion_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Background ingestion processing"""
-        logger.info("🚀 BACKGROUND INGESTION: Processing in background mode")
+        logger.info("BACKGROUND INGESTION: Processing in background mode")
 
         # Run NL processing and ingestion
         state = self.nodes.nl_processing_node(state)
@@ -334,7 +334,7 @@ class UnifiedTransactionWorkflow:
 
     def _background_processing_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Background processing combining multiple agents"""
-        logger.info("🔍 BACKGROUND PROCESSING: Running combined agent processing")
+        logger.info("BACKGROUND PROCESSING: Running combined agent processing")
 
         # Run NER extraction and classification
         state = self.nodes.ner_extraction_node(state)
@@ -387,7 +387,7 @@ class UnifiedTransactionWorkflow:
         workflow_id = f"workflow_{uuid.uuid4().hex[:8]}"
         start_time = datetime.now()
 
-        logger.info(f"🚀 Starting workflow {workflow_id} in {mode.value} mode")
+        logger.info(f"Starting workflow {workflow_id} in {mode.value} mode")
 
         try:
             # Update mode usage statistics
@@ -438,10 +438,10 @@ class UnifiedTransactionWorkflow:
             # Add tracing if enabled
             if self.config.enable_tracing and self.langsmith_client:
                 workflow_config["callbacks"] = [LangChainTracer(project_name=self.config.langsmith_project)]
-                logger.info(f"🔍 LangSmith tracing enabled for workflow {workflow_id}")
+                logger.info(f"LangSmith tracing enabled for workflow {workflow_id}")
 
             # Execute workflow with timeout
-            logger.info(f"⚡ Executing {mode.value} workflow with timeout {self.config.timeout_seconds}s...")
+            logger.info(f"Executing {mode.value} workflow with timeout {self.config.timeout_seconds}s...")
 
             try:
                 final_state = await asyncio.wait_for(
@@ -470,7 +470,7 @@ class UnifiedTransactionWorkflow:
             # Update statistics
             self._update_workflow_stats(workflow_id, execution_time, True)
 
-            logger.info(f"✅ Workflow {workflow_id} completed successfully in {execution_time:.2f}s")
+            logger.info(f"Workflow {workflow_id} completed successfully in {execution_time:.2f}s")
 
             return {
                 "workflow_id": workflow_id,

@@ -22,33 +22,33 @@ class WorkflowMode(Enum):
 
 class LangGraphConfig(BaseModel):
     """Configuration for LangGraph workflows"""
-    
+
     # API Keys
     groq_api_key: Optional[str] = None
     langgraph_api_key: Optional[str] = None
     langsmith_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
-    
+
     # LangSmith Tracing
     enable_tracing: bool = True
     langsmith_project: str = "fintrack-workflows"
     langsmith_endpoint: str = "https://api.smith.langchain.com"
-    
+
     # Workflow Settings
     default_mode: WorkflowMode = WorkflowMode.FULL_PIPELINE
     enable_background_processing: bool = True
     max_retries: int = 3
     timeout_seconds: int = 300
-    
+
     # Agent Settings
     enable_parallel_processing: bool = True
     confidence_threshold: float = 0.7
     max_transactions_per_batch: int = 100
-    
+
     # Database Settings
     enable_persistence: bool = True
     checkpoint_interval: int = 5  # Save state every 5 steps
-    
+
     # Monitoring Settings
     enable_monitoring: bool = True
     log_level: str = "INFO"
@@ -61,47 +61,47 @@ def load_workflow_config() -> LangGraphConfig:
     try:
         # Get base settings
         settings = get_settings()
-        
+
         # Create configuration with environment overrides
         config = LangGraphConfig(
             groq_api_key=settings.groq_api_key,
             langgraph_api_key=getattr(settings, 'langgraph_api_key', None),
             langsmith_api_key=getattr(settings, 'langsmith_api_key', None),
             openai_api_key=getattr(settings, 'openai_api_key', None),
-            
+
             # Override with environment variables if available
             enable_tracing=os.getenv('LANGCHAIN_TRACING_V2', 'true').lower() == 'true',
             langsmith_project=os.getenv('LANGCHAIN_PROJECT', 'fintrack-workflows'),
             langsmith_endpoint=os.getenv('LANGCHAIN_ENDPOINT', 'https://api.smith.langchain.com'),
-            
+
             # Workflow settings from environment
             default_mode=WorkflowMode(os.getenv('DEFAULT_WORKFLOW_MODE', 'full_pipeline')),
             enable_background_processing=os.getenv('ENABLE_BACKGROUND_PROCESSING', 'true').lower() == 'true',
             max_retries=int(os.getenv('MAX_WORKFLOW_RETRIES', '3')),
             timeout_seconds=int(os.getenv('WORKFLOW_TIMEOUT_SECONDS', '300')),
-            
+
             # Agent settings
             enable_parallel_processing=os.getenv('ENABLE_PARALLEL_PROCESSING', 'true').lower() == 'true',
             confidence_threshold=float(os.getenv('CONFIDENCE_THRESHOLD', '0.7')),
             max_transactions_per_batch=int(os.getenv('MAX_TRANSACTIONS_PER_BATCH', '100')),
-            
+
             # Database settings
             enable_persistence=os.getenv('ENABLE_WORKFLOW_PERSISTENCE', 'true').lower() == 'true',
             checkpoint_interval=int(os.getenv('CHECKPOINT_INTERVAL', '5')),
-            
+
             # Monitoring settings
             enable_monitoring=os.getenv('ENABLE_WORKFLOW_MONITORING', 'true').lower() == 'true',
             log_level=os.getenv('WORKFLOW_LOG_LEVEL', 'INFO'),
             metrics_collection=os.getenv('ENABLE_METRICS_COLLECTION', 'true').lower() == 'true'
         )
-        
+
         logger.info("✅ Workflow configuration loaded successfully")
         logger.info(f"🎯 LangSmith tracing: {'enabled' if config.enable_tracing else 'disabled'}")
         logger.info(f"⚡ Default mode: {config.default_mode.value}")
         logger.info(f"🔧 Parallel processing: {'enabled' if config.enable_parallel_processing else 'disabled'}")
-        
+
         return config
-        
+
     except Exception as e:
         logger.error(f"❌ Failed to load workflow configuration: {e}")
         # Return default configuration
@@ -135,7 +135,7 @@ def get_langgraph_config(config: LangGraphConfig) -> Dict[str, Any]:
             "max_retries": config.max_retries
         }
     }
-    
+
     # Add tracing configuration if enabled
     if config.enable_tracing and config.langsmith_api_key:
         langgraph_config["callbacks"] = []
@@ -143,7 +143,7 @@ def get_langgraph_config(config: LangGraphConfig) -> Dict[str, Any]:
             "project": config.langsmith_project,
             "endpoint": config.langsmith_endpoint
         }
-    
+
     return langgraph_config
 
 def validate_workflow_config(config: LangGraphConfig) -> Dict[str, Any]:
@@ -156,32 +156,32 @@ def validate_workflow_config(config: LangGraphConfig) -> Dict[str, Any]:
         "errors": [],
         "recommendations": []
     }
-    
+
     # Check API keys
     if not config.groq_api_key:
         validation_results["warnings"].append("Groq API key not configured - NL processing will use fallback methods")
-    
+
     if config.enable_tracing and not config.langsmith_api_key:
         validation_results["warnings"].append("LangSmith tracing enabled but API key not configured")
-    
+
     # Check thresholds
     if config.confidence_threshold < 0.1 or config.confidence_threshold > 1.0:
         validation_results["errors"].append("Confidence threshold must be between 0.1 and 1.0")
         validation_results["valid"] = False
-    
+
     if config.max_transactions_per_batch < 1 or config.max_transactions_per_batch > 1000:
         validation_results["warnings"].append("Max transactions per batch should be between 1 and 1000")
-    
+
     if config.timeout_seconds < 30:
         validation_results["warnings"].append("Workflow timeout is very low, may cause timeouts for complex processing")
-    
+
     # Performance recommendations
     if config.enable_parallel_processing and config.max_transactions_per_batch > 50:
         validation_results["recommendations"].append("Consider reducing batch size when parallel processing is enabled")
-    
+
     if not config.enable_persistence:
         validation_results["recommendations"].append("Enable persistence for production environments")
-    
+
     return validation_results
 
 # Global configuration instance
@@ -213,7 +213,7 @@ def setup_langchain_environment(config: LangGraphConfig):
         os.environ["LANGCHAIN_API_KEY"] = config.langsmith_api_key
         os.environ["LANGCHAIN_PROJECT"] = config.langsmith_project
         os.environ["LANGCHAIN_ENDPOINT"] = config.langsmith_endpoint
-        logger.info("🎯 LangChain environment configured for tracing")
+        logger.info("LangChain environment configured for tracing")
     else:
         os.environ["LANGCHAIN_TRACING_V2"] = "false"
         logger.info("📊 LangChain tracing disabled")
@@ -268,5 +268,5 @@ def get_config_preset(preset_name: str) -> LangGraphConfig:
         "production": PRODUCTION_CONFIG,
         "testing": TESTING_CONFIG
     }
-    
+
     return presets.get(preset_name.lower(), load_workflow_config())

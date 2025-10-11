@@ -49,7 +49,7 @@ class TransactionService:
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
         try:
-            # Initialize enhanced ingestion agent
+            # Initialize enhanced ingestion agent for initial preprocessing
             ingestion_agent = IngestionAgent()
 
             # Process through enhanced ingestion agent first
@@ -60,42 +60,80 @@ class TransactionService:
             ingestion_result = ingestion_agent.process(input_data)
 
             if ingestion_result.metadata.get("status") == "completed" and ingestion_result.preprocessed_transactions:
-                # Convert processed transactions to database records
-                saved_count = 0
-                for transaction_data in ingestion_result.preprocessed_transactions:
-                    try:
-                        # Prepare data for database insertion - only use basic columns that exist
-                        db_data = {
-                            "user_id": user_id,
-                            "amount": transaction_data.amount,
-                            "description": transaction_data.description_cleaned,
-                            "date": transaction_data.date.isoformat(),
-                            "merchant": None,
-                            "category": None,
-                            "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
-                            "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
-                            "status": "completed"
-                        }
+                # Convert to raw transaction format for unified workflow
+                raw_transactions = []
+                for transaction in ingestion_result.preprocessed_transactions:
+                    raw_transactions.append({
+                        "date": transaction.date.isoformat(),
+                        "amount": transaction.amount,
+                        "description": transaction.description_cleaned,
+                        "transaction_type": transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type),
+                        "payment_method": transaction.payment_method.value if hasattr(transaction.payment_method, 'value') else str(transaction.payment_method),
+                        "category": transaction.metadata.get('original_category', ''),
+                        "merchant": transaction.metadata.get('original_merchant', ''),
+                    })
 
-                        # Save to database
-                        await TransactionCRUD.create_transaction(self.client, db_data)
-                        saved_count += 1
+                # Now run the full unified workflow for merchant/category classification
+                workflow = UnifiedTransactionWorkflow()
+                workflow_result = await workflow.execute_workflow(
+                    mode=WorkflowMode.FULL_PIPELINE,
+                    raw_transactions=raw_transactions,
+                    user_id=user_id
+                )
 
-                    except Exception as e:
-                        print(f"⚠️ Failed to save transaction: {e}. Transaction data: {transaction_data}")
-                        continue
+                print(f"Workflow result status: {workflow_result.get('status')}")
+                print(f"Workflow result keys: {list(workflow_result.keys())}")
+                if 'result' in workflow_result:
+                    print(f"Result keys: {list(workflow_result['result'].keys())}")
+                    print(f"Processed transactions count: {len(workflow_result['result'].get('processed_transactions', []))}")
 
-                print(f"✅ Saved {saved_count} transactions to database")
-                return {
-                    "total": len(df),
-                    "processed": len(ingestion_result.preprocessed_transactions),
-                    "saved_to_db": saved_count,
-                    "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
-                    "errors": 1 if ingestion_result.metadata.get("status") == "failed" else 0
-                }
+                if workflow_result.get("status") == "success" and workflow_result.get("result", {}).get("processed_transactions"):
+                    # Now save the fully processed transactions to database
+                    saved_count = 0
+                    for transaction_data in workflow_result["result"]["processed_transactions"]:
+                        try:
+                            # Prepare data for database insertion with merchant and category
+                            db_data = {
+                                "user_id": user_id,
+                                "amount": transaction_data.amount,
+                                "description": transaction_data.description_cleaned,
+                                "date": transaction_data.date.isoformat() if hasattr(transaction_data.date, 'isoformat') else str(transaction_data.date),
+                                "merchant": getattr(transaction_data, 'merchant_name', None) or getattr(transaction_data, 'merchant', None),
+                                "category": transaction_data.predicted_category.value if hasattr(transaction_data.predicted_category, 'value') else str(getattr(transaction_data, 'predicted_category', getattr(transaction_data, 'category', 'miscellaneous'))),
+                                "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
+                                "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
+                                "status": "completed"
+                            }
+
+                            # Save to database
+                            await TransactionCRUD.create_transaction(self.client, db_data)
+                            saved_count += 1
+
+                        except Exception as e:
+                            print(f"Warning: Failed to save transaction: {e}. Transaction data: {transaction_data}")
+                            continue
+
+                    print(f"Saved {saved_count} transactions to database")
+                    return {
+                        "total": len(df),
+                        "processed": len(ingestion_result.preprocessed_transactions),
+                        "saved_to_db": saved_count,
+                        "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
+                        "errors": 1 if workflow_result.get("status") != "success" else 0
+                    }
+                else:
+                    error_msg = workflow_result.get("error", "Workflow processing failed")
+                    print(f"Workflow processing failed: {error_msg}")
+                    return {
+                        "total": len(df),
+                        "processed": len(ingestion_result.preprocessed_transactions),
+                        "saved_to_db": 0,
+                        "skipped": len(df),
+                        "errors": 1
+                    }
             else:
                 error_msg = ingestion_result.metadata.get("error", "Unknown error")
-                print(f"❌ Preprocessing failed: {error_msg}")
+                print(f"Preprocessing failed: {error_msg}")
                 return {
                     "total": len(df),
                     "processed": 0,
@@ -105,7 +143,7 @@ class TransactionService:
                 }
 
         except Exception as e:
-            print(f"❌ Upload processing failed: {e}")
+            print(f"Upload processing failed: {e}")
             return {
                 "total": len(df),
                 "processed": 0,
