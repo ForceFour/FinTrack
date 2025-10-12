@@ -542,10 +542,10 @@ async def process_natural_language_transaction(
                         "user_id": user.id,
                         "amount": tx_data["amount"],
                         "description": tx_data["description"],
-                        "date": datetime.fromisoformat(tx_data["date"]) if isinstance(tx_data["date"], str) else tx_data["date"],
+                        "date": (datetime.fromisoformat(tx_data["date"]) if isinstance(tx_data["date"], str) else tx_data["date"]).isoformat(),
                         "merchant": tx_data.get("merchant"),
                         "category": tx_data.get("category"),
-                        "transaction_type": "debit" if tx_data["amount"] < 0 else "credit",
+                        "transaction_type": "expense" if tx_data["amount"] < 0 else "income",
                         "status": "completed"
                     }
 
@@ -555,18 +555,18 @@ async def process_natural_language_transaction(
                 # Generate response for multiple transactions
                 response_lines = ["✅ Transactions recorded successfully!\n"]
                 for i, tx in enumerate(created_transactions, 1):
-                    response_lines.append(f"📝 Transaction {i}: {tx.description}")
+                    response_lines.append(f"📝 Transaction {i}: {tx['description']}")
                     # Show amount with sign and type indicator
-                    amount_str = f"${abs(tx.amount):.2f}"
-                    if tx.amount < 0:
-                        response_lines.append(f"� Expense: -{amount_str}")
+                    amount_str = f"${abs(tx['amount']):.2f}"
+                    if tx['amount'] < 0:
+                        response_lines.append(f"💸 Expense: -{amount_str}")
                     else:
                         response_lines.append(f"💰 Income: +{amount_str}")
-                    response_lines.append(f"📅 {tx.date}")
-                    if tx.merchant:
-                        response_lines.append(f"🏪 {tx.merchant}")
-                    if tx.category:
-                        response_lines.append(f"📂 {tx.category}")
+                    response_lines.append(f"📅 {tx['date']}")
+                    if tx.get('merchant'):
+                        response_lines.append(f"🏪 {tx['merchant']}")
+                    if tx.get('category'):
+                        response_lines.append(f"📂 {tx['category']}")
                     response_lines.append("")  # Empty line between transactions
 
                 response_text = "\n".join(response_lines)
@@ -577,7 +577,7 @@ async def process_natural_language_transaction(
                     "response": response_text,
                     "conversation_context": {},
                     "transaction_processed": True,
-                    "transaction_ids": [tx.id for tx in created_transactions],
+                    "transaction_ids": [tx['id'] for tx in created_transactions],
                     "next_action": "View transactions in Dashboard or continue adding more transactions"
                 }
 
