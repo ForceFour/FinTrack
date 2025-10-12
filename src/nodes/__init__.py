@@ -405,7 +405,7 @@ class TransactionProcessingNodes:
                         'date': raw_txn.get('date', datetime.now().isoformat()),
                         'category': category,
                         'payment_method': raw_txn.get('payment_method', 'unknown'),
-                        'transaction_type': 'expense',  # Default, will be determined by ClassifierAgent
+                        'transaction_type': raw_txn.get('transaction_type', 'expense'),  # Use provided type or default to expense
                         'has_discount': False,
                         'metadata': {
                             'processed_by': 'raw_transaction_ingestion',

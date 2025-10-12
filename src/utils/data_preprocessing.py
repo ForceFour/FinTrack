@@ -75,8 +75,11 @@ class DataPreprocessor:
         # Step 3: Amount Handling
         df3 = self._step3_amount_handling(df2)
 
+        # Step 3.5: Transaction Type Classification
+        df3_5 = self._step3_5_transaction_type_classification(df3)
+
         # Step 4: Discounts
-        df4 = self._step4_discounts(df3)
+        df4 = self._step4_discounts(df3_5)
 
         # Step 5: Encoding
         df5 = self._step5_encoding(df4)
@@ -173,7 +176,7 @@ class DataPreprocessor:
         # Income patterns - high confidence indicators
         income_patterns = [
             r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
-            r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
+            r'\b(income|received.*payment|payment.*received|credit.*balance|reimbursement)\b',
             r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
             r'\b(social.*security|unemployment|pension|benefits)\b',
             r'\b(gift.*received|inheritance|lottery|settlement)\b',
@@ -211,7 +214,7 @@ class DataPreprocessor:
 
         for pattern in expense_patterns:
             mask = description_lower.str.contains(pattern, regex=True, na=False)
-            # Override to expense if description matches expense patterns
+            # Override to expense if pattern matches (allow overriding income classifications)
             df.loc[mask, 'transaction_type'] = 'expense'
             # Make amounts negative for expenses
             df.loc[mask & (df['amount'] > 0), 'amount'] = -df.loc[mask & (df['amount'] > 0), 'amount']

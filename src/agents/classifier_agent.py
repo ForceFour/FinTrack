@@ -242,10 +242,11 @@ class ClassifierAgent:
 
         # Ensemble weights for transaction type classification
         self.type_ensemble_weights = {
-            'amount_signal': 0.35,
-            'keyword_signal': 0.35,
-            'merchant_signal': 0.20,
-            'temporal_signal': 0.10
+            'existing_preprocessing_signal': 0.50,  # Highest weight for preprocessing result
+            'amount_signal': 0.25,
+            'keyword_signal': 0.15,
+            'merchant_signal': 0.07,
+            'temporal_signal': 0.03
         }
 
         # Confidence adjustments
@@ -484,6 +485,11 @@ class ClassifierAgent:
         amount = transaction.amount
         desc = transaction.description_cleaned.lower()
         signals = []
+
+        # Existing transaction type signal (from preprocessing) - highest priority
+        existing_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+        if existing_type in ['income', 'expense']:
+            signals.append(('existing_preprocessing', existing_type, 0.95))  # Very high confidence for preprocessing result
 
         # Amount signal
         amount_signal = self._analyze_amount_for_type(amount)
