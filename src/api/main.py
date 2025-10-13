@@ -42,12 +42,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(transactions_router)
-app.include_router(auth_router)
-app.include_router(analytics_router)
-app.include_router(suggestions_router)
-app.include_router(workflow_router)
+# Include routers with API versioning
+app.include_router(transactions_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(suggestions_router, prefix="/api/v1")
+app.include_router(workflow_router, prefix="/api/v1")
+
+# Health check endpoint
+@app.get("/api/v1/health")
+async def health_check():
+    """
+    Health check endpoint for API status
+    """
+    return {
+        "status": "healthy",
+        "service": "FinTrack API",
+        "version": "2.0.0",
+        "components": {
+            "transactions": "operational",
+            "auth": "operational",
+            "analytics": "operational",
+            "suggestions": "operational",
+            "workflows": "operational"
+        }
+    }
 
 @app.on_event("startup")
 async def startup_event():

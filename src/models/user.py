@@ -2,7 +2,7 @@
 User Models - Data models for user management and authentication
 """
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -32,9 +32,8 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class User(UserBase):
     """Complete user model including internal fields"""
@@ -44,9 +43,8 @@ class User(UserBase):
     updated_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
     preferences: Optional[Dict[str, Any]] = {}
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class LoginRequest(BaseModel):
     """Login request model"""

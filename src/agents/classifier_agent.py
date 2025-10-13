@@ -15,6 +15,7 @@ from ..schemas.transaction_schemas import (
     MerchantTransaction,
     ClassifiedTransaction,
     TransactionCategory,
+    TransactionType,
     PreprocessedTransaction
 )
 from ..models.category_classifier import CategoryClassifier
@@ -184,7 +185,7 @@ class ClassifierAgent:
             'investment': ['dividend', 'interest', 'investment', 'capital gains'],
             'business': ['revenue', 'sales', 'business income', 'commission', 'royalty'],
             'government': ['pension', 'allowance', 'government payment'],
-            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund'],
+            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund', 'income', 'received', 'rental'],
             'sri_lankan': ['epf', 'etf', 'gratuity', 'festival bonus', 'overtime']
         }
 
@@ -241,10 +242,11 @@ class ClassifierAgent:
 
         # Ensemble weights for transaction type classification
         self.type_ensemble_weights = {
-            'amount_signal': 0.35,
-            'keyword_signal': 0.35,
-            'merchant_signal': 0.20,
-            'temporal_signal': 0.10
+            'existing_preprocessing_signal': 0.50,  # Highest weight for preprocessing result
+            'amount_signal': 0.25,
+            'keyword_signal': 0.15,
+            'merchant_signal': 0.07,
+            'temporal_signal': 0.03
         }
 
         # Confidence adjustments
@@ -363,8 +365,14 @@ class ClassifierAgent:
 
         # Merchant category from NER agent
         if transaction.merchant_category:
-            confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
-            return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            # Check if merchant_category is a valid TransactionCategory
+            try:
+                TransactionCategory(transaction.merchant_category)
+                confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
+                return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            except ValueError:
+                # Invalid category, skip this signal
+                pass
 
         return None, 0.0
 
@@ -478,6 +486,11 @@ class ClassifierAgent:
         desc = transaction.description_cleaned.lower()
         signals = []
 
+        # Existing transaction type signal (from preprocessing) - highest priority
+        existing_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+        if existing_type in ['income', 'expense']:
+            signals.append(('existing_preprocessing', existing_type, 0.95))  # Very high confidence for preprocessing result
+
         # Amount signal
         amount_signal = self._analyze_amount_for_type(amount)
         signals.append(('amount', amount_signal['type'], amount_signal['confidence']))
@@ -516,6 +529,10 @@ class ClassifierAgent:
 
     def _analyze_keywords_for_type(self, description: str) -> Dict[str, Any]:
         """Analyze keywords for transaction type"""
+
+        # Special case for rental income
+        if 'rental' in description:
+            return {'type': 'income', 'confidence': 0.95, 'reason': 'Income keyword: rental'}
 
         # Check income keywords
         for category, keywords in self.income_keywords.items():
@@ -649,7 +666,7 @@ class ClassifierAgent:
                     description_cleaned=txn.description_cleaned,
                     has_discount=txn.has_discount,
                     discount_percentage=txn.discount_percentage,
-                    transaction_type=txn.transaction_type,
+                    transaction_type=TransactionType(txn_type),  # Use predicted transaction type
                     metadata=txn.metadata.copy(),
                     merchant_name=txn.merchant_name,
                     merchant_standardized=txn.merchant_standardized,

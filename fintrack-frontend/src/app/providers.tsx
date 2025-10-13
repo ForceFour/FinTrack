@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from "react";
 import { AuthState, AgentStatus } from "@/lib/types";
@@ -16,6 +17,8 @@ interface AppContextType {
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateAgentStatus: (status: Partial<AgentStatus>) => void;
+  refreshTransactions: () => void;
+  onTransactionsRefresh: (callback: () => void) => () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -36,6 +39,23 @@ export function Providers({ children }: { children: ReactNode }) {
     suggestion: "idle",
     safety_guard: "idle",
   });
+
+  const [transactionRefreshCallbacks, setTransactionRefreshCallbacks] = useState<Set<() => void>>(new Set());
+
+  const refreshTransactions = useCallback(() => {
+    transactionRefreshCallbacks.forEach(callback => callback());
+  }, [transactionRefreshCallbacks]);
+
+  const onTransactionsRefresh = useCallback((callback: () => void) => {
+    setTransactionRefreshCallbacks(prev => new Set([...prev, callback]));
+    return () => {
+      setTransactionRefreshCallbacks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(callback);
+        return newSet;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     // Listen to auth state changes
@@ -97,7 +117,15 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider
-      value={{ auth, agentStatus, login, logout, updateAgentStatus }}
+      value={{
+        auth,
+        agentStatus,
+        login,
+        logout,
+        updateAgentStatus,
+        refreshTransactions,
+        onTransactionsRefresh,
+      }}
     >
       {children}
     </AppContext.Provider>

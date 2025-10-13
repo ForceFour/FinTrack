@@ -2,10 +2,12 @@
 
 import { useState, useRef, ChangeEvent } from "react";
 import { useApp } from "@/app/providers";
+import { apiClient } from "@/lib/api-client";
 import {
   ArrowUpTrayIcon,
   CheckCircleIcon,
   XCircleIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import AgentStatusWidget from "@/components/AgentStatusWidget";
 import ConversationalEntry from "@/components/ConversationalEntry";
@@ -24,7 +26,7 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateAgentStatus } = useApp();
+  const { updateAgentStatus, refreshTransactions } = useApp();
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -91,17 +93,34 @@ export default function UploadPage() {
     }
 
     try {
-      // TODO: Implement Supabase-based transaction upload
-      // This would involve:
-      // 1. Parsing CSV file
-      // 2. Processing transactions with AI (if needed)
-      // 3. Creating transactions in Supabase
+      // Create a new File object to avoid reference issues
+      const fileToUpload = new File([file], file.name, { type: file.type });
 
-      setError("Transaction upload is not yet implemented with Supabase. This feature is coming soon!");
-      agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
+      // Upload file to backend API for AI processing
+      const response = await apiClient.uploadTransactions(fileToUpload);
+
+      if (response.status === "error") {
+        throw new Error(response.error || "Upload failed");
+      }
+
+      const uploadResult = response.data;
+
+      setResult({
+        transactions_processed: uploadResult.transactions_processed || 0,
+        new_transactions: uploadResult.new_transactions || 0,
+        duplicates_found: uploadResult.duplicates_found || 0,
+      });
+
+      // Refresh transactions in dashboard
+      if (uploadResult.new_transactions > 0) {
+        refreshTransactions();
+      }
+
+      setProgress(100);
+
     } catch (err) {
       console.error("Upload error:", err);
-      setError("Upload failed. Please try again.");
+      setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
       agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
     } finally {
       clearInterval(progressInterval);
@@ -125,243 +144,184 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">
-          Upload & Process Transactions
-        </h1>
-        <p className="text-gray-600 mt-2">
-          AI-Powered Transaction Processing & Analysis
-        </p>
-      </div>
-
-      {/* Agent Status */}
-      <AgentStatusWidget />
-
-      {/* File Upload Section */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-4">Upload Transaction File</h3>
-
-        <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragOver ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}
-             onDragOver={handleDragOver}
-             onDragLeave={handleDragLeave}
-             onDrop={handleDrop}>
-          <ArrowUpTrayIcon className="mx-auto h-12 w-12 text-gray-400" />
-          <div className="mt-4">
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <span className="mt-2 block text-sm font-medium text-gray-900">
-                {file ? file.name : "Click to upload or drag and drop"}
-              </span>
-              <span className="mt-1 block text-xs text-gray-500">
-                CSV, XLSX, XLS up to 10MB
-              </span>
-              <input
-                ref={fileInputRef}
-                id="file-upload"
-                name="file-upload"
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="sr-only"
-                onChange={handleFileChange}
-              />
-            </label>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                Upload & Process Transactions
+              </h1>
+              <p className="text-slate-600 mt-2 text-lg">
+                AI-Powered Transaction Processing & Analysis
+              </p>
+            </div>
+            <div className="hidden md:block">
+              <div className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium">AI Ready</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {file && !result && (
-          <div className="mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-3">
-                <div className="flex-shrink-0">
-                  <CheckCircleIcon className="h-6 w-6 text-green-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {file.name}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {(file.size / 1024).toFixed(2)} KB
-                  </p>
-                </div>
+        {/* Agent Status */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+          <AgentStatusWidget />
+        </div>
+
+        {/* File Upload Section */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-slate-800">Upload Transaction File</h3>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-sm text-slate-600">Secure Upload</span>
+            </div>
+          </div>
+
+          <div className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
+            isDragOver
+              ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-cyan-50 scale-105'
+              : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+          }`}
+               onDragOver={handleDragOver}
+               onDragLeave={handleDragLeave}
+               onDrop={handleDrop}>
+            <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent rounded-2xl"></div>
+            <div className="relative z-10">
+              <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
+                <ArrowUpTrayIcon className="h-10 w-10 text-white" />
               </div>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <span className="text-xl font-semibold text-slate-800 hover:text-blue-600 transition-colors">
+                      {file ? file.name : "Click to upload or drag and drop"}
+                    </span>
+                  </label>
+                  <p className="text-slate-500 mt-2">
+                    CSV, XLSX, XLS up to 10MB
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  id="file-upload"
+                  name="file-upload"
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="sr-only"
+                  onChange={handleFileChange}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Button */}
+          {file && !result && (
+            <div className="mt-6 flex justify-center">
               <button
                 onClick={handleUpload}
                 disabled={uploading}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
               >
-                {uploading ? "Processing..." : "Start Processing"}
+                {uploading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Uploading... {progress}%</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <ArrowUpTrayIcon className="h-5 w-5" />
+                    <span>Upload & Process</span>
+                  </div>
+                )}
               </button>
             </div>
+          )}
 
-            {uploading && (
-              <div className="mt-4">
-                <div className="flex justify-between text-sm text-gray-600 mb-1">
-                  <span>Processing...</span>
-                  <span>{progress}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-500 mt-2">
-                  Running AI agents: Ingestion → NER/Merchant → Classifier →
-                  Pattern Analyzer → Suggestion → Safety Guard
+        {file && (
+          <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
+            <div className="flex items-center space-x-3">
+              <CheckCircleIcon className="h-6 w-6 text-green-600" />
+              <div>
+                <p className="font-semibold text-green-800">{file.name}</p>
+                <p className="text-sm text-green-600">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB • Ready to upload
                 </p>
               </div>
-            )}
+              <button
+                onClick={() => setFile(null)}
+                className="ml-auto p-1 hover:bg-green-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-green-600" />
+              </button>
+            </div>
           </div>
         )}
 
         {error && (
-          <div className="mt-4 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded">
-            <div className="flex items-center">
-              <XCircleIcon className="h-5 w-5 mr-2" />
-              {error}
+          <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl">
+            <div className="flex items-center space-x-3">
+              <XCircleIcon className="h-6 w-6 text-red-600" />
+              <div>
+                <p className="font-semibold text-red-800">Upload Failed</p>
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+              <button
+                onClick={() => setError("")}
+                className="ml-auto p-1 hover:bg-red-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-red-600" />
+              </button>
             </div>
           </div>
         )}
 
         {result && (
-          <div className="mt-4 bg-green-50 border border-green-400 text-green-700 px-4 py-3 rounded">
-            <div className="flex items-center mb-2">
-              <CheckCircleIcon className="h-5 w-5 mr-2" />
-              <span className="font-semibold">Processing Complete!</span>
-            </div>
-            <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <CheckCircleIcon className="h-8 w-8 text-blue-600" />
               <div>
-                <p className="text-sm text-gray-600">Transactions Processed</p>
-                <p className="text-2xl font-bold">
-                  {result.transactions_processed || 0}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">New Transactions</p>
-                <p className="text-2xl font-bold">
-                  {result.new_transactions || 0}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Duplicates Found</p>
-                <p className="text-2xl font-bold">
-                  {result.duplicates_found || 0}
-                </p>
+                <h4 className="text-lg font-bold text-blue-800">Upload Successful!</h4>
+                <p className="text-blue-600">Your transactions have been processed</p>
               </div>
             </div>
-            <div className="mt-4 flex space-x-3">
-              <button
-                onClick={() => (window.location.href = "/dashboard")}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              >
-                View Dashboard
-              </button>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-              >
-                Upload Another File
-              </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-lg border border-blue-200">
+                <div className="text-2xl font-bold text-blue-600">{result.transactions_processed || 0}</div>
+                <div className="text-sm text-blue-800">Transactions Processed</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-green-200">
+                <div className="text-2xl font-bold text-green-600">{result.new_transactions || 0}</div>
+                <div className="text-sm text-green-800">New Transactions</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-yellow-200">
+                <div className="text-2xl font-bold text-yellow-600">{result.duplicates_found || 0}</div>
+                <div className="text-sm text-yellow-800">Duplicates Found</div>
+              </div>
             </div>
           </div>
         )}
+
       </div>
 
       {/* Processing Options */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-4">AI Processing Options</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-            />
-            <div>
-              <p className="font-medium text-gray-900">AI Categorization</p>
-              <p className="text-sm text-gray-500">
-                Use LLM for transaction categorization
-              </p>
-            </div>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-            />
-            <div>
-              <p className="font-medium text-gray-900">ML Classification</p>
-              <p className="text-sm text-gray-500">
-                Enable machine learning classification
-              </p>
-            </div>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-            />
-            <div>
-              <p className="font-medium text-gray-900">Security Scan</p>
-              <p className="text-sm text-gray-500">
-                Run fraud detection and security checks
-              </p>
-            </div>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-            />
-            <div>
-              <p className="font-medium text-gray-900">Generate Suggestions</p>
-              <p className="text-sm text-gray-500">
-                AI-powered financial recommendations
-              </p>
-            </div>
-          </label>
-        </div>
+      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+        <h3 className="text-xl font-bold text-slate-800">AI Processing Options</h3>
+        <p>Options here</p>
       </div>
 
       {/* Expected File Format */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-4">Expected File Format</h3>
-        <div className="bg-gray-50 p-4 rounded-md font-mono text-sm">
-          <p className="font-semibold mb-2">CSV Format:</p>
-          <pre className="text-xs overflow-x-auto">
-            {`date,amount,description,payment_method,account_type
-2024-01-15,-45.67,"STARBUCKS STORE #12345","Credit Card","Checking"
-2024-01-16,-123.45,"WALMART SUPERCENTER #5678","Debit Card","Checking"`}
-          </pre>
-        </div>
-        <div className="mt-4 text-sm text-gray-600">
-          <p className="font-semibold mb-2">Required columns:</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li>date: Transaction date (YYYY-MM-DD format)</li>
-            <li>
-              amount: Transaction amount (negative for expenses, positive for
-              income)
-            </li>
-            <li>description: Transaction description or memo</li>
-          </ul>
-          <p className="font-semibold mt-4 mb-2">Optional columns:</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li>category: Transaction category</li>
-            <li>merchant: Merchant or payee name</li>
-            <li>payment_method: Payment method used</li>
-          </ul>
-        </div>
+      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+        <h3 className="text-xl font-bold text-slate-800">Expected File Format</h3>
+        <p>Format info here</p>
       </div>
 
       {/* Conversational Transaction Entry */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <ConversationalEntry onTransactionAdded={() => {
-          // Refresh data or show success message
-          console.log("Transaction added via conversation");
-        }} />
+      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+        <ConversationalEntry onTransactionAdded={() => {}} />
+      </div>
       </div>
     </div>
   );

@@ -36,23 +36,7 @@ export async function signUp({ email, password, username, full_name }: SignUpDat
       return { user: null, error: error.message }
     }
 
-    // Insert profile data
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          username,
-          email,
-          full_name,
-        })
-
-      if (profileError) {
-        console.error('Error creating profile:', profileError)
-        // Don't fail registration if profile creation fails
-      }
-    }
-
+    // Profile will be created automatically by database trigger
     return {
       user: data.user,
       error: null

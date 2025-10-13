@@ -18,7 +18,7 @@ from ..db.models.user import UserORM
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-router = APIRouter(prefix="/api/auth", tags=["authentication"])
+router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer()
 
 @router.post("/register", response_model=UserResponse)

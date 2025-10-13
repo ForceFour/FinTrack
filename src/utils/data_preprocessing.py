@@ -87,7 +87,7 @@ class DataPreprocessor:
         # Step 6: Description Cleaning
         df6 = self._step6_description_cleaning(df5)
 
-        # Step 7: Drop unwanted columns & rearrange
+        # Step 7: Column management - Drop unwanted columns, rearrange
         df_final = self._step7_column_management(df6)
 
         logger.info(f"Preprocessing complete. Final shape: {df_final.shape}")
@@ -173,13 +173,14 @@ class DataPreprocessor:
         else:
             description_lower = pd.Series([''] * len(df))
 
-        # Income patterns
+        # Income patterns - high confidence indicators
         income_patterns = [
             r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
-            r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
+            r'\b(income|received.*payment|payment.*received|credit.*balance|reimbursement)\b',
             r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
             r'\b(social.*security|unemployment|pension|benefits)\b',
-            r'\b(gift.*received|inheritance|lottery|settlement)\b'
+            r'\b(gift.*received|inheritance|lottery|settlement)\b',
+            r'\b(rental.*income|property.*income|business.*income)\b'
         ]
 
         for pattern in income_patterns:
@@ -195,9 +196,36 @@ class DataPreprocessor:
             r'\b(p2p|peer.*to.*peer|venmo|zelle|cashapp|paypal.*transfer)\b'
         ]
 
-        for pattern in transfer_patterns:
+        # Expense patterns (override income classification based on description)
+        expense_patterns = [
+            r'\b(purchased?|bought|paid|spent|charged|debit|withdrawal)\b',
+            r'\b(shopping|store|grocery|restaurant|gas|fuel|utility|bill)\b',
+            r'\b(amazon|walmart|target|costco|home.*depot|lowes|ikea)\b',
+            r'\b(starbucks|mcdonalds|subway|wendys|chipotle|panera)\b',
+            r'\b(netflix|spotify|hulu|electric|internet|phone|insurance)\b',
+            r'\b(donation|charity|gift.*given|contribution)\b',
+            r'\b(loan.*repayment|installment|emi|mortgage)\b',
+            r'\b(medical|hospital|doctor|pharmacy|healthcare)\b',
+            r'\b(beauty|salon|cosmetics|spa|haircut)\b',
+            r'\b(entertainment|movie|cinema|theater|concert)\b',
+            r'\b(furniture|appliance|household|home)\b',
+            r'\b(subscription|renewal|membership|service)\b'
+        ]
+
+        for pattern in expense_patterns:
             mask = description_lower.str.contains(pattern, regex=True, na=False)
-            df.loc[mask, 'transaction_type'] = 'transfer'
+            # Override to expense if pattern matches (allow overriding income classifications)
+            df.loc[mask, 'transaction_type'] = 'expense'
+            # Make amounts negative for expenses
+            df.loc[mask & (df['amount'] > 0), 'amount'] = -df.loc[mask & (df['amount'] > 0), 'amount']
+
+        # Amount-based classification: Very large amounts (>10k) are likely income
+        df.loc[(df['amount'] > 10000) & (df['amount'] >= 0), 'transaction_type'] = 'income'
+
+        # Amount-based classification: Small amounts (<100) with expense descriptions are expenses
+        expense_desc_mask = description_lower.str.contains(r'\b(paid|spent|purchased|bought|charged)\b', regex=True, na=False)
+        df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'transaction_type'] = 'expense'
+        df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'amount'] = -df.loc[(df['amount'] < 100) & expense_desc_mask & (df['amount'] >= 0), 'amount']
 
         # Force negative amounts to be expenses (overrides other classifications)
         df.loc[df['amount'] < 0, 'transaction_type'] = 'expense'
@@ -260,11 +288,15 @@ class DataPreprocessor:
 
         # Category (few values → One-hot)
         if 'category' in df.columns:
+            # Preserve original category before encoding
+            df['category_original'] = df['category']
             df = pd.get_dummies(df, columns=['category'], prefix='cat')
             logger.debug("Applied one-hot encoding to category")
 
         # Merchant (many values → Frequency Encode)
         if 'merchant' in df.columns:
+            # Preserve original merchant before encoding
+            df['merchant_original'] = df['merchant']
             merchant_freq = df['merchant'].value_counts(normalize=True)  # normalized frequency
             df['merchant_encoded'] = df['merchant'].map(merchant_freq)
             logger.debug(f"Applied frequency encoding to {len(merchant_freq)} unique merchants")
