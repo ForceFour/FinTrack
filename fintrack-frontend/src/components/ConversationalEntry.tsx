@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { apiClient } from "@/lib/api-client";
 import { ConversationMessage, ConversationContext } from "@/lib/types";
-import { SendIcon, MessageCircleIcon, BotIcon, UserIcon, RefreshCwIcon } from "lucide-react";
+import { SendIcon, MessageCircleIcon, BotIcon, UserIcon, RefreshCwIcon, CheckCircle } from "lucide-react";
+import { useApp } from "@/app/providers";
 
 interface ConversationalEntryProps {
   onTransactionAdded?: () => void;
@@ -16,6 +17,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
   const [conversationContext, setConversationContext] = useState<ConversationContext>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { refreshTransactions } = useApp();
 
   // Check if we have a pending transaction that needs more info
   const contextData = conversationContext as { pending_transaction?: unknown; missing_fields?: unknown };
@@ -77,6 +79,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
         // Handle different response types
         if (data.status === "completed" && data.transaction_processed) {
           // Transaction was successfully created
+          refreshTransactions();
           onTransactionAdded?.();
 
           // Add a follow-up message with next steps
@@ -139,45 +142,52 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
   ];
 
   return (
-    <div className="bg-white rounded-lg shadow-lg border border-gray-200">
+    <div className="bg-gradient-to-br from-white via-blue-50 to-indigo-50 rounded-xl shadow-xl border border-gray-200/50 backdrop-blur-sm">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-        <div className="flex items-center space-x-2">
-          <MessageCircleIcon className="h-5 w-5 text-blue-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Conversational Transaction Entry</h3>
+      <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-t-xl">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-white/20 rounded-lg">
+            <MessageCircleIcon className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-white">Conversational Transaction Entry</h3>
+            <p className="text-sm text-blue-100 mt-1">
+              Enter transaction details naturally - I&apos;ll understand and process them for you!
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-gray-600 mt-1">
-          Enter transaction details by typing them naturally - I&apos;ll understand and process them for you!
-        </p>
         {hasPendingTransaction && missingFields.length > 0 && (
-          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-            <p className="text-sm text-yellow-800">
-              <span className="font-medium">Missing information:</span> {missingFields.join(", ")}
+          <div className="mt-4 p-3 bg-yellow-400/20 border border-yellow-300/30 rounded-lg backdrop-blur-sm">
+            <p className="text-sm text-yellow-100">
+              <span className="font-semibold">Missing information:</span> {missingFields.join(", ")}
             </p>
           </div>
         )}
         {hasPendingTransaction && missingFields.length === 0 && (
-          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-sm text-green-800">
-              ✅ Ready to save transaction
+          <div className="mt-4 p-3 bg-green-400/20 border border-green-300/30 rounded-lg backdrop-blur-sm">
+            <p className="text-sm text-green-100 flex items-center space-x-2">
+              <CheckCircle className="h-4 w-4" />
+              <span>Ready to save transaction</span>
             </p>
           </div>
         )}
       </div>
 
       {/* Messages Container */}
-      <div className="h-96 overflow-y-auto p-4 space-y-4">
+      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-transparent to-gray-50/30">
         {messages.length === 0 && (
-          <div className="text-center py-8">
-            <BotIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h4 className="text-lg font-medium text-gray-900 mb-2">Start a conversation!</h4>
-            <p className="text-gray-600 mb-4">Try saying something like:</p>
-            <div className="space-y-2">
+          <div className="text-center py-12">
+            <div className="p-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
+              <BotIcon className="h-10 w-10 text-blue-600" />
+            </div>
+            <h4 className="text-xl font-bold text-gray-900 mb-3">Start a conversation!</h4>
+            <p className="text-gray-600 mb-6">Try saying something like:</p>
+            <div className="space-y-3 max-w-md mx-auto">
               {exampleMessages.map((example, index) => (
                 <button
                   key={index}
                   onClick={() => setInput(example)}
-                  className="block w-full text-left p-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700 transition-colors"
+                  className="block w-full text-left p-4 bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border border-gray-200 hover:border-blue-300 rounded-xl text-sm text-gray-700 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   &ldquo;{example}&rdquo;
                 </button>
@@ -192,37 +202,42 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
             className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+              className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm ${
                 message.type === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-900"
+                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-md"
+                  : "bg-white text-gray-900 border border-gray-200 rounded-bl-md"
               }`}
             >
-              <div className="flex items-center space-x-2 mb-1">
+              <div className="flex items-center space-x-2 mb-2">
                 {message.type === "user" ? (
-                  <UserIcon className="h-4 w-4" />
+                  <UserIcon className="h-4 w-4 opacity-90" />
                 ) : (
-                  <BotIcon className="h-4 w-4" />
+                  <BotIcon className="h-4 w-4 text-blue-600" />
                 )}
-                <span className="text-xs opacity-75">
+                <span className={`text-xs font-medium ${
+                  message.type === "user" ? "text-blue-100" : "text-gray-500"
+                }`}>
                   {message.type === "user" ? "You" : "AI Assistant"}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
             </div>
           </div>
         ))}
 
         {isTyping && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 px-4 py-2 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <BotIcon className="h-4 w-4" />
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+            <div className="bg-white px-4 py-3 rounded-2xl rounded-bl-md border border-gray-200 shadow-sm">
+              <div className="flex items-center space-x-3">
+                <div className="p-1 bg-blue-100 rounded-full">
+                  <BotIcon className="h-4 w-4 text-blue-600" />
                 </div>
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                </div>
+                <span className="text-xs text-gray-500 font-medium">AI is thinking...</span>
               </div>
             </div>
           </div>
@@ -232,49 +247,61 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
-        <div className="flex space-x-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={
-              hasPendingTransaction && missingFields.length > 0
-                ? `Please provide: ${missingFields.join(", ")}`
-                : "Type your transaction here... (e.g., 'I spent $25 at Starbucks yesterday')"
-            }
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={isTyping}
-          />
+      <div className="p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50/30 rounded-b-xl">
+        <div className="flex space-x-3">
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={
+                hasPendingTransaction && missingFields.length > 0
+                  ? `Please provide: ${missingFields.join(", ")}`
+                  : "Type your transaction here... (e.g., 'I spent $25 at Starbucks yesterday')"
+              }
+              className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm transition-all duration-200"
+              disabled={isTyping}
+            />
+            {input.trim() && (
+              <button
+                onClick={() => setInput("")}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ×
+              </button>
+            )}
+          </div>
           <button
             onClick={handleSendMessage}
             disabled={!input.trim() || isTyping}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
           >
             {isTyping ? (
-              <RefreshCwIcon className="h-4 w-4 animate-spin" />
+              <RefreshCwIcon className="h-5 w-5 animate-spin" />
             ) : (
-              <SendIcon className="h-4 w-4" />
+              <SendIcon className="h-5 w-5" />
             )}
           </button>
         </div>
 
         {/* Conversation Stats */}
         {messages.length > 0 && (
-          <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
-            <span>{messages.length} messages</span>
-            <div className="flex space-x-3">
+          <div className="flex justify-between items-center mt-4 text-sm">
+            <span className="text-gray-500 bg-white px-3 py-1 rounded-full border border-gray-200">
+              {messages.length} messages
+            </span>
+            <div className="flex space-x-2">
               <button
                 onClick={() => setConversationContext({})}
-                className="text-green-600 hover:text-green-800 transition-colors"
+                className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
               >
                 New Transaction
               </button>
               <button
                 onClick={clearConversation}
-                className="text-blue-600 hover:text-blue-800 transition-colors"
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
               >
                 Clear conversation
               </button>

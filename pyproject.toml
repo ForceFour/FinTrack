@@ -41,6 +41,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=2.0.11",
     "aiosqlite>=0.21.0",
     "email-validator>=2.2.0",
+    "supabase>=2.22.0",
 ]
 
 [project.optional-dependencies]

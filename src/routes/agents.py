@@ -11,14 +11,14 @@ import asyncio
 
 from ..models.user import User
 from ..models.agent import (
-    AgentStatus, AgentTask, AgentResponse, 
+    AgentStatus, AgentTask, AgentResponse,
     WorkflowRequest, WorkflowStatus
 )
 from ..services.mock_services import AgentOrchestrator, ConnectionManager
 from ..services.auth_service import get_current_user
 from ..core.database import get_db_session
 
-router = APIRouter(prefix="/api/agents", tags=["agents"])
+router = APIRouter(prefix="/agents", tags=["agents"])
 manager = ConnectionManager()
 
 @router.get("/status", response_model=Dict[str, Any])
@@ -31,16 +31,16 @@ async def get_agents_status(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         status = await orchestrator.get_all_agents_status(user.id)
-        
+
         return {
             "agents": status,
             "total_agents": len(status),
             "active_agents": len([a for a in status if a["status"] == "active"]),
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -55,23 +55,23 @@ async def get_agent_status(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         # Validate agent type
         valid_agents = [
-            "categorization", "fraud_detection", "analytics", 
+            "categorization", "fraud_detection", "analytics",
             "suggestions", "security_monitor", "orchestrator"
         ]
-        
+
         if agent_type not in valid_agents:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid agent type. Valid types: {valid_agents}"
             )
-        
+
         status = await orchestrator.get_agent_status(agent_type, user.id)
-        
+
         return status
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -88,21 +88,21 @@ async def submit_agent_task(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         # Add user context to task
         task_data = task_request.dict()
         task_data["user_id"] = user.id
         task_data["submitted_at"] = datetime.now()
-        
+
         task_id = await orchestrator.submit_task(task_data)
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "message": f"Task submitted to {task_request.agent_type} agent",
             "estimated_completion": "2-5 minutes"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -117,14 +117,14 @@ async def get_task_status(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         task_status = await orchestrator.get_task_status(task_id, user.id)
-        
+
         if not task_status:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         return task_status
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -141,14 +141,14 @@ async def start_workflow(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         # Add user context
         workflow_data = workflow_request.dict()
         workflow_data["user_id"] = user.id
         workflow_data["started_at"] = datetime.now()
-        
+
         workflow_id = await orchestrator.start_workflow(workflow_data)
-        
+
         return {
             "status": "success",
             "workflow_id": workflow_id,
@@ -156,7 +156,7 @@ async def start_workflow(
             "agents_involved": workflow_request.agent_sequence,
             "estimated_duration": "5-15 minutes"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -171,14 +171,14 @@ async def get_workflow_status(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         workflow_status = await orchestrator.get_workflow_status(workflow_id, user.id)
-        
+
         if not workflow_status:
             raise HTTPException(status_code=404, detail="Workflow not found")
-        
+
         return workflow_status
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -195,7 +195,7 @@ async def batch_categorize_transactions(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         task_data = {
             "agent_type": "categorization",
             "action": "batch_categorize",
@@ -205,16 +205,16 @@ async def batch_categorize_transactions(
             },
             "priority": "normal"
         }
-        
+
         task_id = await orchestrator.submit_task(task_data)
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "transactions_count": len(transactions),
             "message": "Batch categorization started"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -229,7 +229,7 @@ async def run_fraud_detection(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         task_data = {
             "agent_type": "fraud_detection",
             "action": "analyze_transactions",
@@ -239,16 +239,16 @@ async def run_fraud_detection(
             },
             "priority": "high"
         }
-        
+
         task_id = await orchestrator.submit_task(task_data)
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "message": "Fraud detection analysis started",
             "scan_scope": scan_data.get("scope", "recent_transactions")
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -263,7 +263,7 @@ async def generate_analytics(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         task_data = {
             "agent_type": "analytics",
             "action": "generate_report",
@@ -273,16 +273,16 @@ async def generate_analytics(
             },
             "priority": "normal"
         }
-        
+
         task_id = await orchestrator.submit_task(task_data)
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "message": "Analytics generation started",
             "report_type": analytics_request.get("report_type", "comprehensive")
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -297,7 +297,7 @@ async def generate_personalized_suggestions(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         task_data = {
             "agent_type": "suggestions",
             "action": "generate_personalized",
@@ -307,16 +307,16 @@ async def generate_personalized_suggestions(
             },
             "priority": "normal"
         }
-        
+
         task_id = await orchestrator.submit_task(task_data)
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "message": "Personalized suggestions generation started",
             "suggestion_types": suggestion_request.get("types", ["all"])
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -333,21 +333,21 @@ async def get_agent_logs(
     """
     try:
         orchestrator = AgentOrchestrator(db)
-        
+
         logs = await orchestrator.get_agent_logs(
             user_id=user.id,
             agent_type=agent_type,
             limit=limit,
             start_date=start_date
         )
-        
+
         return {
             "logs": logs,
             "count": len(logs),
             "filter_agent": agent_type,
             "limit": limit
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -367,23 +367,23 @@ async def restart_agent(
                 status_code=403,
                 detail="Admin privileges required"
             )
-        
+
         orchestrator = AgentOrchestrator(db)
-        
+
         success = await orchestrator.restart_agent(agent_type)
-        
+
         if not success:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to restart {agent_type} agent"
             )
-        
+
         return {
             "status": "success",
             "message": f"{agent_type} agent restarted successfully",
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -395,31 +395,31 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     WebSocket endpoint for real-time agent status updates
     """
     await manager.connect(websocket, user_id)
-    
+
     try:
         while True:
             # Keep connection alive and handle incoming messages
             data = await websocket.receive_text()
             message = json.loads(data)
-            
+
             # Handle different message types
             if message.get("type") == "ping":
                 await websocket.send_text(json.dumps({
                     "type": "pong",
                     "timestamp": datetime.now().isoformat()
                 }))
-            
+
             elif message.get("type") == "subscribe_agent":
                 agent_type = message.get("agent_type")
                 # Subscribe to specific agent updates
                 await manager.subscribe_to_agent(user_id, agent_type)
-                
+
             # Echo received message for debugging
             await websocket.send_text(json.dumps({
                 "type": "echo",
                 "data": message
             }))
-            
+
     except WebSocketDisconnect:
         manager.disconnect(user_id)
         print(f"User {user_id} disconnected from WebSocket")
@@ -435,7 +435,7 @@ async def broadcast_agent_update(user_id: str, agent_type: str, status_data: Dic
         "status": status_data,
         "timestamp": datetime.now().isoformat()
     }
-    
+
     await manager.send_personal_message(json.dumps(message), user_id)
 
 async def broadcast_workflow_update(user_id: str, workflow_id: str, status_data: Dict[str, Any]):
@@ -448,5 +448,5 @@ async def broadcast_workflow_update(user_id: str, workflow_id: str, status_data:
         "status": status_data,
         "timestamp": datetime.now().isoformat()
     }
-    
+
     await manager.send_personal_message(json.dumps(message), user_id)

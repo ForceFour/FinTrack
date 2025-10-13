@@ -14,6 +14,7 @@ from datetime import datetime
 
 # Import route modules
 from src.routes import api_router
+from src.core.database_config import init_database, close_database
 
 # Configure logging
 logging.basicConfig(
@@ -32,28 +33,28 @@ async def lifespan(app: FastAPI):
     Application lifespan manager for startup and shutdown events
     """
     # Startup
-    logger.info("🚀 Starting Agentic Expense Tracker API...")
-    logger.info("🤖 Initializing multi-agent system...")
-    
+    logger.info("Starting Agentic Expense Tracker API...")
+    logger.info("Initializing multi-agent system...")
+
     # Initialize database connections, agents, etc.
     try:
-        # TODO: Initialize database
+        await init_database()
         # TODO: Start agent orchestrator
         # TODO: Initialize ML models
-        logger.info("✅ Application startup completed successfully")
+        logger.info("Application startup completed successfully")
     except Exception as e:
         logger.error(f"❌ Application startup failed: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
-    logger.info("🛑 Shutting down Agentic Expense Tracker API...")
+    logger.info("Shutting down Agentic Expense Tracker API...")
     try:
-        # TODO: Cleanup database connections
+        await close_database()
         # TODO: Stop agent orchestrator
         # TODO: Save state if needed
-        logger.info("✅ Application shutdown completed successfully")
+        logger.info("Application shutdown completed successfully")
     except Exception as e:
         logger.error(f"❌ Application shutdown failed: {e}")
 
@@ -84,7 +85,7 @@ app.add_middleware(
 
 # Security middleware
 app.add_middleware(
-    TrustedHostMiddleware, 
+    TrustedHostMiddleware,
     allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
 )
 
@@ -109,7 +110,7 @@ async def root():
         "timestamp": datetime.now().isoformat(),
         "features": {
             "ai_categorization": "✅ Enabled",
-            "fraud_detection": "✅ Enabled", 
+            "fraud_detection": "✅ Enabled",
             "personalized_suggestions": "✅ Enabled",
             "advanced_analytics": "✅ Enabled",
             "multi_agent_workflows": "✅ Enabled",
@@ -124,7 +125,7 @@ async def global_exception_handler(request, exc):
     Global exception handler for unhandled errors
     """
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
+
     return {
         "error": "Internal server error",
         "message": "An unexpected error occurred",
@@ -159,7 +160,7 @@ def main():
     print("📊 Multi-Agent AI Financial Analysis System")
     print("🔗 Powered by LangChain & LangGraph")
     print("=" * 50)
-    
+
     # Run the FastAPI application
     uvicorn.run(
         "main:app",

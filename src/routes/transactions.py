@@ -15,19 +15,32 @@ import logging
 from ..models.transaction import Transaction, TransactionCreate, TransactionUpdate, TransactionResponse
 from ..models.user import User
 from ..services.transaction_service import TransactionService
-from ..services.auth_service import get_current_user
-from ..core.database import get_db_session
+# from ..services.auth_service import get_current_user  # Temporarily disabled during migration
+from ..core.database_config import get_db_client
+
+# Temporary dummy user for testing during migration
+async def get_current_user():
+    """Temporary dummy user function during migration"""
+    from datetime import datetime
+    import uuid
+    return User(
+        id="e6afed5f-6e3b-4349-8526-0fc2d9658915",  # Use existing profile ID
+        email="duwaragie22@gmail.com",
+        username="testuser",
+        hashed_password="dummy_hash",
+        created_at=datetime.now()
+    )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 @router.post("/upload", response_model=Dict[str, Any])
 async def upload_transactions(
     file: UploadFile = File(...),
     file_type: str = "csv",
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    # user: User = Depends(get_current_user),  # Temporarily disabled for testing
+    client = Depends(get_db_client)
 ):
     """
     Upload and process transaction file
@@ -46,7 +59,7 @@ async def upload_transactions(
         file_content = await file.read()
 
         # Initialize transaction service
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Process file based on type
         if file_type == "csv":
@@ -72,7 +85,7 @@ async def upload_transactions(
 
         # Process transactions
         result = await transaction_service.process_uploaded_transactions(
-            df, user.id
+            df, "e6afed5f-6e3b-4349-8526-0fc2d9658915"  # Use dummy user ID for testing
         )
 
         return {
@@ -102,13 +115,13 @@ async def get_transactions(
     max_amount: Optional[float] = Query(default=None),
     search: Optional[str] = Query(default=None),
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Get transactions with filtering and pagination
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Build filters
         filters = {
@@ -147,13 +160,13 @@ async def get_transactions(
 async def create_transaction(
     transaction: TransactionCreate,
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Create a new transaction
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Add user ID to transaction
         transaction_data = transaction.dict()
@@ -170,13 +183,13 @@ async def create_transaction(
 async def get_transaction(
     transaction_id: str,
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Get a specific transaction
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         transaction = await transaction_service.get_transaction(transaction_id, user.id)
 
@@ -195,13 +208,13 @@ async def update_transaction(
     transaction_id: str,
     transaction_update: TransactionUpdate,
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Update a transaction
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Verify transaction exists and belongs to user
         existing_transaction = await transaction_service.get_transaction(transaction_id, user.id)
@@ -223,13 +236,13 @@ async def update_transaction(
 async def delete_transaction(
     transaction_id: str,
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Delete a transaction
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Verify transaction exists and belongs to user
         existing_transaction = await transaction_service.get_transaction(transaction_id, user.id)
@@ -252,13 +265,13 @@ async def delete_transaction(
 async def batch_create_transactions(
     transactions: List[TransactionCreate],
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Create multiple transactions in batch
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Add user ID to all transactions
         transactions_data = []
@@ -284,13 +297,13 @@ async def batch_create_transactions(
 async def batch_update_transactions(
     updates: List[Dict[str, Any]],  # List of {id: str, data: dict}
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Update multiple transactions in batch
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Validate that all transactions belong to user
         transaction_ids = [update["id"] for update in updates]
@@ -323,13 +336,13 @@ async def batch_update_transactions(
 async def batch_delete_transactions(
     transaction_ids: List[str],
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Delete multiple transactions in batch
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Validate that all transactions belong to user
         owned_transactions = await transaction_service.verify_transaction_ownership(
@@ -364,7 +377,7 @@ async def export_transactions(
     end_date: Optional[date] = Query(default=None),
     category: Optional[str] = Query(default=None),
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Export transactions in various formats (CSV, Excel, JSON)
@@ -376,7 +389,7 @@ async def export_transactions(
                 detail="Unsupported format. Use csv, excel, or json"
             )
 
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Get all matching transactions (no limit for export)
         filters = {
@@ -436,13 +449,13 @@ async def get_transaction_summary(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Get transaction summary statistics
     """
     try:
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         summary = await transaction_service.get_transaction_summary(
             user.id, start_date, end_date
@@ -457,7 +470,7 @@ async def get_transaction_summary(
 async def process_natural_language_transaction(
     request: Dict[str, Any],
     user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    client = Depends(get_db_client)
 ):
     """
     Process natural language transaction input through conversational interface
@@ -470,7 +483,7 @@ async def process_natural_language_transaction(
             raise HTTPException(status_code=400, detail="user_input is required")
 
         # Initialize transaction service
-        transaction_service = TransactionService(db)
+        transaction_service = TransactionService(client)
 
         # Parse the natural language input
         parsed_transactions = await _parse_natural_language_transaction(
@@ -529,10 +542,10 @@ async def process_natural_language_transaction(
                         "user_id": user.id,
                         "amount": tx_data["amount"],
                         "description": tx_data["description"],
-                        "date": datetime.fromisoformat(tx_data["date"]) if isinstance(tx_data["date"], str) else tx_data["date"],
+                        "date": (datetime.fromisoformat(tx_data["date"]) if isinstance(tx_data["date"], str) else tx_data["date"]).isoformat(),
                         "merchant": tx_data.get("merchant"),
                         "category": tx_data.get("category"),
-                        "transaction_type": "debit" if tx_data["amount"] < 0 else "credit",
+                        "transaction_type": "expense" if tx_data["amount"] < 0 else "income",
                         "status": "completed"
                     }
 
@@ -542,18 +555,18 @@ async def process_natural_language_transaction(
                 # Generate response for multiple transactions
                 response_lines = ["✅ Transactions recorded successfully!\n"]
                 for i, tx in enumerate(created_transactions, 1):
-                    response_lines.append(f"📝 Transaction {i}: {tx.description}")
+                    response_lines.append(f"📝 Transaction {i}: {tx['description']}")
                     # Show amount with sign and type indicator
-                    amount_str = f"${abs(tx.amount):.2f}"
-                    if tx.amount < 0:
-                        response_lines.append(f"� Expense: -{amount_str}")
+                    amount_str = f"${abs(tx['amount']):.2f}"
+                    if tx['amount'] < 0:
+                        response_lines.append(f"💸 Expense: -{amount_str}")
                     else:
                         response_lines.append(f"💰 Income: +{amount_str}")
-                    response_lines.append(f"📅 {tx.date}")
-                    if tx.merchant:
-                        response_lines.append(f"🏪 {tx.merchant}")
-                    if tx.category:
-                        response_lines.append(f"📂 {tx.category}")
+                    response_lines.append(f"📅 {tx['date']}")
+                    if tx.get('merchant'):
+                        response_lines.append(f"🏪 {tx['merchant']}")
+                    if tx.get('category'):
+                        response_lines.append(f"📂 {tx['category']}")
                     response_lines.append("")  # Empty line between transactions
 
                 response_text = "\n".join(response_lines)
@@ -564,7 +577,7 @@ async def process_natural_language_transaction(
                     "response": response_text,
                     "conversation_context": {},
                     "transaction_processed": True,
-                    "transaction_ids": [tx.id for tx in created_transactions],
+                    "transaction_ids": [tx['id'] for tx in created_transactions],
                     "next_action": "View transactions in Dashboard or continue adding more transactions"
                 }
 
@@ -740,7 +753,7 @@ async def _parse_natural_language_transaction(
                             "phone", "subscription", "membership", "donation", "taxes", "fine", "penalty"
                         ]
 
-                        # Check for explicit expense keywords first
+                        # Check for explicit income keywords first (higher precedence)
                         has_expense_keywords = any(word in part_lower for word in expense_keywords)
                         has_income_keywords = any(word in part_lower for word in income_keywords)
 
@@ -750,12 +763,11 @@ async def _parse_natural_language_transaction(
                             has_expense_keywords = False
                             has_income_keywords = True
 
-                        # If explicit expense keywords found, it's an expense
-                        if has_expense_keywords:
-                            amount = -amount  # Definitely expense
-                        # If income keywords found but no expense keywords, it's income
-                        elif has_income_keywords:
+                        # Income keywords take precedence over expense keywords
+                        if has_income_keywords:
                             pass  # Keep as positive (income)
+                        elif has_expense_keywords:
+                            amount = -amount  # Definitely expense
                         # Default to expense if ambiguous
                         else:
                             amount = -amount  # Default to expense

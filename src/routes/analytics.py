@@ -10,14 +10,14 @@ from enum import Enum
 
 from ..models.user import User
 from ..models.analytics import (
-    SpendingAnalytics, CategoryBreakdown, TrendAnalysis, 
+    SpendingAnalytics, CategoryBreakdown, TrendAnalysis,
     AnalyticsPeriod, AnalyticsMetric
 )
 from ..services.analytics_service import AnalyticsService
 from ..services.auth_service import get_current_user
 from ..core.database import get_db_session
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 class PeriodType(str, Enum):
     daily = "daily"
@@ -46,7 +46,7 @@ async def get_spending_analytics(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         # Set default date range if not provided
         if not start_date:
             if period == PeriodType.monthly:
@@ -57,10 +57,10 @@ async def get_spending_analytics(
                 start_date = date.today().replace(month=1, day=1)
             else:
                 start_date = date.today() - timedelta(days=30)
-        
+
         if not end_date:
             end_date = date.today()
-        
+
         analytics = await analytics_service.get_spending_analytics(
             user_id=user.id,
             period=period.value,
@@ -68,9 +68,9 @@ async def get_spending_analytics(
             end_date=end_date,
             categories=categories
         )
-        
+
         return analytics
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -87,7 +87,7 @@ async def get_category_breakdown(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         # Set default date range based on period
         if not start_date:
             if period == PeriodType.monthly:
@@ -98,19 +98,19 @@ async def get_category_breakdown(
                 start_date = date.today().replace(month=1, day=1)
             else:
                 start_date = date.today() - timedelta(days=30)
-        
+
         if not end_date:
             end_date = date.today()
-        
+
         breakdown = await analytics_service.get_category_breakdown(
             user_id=user.id,
             period=period.value,
             start_date=start_date,
             end_date=end_date
         )
-        
+
         return breakdown
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -127,10 +127,10 @@ async def get_trends(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         end_date = date.today()
         start_date = end_date - timedelta(days=lookback_days)
-        
+
         trends = await analytics_service.get_trend_analysis(
             user_id=user.id,
             metric=metric.value,
@@ -138,9 +138,9 @@ async def get_trends(
             start_date=start_date,
             end_date=end_date
         )
-        
+
         return trends
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -154,19 +154,19 @@ async def get_dashboard_summary(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         # Get current month data
         current_month_start = date.today().replace(day=1)
         current_month_end = date.today()
-        
+
         # Get previous month data for comparison
         if current_month_start.month == 1:
             prev_month_start = current_month_start.replace(year=current_month_start.year - 1, month=12)
         else:
             prev_month_start = current_month_start.replace(month=current_month_start.month - 1)
-        
+
         prev_month_end = current_month_start - timedelta(days=1)
-        
+
         # Get all dashboard data
         dashboard_data = await analytics_service.get_dashboard_summary(
             user_id=user.id,
@@ -175,9 +175,9 @@ async def get_dashboard_summary(
             previous_period_start=prev_month_start,
             previous_period_end=prev_month_end
         )
-        
+
         return dashboard_data
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -193,23 +193,23 @@ async def get_top_merchants(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         end_date = date.today()
         start_date = end_date - timedelta(days=period_days)
-        
+
         top_merchants = await analytics_service.get_top_merchants(
             user_id=user.id,
             start_date=start_date,
             end_date=end_date,
             limit=limit
         )
-        
+
         return {
             "merchants": top_merchants,
             "period_days": period_days,
             "total_merchants": len(top_merchants)
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -224,14 +224,14 @@ async def get_spending_forecast(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         forecast = await analytics_service.get_spending_forecast(
             user_id=user.id,
             forecast_days=forecast_days
         )
-        
+
         return forecast
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -246,7 +246,7 @@ async def get_budget_performance(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         # Set date range based on period
         if period == PeriodType.monthly:
             start_date = date.today().replace(day=1)
@@ -256,18 +256,18 @@ async def get_budget_performance(
             start_date = date.today().replace(month=1, day=1)
         else:
             start_date = date.today() - timedelta(days=30)
-        
+
         end_date = date.today()
-        
+
         budget_performance = await analytics_service.get_budget_performance(
             user_id=user.id,
             period=period.value,
             start_date=start_date,
             end_date=end_date
         )
-        
+
         return budget_performance
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -283,15 +283,15 @@ async def get_cash_flow_analysis(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         cash_flow = await analytics_service.get_cash_flow_analysis(
             user_id=user.id,
             period=period.value,
             lookback_periods=lookback_periods
         )
-        
+
         return cash_flow
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -305,11 +305,11 @@ async def get_spending_patterns(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         patterns = await analytics_service.get_spending_patterns(user_id=user.id)
-        
+
         return patterns
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -325,15 +325,15 @@ async def get_category_comparison(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         comparison = await analytics_service.get_category_comparison(
             user_id=user.id,
             compare_periods=compare_periods,
             period_type=period_type.value
         )
-        
+
         return comparison
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -349,19 +349,19 @@ async def get_spending_anomalies(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         end_date = date.today()
         start_date = end_date - timedelta(days=lookback_days)
-        
+
         anomalies = await analytics_service.detect_spending_anomalies(
             user_id=user.id,
             start_date=start_date,
             end_date=end_date,
             sensitivity=sensitivity
         )
-        
+
         return anomalies
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -375,11 +375,11 @@ async def get_goal_progress(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         goal_progress = await analytics_service.get_goal_progress(user_id=user.id)
-        
+
         return goal_progress
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -394,13 +394,13 @@ async def generate_custom_report(
     """
     try:
         analytics_service = AnalyticsService(db)
-        
+
         custom_report = await analytics_service.generate_custom_report(
             user_id=user.id,
             config=report_config
         )
-        
+
         return custom_report
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

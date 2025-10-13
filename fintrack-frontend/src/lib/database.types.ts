@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -16,117 +16,78 @@ export type Database = {
     Tables: {
       profiles: {
         Row: {
-          created_at: string
+          created_at: string | null
           email: string
           full_name: string | null
-          hashed_password: string
           id: string
-          is_active: boolean
-          is_verified: boolean
-          last_login: string | null
-          preferences: string | null
-          updated_at: string
           username: string
         }
         Insert: {
-          created_at: string
+          created_at?: string | null
           email: string
           full_name?: string | null
-          hashed_password: string
-          id: string
-          is_active: boolean
-          is_verified: boolean
-          last_login?: string | null
-          preferences?: string | null
-          updated_at: string
+          id?: string
           username: string
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           email?: string
           full_name?: string | null
-          hashed_password?: string
           id?: string
-          is_active?: boolean
-          is_verified?: boolean
-          last_login?: string | null
-          preferences?: string | null
-          updated_at?: string
           username?: string
         }
         Relationships: []
       }
       transactions: {
         Row: {
-          account_id: string | null
+          account_type: string | null
           amount: number
-          bank_transaction_id: string | null
           category: string | null
-          confidence_score: number | null
-          created_at: string
+          confidence: number | null
+          created_at: string | null
           date: string
           description: string
           id: string
-          is_recurring: boolean | null
-          location: string | null
           merchant: string | null
-          notes: string | null
-          processed_by_agent: string | null
-          processing_version: string | null
-          recurring_pattern: string | null
-          status: Database["public"]["Enums"]["transactionstatus"]
+          payment_method: string | null
+          status: string
           subcategory: string | null
-          tags: string | null
-          transaction_type: Database["public"]["Enums"]["transactiontype"]
-          updated_at: string
+          transaction_type: string
+          updated_at: string | null
           user_id: string
         }
         Insert: {
-          account_id?: string | null
+          account_type?: string | null
           amount: number
-          bank_transaction_id?: string | null
           category?: string | null
-          confidence_score?: number | null
-          created_at: string
+          confidence?: number | null
+          created_at?: string | null
           date: string
           description: string
-          id: string
-          is_recurring?: boolean | null
-          location?: string | null
+          id?: string
           merchant?: string | null
-          notes?: string | null
-          processed_by_agent?: string | null
-          processing_version?: string | null
-          recurring_pattern?: string | null
-          status: Database["public"]["Enums"]["transactionstatus"]
+          payment_method?: string | null
+          status?: string
           subcategory?: string | null
-          tags?: string | null
-          transaction_type: Database["public"]["Enums"]["transactiontype"]
-          updated_at: string
+          transaction_type: string
+          updated_at?: string | null
           user_id: string
         }
         Update: {
-          account_id?: string | null
+          account_type?: string | null
           amount?: number
-          bank_transaction_id?: string | null
           category?: string | null
-          confidence_score?: number | null
-          created_at?: string
+          confidence?: number | null
+          created_at?: string | null
           date?: string
           description?: string
           id?: string
-          is_recurring?: boolean | null
-          location?: string | null
           merchant?: string | null
-          notes?: string | null
-          processed_by_agent?: string | null
-          processing_version?: string | null
-          recurring_pattern?: string | null
-          status?: Database["public"]["Enums"]["transactionstatus"]
+          payment_method?: string | null
+          status?: string
           subcategory?: string | null
-          tags?: string | null
-          transaction_type?: Database["public"]["Enums"]["transactiontype"]
-          updated_at?: string
+          transaction_type?: string
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: [
@@ -147,8 +108,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      transactionstatus: "PENDING" | "COMPLETED" | "FAILED"
-      transactiontype: "DEBIT" | "CREDIT"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -275,9 +235,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      transactionstatus: ["PENDING", "COMPLETED", "FAILED"],
-      transactiontype: ["DEBIT", "CREDIT"],
-    },
+    Enums: {},
   },
 } as const

@@ -1,5 +1,5 @@
--- Create users table
-CREATE TABLE IF NOT EXISTS users (
+-- Create profiles table (renamed from users to avoid conflict with Supabase Auth)
+CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Create transactions table
 CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     amount DECIMAL(10,2) NOT NULL,
     description TEXT NOT NULL,
     date DATE NOT NULL,
@@ -34,15 +34,18 @@ CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(transaction_typ
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 
 -- Enable Row Level Security (RLS)
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
--- Create policies for users table
-CREATE POLICY "Users can view own profile" ON users
+-- Create policies for profiles table
+CREATE POLICY "Users can view own profile" ON profiles
     FOR SELECT USING (auth.uid()::text = id::text);
 
-CREATE POLICY "Users can update own profile" ON users
+CREATE POLICY "Users can update own profile" ON profiles
     FOR UPDATE USING (auth.uid()::text = id::text);
+
+CREATE POLICY "Users can insert own profile" ON profiles
+    FOR INSERT WITH CHECK (auth.uid()::text = id::text);
 
 -- Create policies for transactions table
 CREATE POLICY "Users can view own transactions" ON transactions
@@ -71,3 +74,23 @@ CREATE TRIGGER update_transactions_updated_at
     BEFORE UPDATE ON transactions
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Create function to handle new user signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, username, full_name)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    NEW.raw_user_meta_data->>'username',
+    NEW.raw_user_meta_data->>'full_name'
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger to automatically create profile on user signup
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
