@@ -536,8 +536,28 @@ async def process_natural_language_transaction(
             # All information available, create all transactions
             try:
                 created_transactions = []
+                skipped_duplicates = []
                 for tx_data in parsed_transactions:
                     from datetime import datetime
+
+                    # Create a simple object for duplicate checking
+                    class TransactionData:
+                        def __init__(self, data):
+                            self.amount = data["amount"]
+                            self.description_cleaned = data["description"]
+                            self.date = datetime.fromisoformat(data["date"]) if isinstance(data["date"], str) else data["date"]
+                            self.merchant_name = data.get("merchant")
+                            self.merchant = data.get("merchant")
+
+                    transaction_obj = TransactionData(tx_data)
+
+                    # Check for duplicates before saving
+                    is_duplicate = await transaction_service._is_duplicate_transaction(transaction_obj, user.id)
+                    if is_duplicate:
+                        print(f"Skipping duplicate transaction from chat: {tx_data['description']}")
+                        skipped_duplicates.append(tx_data)
+                        continue  # Skip duplicates
+
                     db_data = {
                         "user_id": user.id,
                         "amount": tx_data["amount"],
@@ -553,24 +573,31 @@ async def process_natural_language_transaction(
                     created_transactions.append(created_tx)
 
                 # Generate response for multiple transactions
-                response_lines = ["✅ Transactions recorded successfully!\n"]
-                for i, tx in enumerate(created_transactions, 1):
-                    response_lines.append(f"📝 Transaction {i}: {tx['description']}")
-                    # Show amount with sign and type indicator
-                    amount_str = f"${abs(tx['amount']):.2f}"
-                    if tx['amount'] < 0:
-                        response_lines.append(f"💸 Expense: -{amount_str}")
-                    else:
-                        response_lines.append(f"💰 Income: +{amount_str}")
-                    response_lines.append(f"📅 {tx['date']}")
-                    if tx.get('merchant'):
-                        response_lines.append(f"🏪 {tx['merchant']}")
-                    if tx.get('category'):
-                        response_lines.append(f"📂 {tx['category']}")
-                    response_lines.append("")  # Empty line between transactions
+                if created_transactions:
+                    response_lines = ["✅ Transactions recorded successfully!\n"]
+                    for i, tx in enumerate(created_transactions, 1):
+                        response_lines.append(f"📝 Transaction {i}: {tx['description']}")
+                        # Show amount with sign and type indicator
+                        amount_str = f"${abs(tx['amount']):.2f}"
+                        if tx['amount'] < 0:
+                            response_lines.append(f"💸 Expense: -{amount_str}")
+                        else:
+                            response_lines.append(f"💰 Income: +{amount_str}")
+                        response_lines.append(f"📅 {tx['date']}")
+                        if tx.get('merchant'):
+                            response_lines.append(f"🏪 {tx['merchant']}")
+                        if tx.get('category'):
+                            response_lines.append(f"📂 {tx['category']}")
+                        response_lines.append("")  # Empty line between transactions
 
-                response_text = "\n".join(response_lines)
-                response_text += "\nYou can view all your transactions in the Dashboard."
+                    if skipped_duplicates:
+                        response_lines.append(f"⚠️ {len(skipped_duplicates)} duplicate transaction(s) were skipped (already exist in your records)")
+
+                    response_text = "\n".join(response_lines)
+                    response_text += "\nYou can view all your transactions in the Dashboard."
+                else:
+                    # All transactions were duplicates
+                    response_text = f"⚠️ All {len(skipped_duplicates)} transaction(s) were skipped because they already exist in your records.\n\nYou can view all your transactions in the Dashboard."
 
                 return {
                     "status": "completed",

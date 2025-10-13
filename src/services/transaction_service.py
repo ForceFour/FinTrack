@@ -49,8 +49,18 @@ class TransactionService:
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
         try:
-            # Check for duplicates before processing
-            duplicates_found = await self._check_for_duplicates(df, user_id)
+            # Filter out duplicates before processing
+            df_filtered, duplicates_found = await self._filter_duplicates_from_df(df, user_id)
+
+            # If no transactions left after filtering, return early
+            if df_filtered.empty:
+                return {
+                    "total": len(df),
+                    "processed": 0,
+                    "saved_to_db": 0,
+                    "skipped": duplicates_found,
+                    "errors": 0
+                }
 
             # Initialize enhanced ingestion agent for initial preprocessing
             ingestion_agent = IngestionAgent()
@@ -58,7 +68,7 @@ class TransactionService:
             # Process through enhanced ingestion agent first
             input_data = IngestionAgentInput(
                 input_type="structured",
-                dataframe=df
+                dataframe=df_filtered
             )
             ingestion_result = ingestion_agent.process(input_data)
 
@@ -250,17 +260,71 @@ class TransactionService:
 
         return duplicates
 
+    async def _filter_duplicates_from_df(self, df: pd.DataFrame, user_id: str) -> tuple[pd.DataFrame, int]:
+        """Filter out duplicate transactions from dataframe before processing"""
+        try:
+            # Get existing transactions for comparison
+            existing = self.client.table("transactions").select("date,amount,description").eq("user_id", user_id).execute()
+            existing_keys = set()
+
+            for tx in existing.data or []:
+                key = (
+                    str(tx.get('date', '')).split('T')[0],  # Normalize to YYYY-MM-DD
+                    float(tx.get('amount', 0)),
+                    str(tx.get('description', '')).strip().lower()
+                )
+                existing_keys.add(key)
+
+            # Filter dataframe to remove duplicates
+            filtered_rows = []
+            duplicates_found = 0
+
+            for _, row in df.iterrows():
+                key = (
+                    str(row.get('date', '')),
+                    float(row.get('amount', 0)),
+                    str(row.get('description', '')).strip().lower()
+                )
+
+                if key in existing_keys:
+                    duplicates_found += 1
+                    print(f"Filtering out duplicate: {row.get('description', '')}")
+                else:
+                    filtered_rows.append(row)
+
+            # Create filtered dataframe
+            if filtered_rows:
+                df_filtered = pd.DataFrame(filtered_rows)
+            else:
+                df_filtered = pd.DataFrame(columns=df.columns)
+
+            return df_filtered, duplicates_found
+
+        except Exception as e:
+            print(f"Warning: Could not filter duplicates: {e}")
+            # Return original dataframe if filtering fails
+            return df, 0
+
     async def _is_duplicate_transaction(self, transaction_data, user_id: str) -> bool:
         """Check if a transaction already exists in the database"""
         try:
             # Query for existing transactions with similar characteristics
             existing = self.client.table("transactions").select("*").eq("user_id", user_id).execute()
 
-            # Normalize the new transaction data
-            new_amount = transaction_data.amount
-            new_date_str = transaction_data.date.date().isoformat() if hasattr(transaction_data.date, 'date') else str(transaction_data.date).split(' ')[0]
-            new_desc = transaction_data.description_cleaned.strip().lower()
-            new_merchant = (getattr(transaction_data, 'merchant_name', '') or getattr(transaction_data, 'merchant', '')).strip().lower()
+            # Normalize the new transaction data - handle both dict and object
+            if isinstance(transaction_data, dict):
+                new_amount = transaction_data.get('amount', 0)
+                new_date_str = transaction_data.get('date')
+                if new_date_str and isinstance(new_date_str, str) and 'T' in new_date_str:
+                    new_date_str = new_date_str.split('T')[0]
+                new_desc = transaction_data.get('description_cleaned', transaction_data.get('description', '')).strip().lower()
+                new_merchant = (transaction_data.get('merchant_name') or transaction_data.get('merchant', '')).strip().lower()
+            else:
+                # Handle object attributes
+                new_amount = transaction_data.amount
+                new_date_str = transaction_data.date.date().isoformat() if hasattr(transaction_data.date, 'date') else str(transaction_data.date).split(' ')[0]
+                new_desc = transaction_data.description_cleaned.strip().lower()
+                new_merchant = (getattr(transaction_data, 'merchant_name', '') or getattr(transaction_data, 'merchant', '')).strip().lower()
 
             for existing_tx in existing.data or []:
                 # Check multiple criteria for duplicates:
