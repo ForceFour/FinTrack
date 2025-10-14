@@ -205,17 +205,44 @@ export default function AnalyticsPage() {
             processedTransactionsCount: processedTransactions.length
           });
 
-          // Calculate totals from processed transactions
+          // Calculate totals and richer analytics from processed transactions
           let totalIncome = 0;
           let totalExpenses = 0;
           const monthlyData: Record<string, { income: number; expenses: number }> = {};
           const categoryData: Record<string, { amount: number; count: number }> = {};
+          const merchantAgg: Record<string, { amount: number; count: number }> = {};
+          const dailyAgg: Record<string, number> = {};
+          const weeklyAgg: Record<string, number> = {
+            Sunday: 0,
+            Monday: 0,
+            Tuesday: 0,
+            Wednesday: 0,
+            Thursday: 0,
+            Friday: 0,
+            Saturday: 0
+          };
 
-          processedTransactions.forEach((tx: Record<string, unknown>) => {
-            const amount = Math.abs(Number(tx.amount) || 0);
+          type ProcTx = {
+            amount?: string | number;
+            date?: string;
+            predicted_category?: string;
+            category?: string;
+            merchant?: string;
+            description?: string;
+            transaction_type?: string;
+            type?: string;
+          };
+
+          processedTransactions.forEach((tx: ProcTx) => {
+            // Use signed amount to infer income vs expense reliably
+            const signedAmount = Number(tx.amount) || 0;
+            const absAmount = Math.abs(signedAmount);
             const date = new Date(String(tx.date));
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const dateKey = date.toISOString().slice(0, 10);
+            const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
             const category = String(tx.predicted_category || tx.category || 'Uncategorized');
+            const merchant = String(tx.merchant || tx.description || 'Unknown');
 
             if (!monthlyData[monthKey]) {
               monthlyData[monthKey] = { income: 0, expenses: 0 };
@@ -225,16 +252,58 @@ export default function AnalyticsPage() {
               categoryData[category] = { amount: 0, count: 0 };
             }
 
-            if ((tx.transaction_type || tx.type) === 'income' || amount < 0) {
-              totalIncome += amount;
-              monthlyData[monthKey].income += amount;
+            if (!merchantAgg[merchant]) {
+              merchantAgg[merchant] = { amount: 0, count: 0 };
+            }
+
+            if (!dailyAgg[dateKey]) {
+              dailyAgg[dateKey] = 0;
+            }
+
+            // Decide income vs expense: prefer explicit transaction_type, otherwise infer from sign
+            const txType = (tx.transaction_type || tx.type || '').toString().toLowerCase();
+            const isIncome = txType === 'income' || (txType === '' && signedAmount > 0);
+
+            if (isIncome) {
+              totalIncome += absAmount;
+              monthlyData[monthKey].income += absAmount;
             } else {
-              totalExpenses += amount;
-              monthlyData[monthKey].expenses += amount;
-              categoryData[category].amount += amount;
+              totalExpenses += absAmount;
+              monthlyData[monthKey].expenses += absAmount;
+              categoryData[category].amount += absAmount;
               categoryData[category].count += 1;
+              merchantAgg[merchant].amount += absAmount;
+              merchantAgg[merchant].count += 1;
+              dailyAgg[dateKey] += absAmount;
+              weeklyAgg[dayName] += absAmount;
             }
           });
+
+          // Build weekly, daily and merchant arrays (prefer workflow-provided fields if available)
+          const weeklyPatternFromWorkflow = result.weekly_pattern || result.weeklyPattern || null;
+          const dailyDataFromWorkflow = result.daily_data || result.dailyData || null;
+          const merchantDataFromWorkflow = result.merchant_data || result.merchantData || null;
+          const recurringFromWorkflow = result.recurring_payments || result.recurringPayments || null;
+
+          const weeklyPattern = weeklyPatternFromWorkflow || Object.entries(weeklyAgg).map(([day, amt]) => ({ day, amount: amt }));
+
+          const dailyData = dailyDataFromWorkflow || Object.entries(dailyAgg)
+            .map(([dateStr, amt]) => ({ date: dateStr, amount: amt }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+          const merchantData = merchantDataFromWorkflow || Object.entries(merchantAgg).map(([merchant, info]) => ({
+            merchant,
+            totalSpent: info.amount,
+            avgTransaction: info.count > 0 ? info.amount / info.count : 0,
+            count: info.count
+          })).sort((a, b) => b.totalSpent - a.totalSpent);
+
+          // Simple recurring detection: merchant with >2 occurrences across months
+          const recurringPayments = recurringFromWorkflow || Object.entries(merchantAgg)
+            .filter(([, info]) => info.count > 2)
+            .map(([merchant, info]) => ({ merchant, frequency: info.count, average_amount: info.amount / Math.max(info.count, 1) }));
+
+          const anomaliesFromWorkflow = result.anomalies || [];
 
           // Convert workflow analytics data to frontend format
           const analyticsDataFromWorkflow: AnalyticsData = {
@@ -259,13 +328,13 @@ export default function AnalyticsPage() {
               percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0
             })).filter(item => item.amount > 0).sort((a, b) => b.amount - a.amount),
 
-            dailyData: [],
-            merchantData: [],
-            weeklyPattern: [],
-            recurringPayments: [],
-            anomalies: [],
+            dailyData,
+            merchantData,
+            weeklyPattern,
+            recurringPayments,
+            anomalies: anomaliesFromWorkflow,
 
-            // Convert AI insights from unified workflow
+            // Convert AI insights from unified workflow (keep existing insight sources)
             insights: [
               ...patternInsights.map((insight: Record<string, unknown>) => ({
                 type: String(insight.insight_type || 'pattern'),

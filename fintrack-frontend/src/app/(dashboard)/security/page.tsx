@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/app/providers";
 import { PredictionResultsService } from "@/lib/services/prediction-results.service";
 import {
@@ -42,151 +42,175 @@ export default function SecurityPage() {
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
   const { auth } = useApp();
 
-  const loadSecurityData = useCallback(async () => {
-    if (!auth.user) return;
+  useEffect(() => {
+    const loadData = async () => {
+      if (!auth.isAuthenticated || !auth.user) return;
 
-    setLoading(true);
+      setLoading(true);
 
-    try {
-      // Load real security data from prediction results
-      const [highRiskPredictions, failedPredictions, lowConfidencePredictions] = await Promise.all([
-        PredictionResultsService.getHighRiskPredictions(auth.user.id, 20),
-        PredictionResultsService.getFailedPredictions(auth.user.id, 10),
-        PredictionResultsService.getLowConfidence(0.3, auth.user.id, 15)
-      ]);
+      try {
+        // Load real security data from prediction results
+        const [highRiskPredictions, failedPredictions, lowConfidencePredictions] = await Promise.all([
+          PredictionResultsService.getHighRiskPredictions(auth.user.id, 20),
+          PredictionResultsService.getFailedPredictions(auth.user.id, 10),
+          PredictionResultsService.getLowConfidence(0.3, auth.user.id, 15)
+        ]);
 
-      const securityAlerts: SecurityAlert[] = [];
+        const securityAlerts: SecurityAlert[] = [];
 
-      // Convert high risk predictions to security alerts
-      highRiskPredictions.forEach((prediction) => {
-        if (prediction.security_alerts && prediction.security_alerts.length > 0) {
-          prediction.security_alerts.forEach((alert, alertIndex) => {
-            securityAlerts.push({
-              id: `risk-${prediction.id}-${alert.alert_type}-${alertIndex}`,
-              type: "fraud",
-              severity: alert.severity === "critical" ? "high" : alert.severity,
-              title: alert.title,
-              description: alert.description,
-              timestamp: alert.timestamp,
-              merchant: prediction.merchant_name || undefined,
+        // Track unique alerts to prevent duplicates
+        const alertSet = new Set<string>();
+
+        // Convert high risk predictions to security alerts
+        highRiskPredictions.forEach((prediction) => {
+          if (prediction.security_alerts && prediction.security_alerts.length > 0) {
+            prediction.security_alerts.forEach((alert, alertIndex) => {
+              // Create a unique key for deduplication based on content
+              const alertKey = `${alert.title}-${alert.description}-${prediction.merchant_name || 'unknown'}`;
+
+              if (!alertSet.has(alertKey)) {
+                alertSet.add(alertKey);
+                securityAlerts.push({
+                  id: `risk-${prediction.id}-${alert.alert_type}-${alertIndex}`,
+                  type: "fraud",
+                  severity: alert.severity === "critical" ? "high" : alert.severity,
+                  title: alert.title,
+                  description: alert.description,
+                  timestamp: alert.timestamp,
+                  merchant: prediction.merchant_name || undefined,
+                });
+              }
             });
-          });
-        } else if (prediction.fraud_score && prediction.fraud_score > 0.7) {
-          securityAlerts.push({
-            id: `risk-${prediction.id}`,
-            type: "fraud",
-            severity: "high",
-            title: "High Risk Transaction Detected",
-            description: `AI detected high fraud risk (${Math.round((prediction.fraud_score || 0) * 100)}%)`,
-            timestamp: prediction.completed_at || new Date().toISOString(),
-            merchant: prediction.merchant_name || undefined,
-          });
-        }
-      });
+          } else if (prediction.fraud_score && prediction.fraud_score > 0.7) {
+            const alertKey = `High Risk Transaction Detected-AI detected high fraud risk (${Math.round((prediction.fraud_score || 0) * 100)}%)-${prediction.merchant_name || 'unknown'}`;
 
-      // Convert failed predictions to security alerts
-      failedPredictions.forEach((prediction) => {
-        const errorMsg = prediction.error_log && prediction.error_log.length > 0
-          ? prediction.error_log[0].error
-          : 'Unknown processing error';
-
-        securityAlerts.push({
-          id: `failed-${prediction.id}`,
-          type: "unusual",
-          severity: "medium",
-          title: "Transaction Processing Failed",
-          description: `AI could not process transaction: ${errorMsg}`,
-          timestamp: prediction.updated_at,
+            if (!alertSet.has(alertKey)) {
+              alertSet.add(alertKey);
+              securityAlerts.push({
+                id: `risk-${prediction.id}`,
+                type: "fraud",
+                severity: "high",
+                title: "High Risk Transaction Detected",
+                description: `AI detected high fraud risk (${Math.round((prediction.fraud_score || 0) * 100)}%)`,
+                timestamp: prediction.completed_at || new Date().toISOString(),
+                merchant: prediction.merchant_name || undefined,
+              });
+            }
+          }
         });
-      });
 
-      // Convert low confidence predictions to security alerts
-      lowConfidencePredictions.forEach((prediction) => {
-        const avgConfidence = prediction.confidence_scores && prediction.confidence_scores.length > 0
-          ? prediction.confidence_scores.reduce((sum, cs) => sum + cs.confidence, 0) / prediction.confidence_scores.length
-          : prediction.category_confidence || 0;
+        // Convert failed predictions to security alerts
+        failedPredictions.forEach((prediction) => {
+          const errorMsg = prediction.error_log && prediction.error_log.length > 0
+            ? prediction.error_log[0].error
+            : 'Unknown processing error';
 
-        if (avgConfidence < 0.5) {
-          securityAlerts.push({
-            id: `low-conf-${prediction.id}`,
-            type: "pattern",
-            severity: "low",
-            title: "Uncertain Transaction Pattern",
-            description: `AI confidence is low (${Math.round(avgConfidence * 100)}%) for this transaction pattern`,
-            timestamp: prediction.created_at,
-            merchant: prediction.merchant_name || undefined,
-          });
+          const alertKey = `Transaction Processing Failed-AI could not process transaction: ${errorMsg}`;
+
+          if (!alertSet.has(alertKey)) {
+            alertSet.add(alertKey);
+            securityAlerts.push({
+              id: `failed-${prediction.id}`,
+              type: "unusual",
+              severity: "medium",
+              title: "Transaction Processing Failed",
+              description: `AI could not process transaction: ${errorMsg}`,
+              timestamp: prediction.updated_at,
+            });
+          }
+        });
+
+        // Convert low confidence predictions to security alerts
+        lowConfidencePredictions.forEach((prediction) => {
+          const avgConfidence = prediction.confidence_scores && prediction.confidence_scores.length > 0
+            ? prediction.confidence_scores.reduce((sum, cs) => sum + cs.confidence, 0) / prediction.confidence_scores.length
+            : prediction.category_confidence || 0;
+
+          if (avgConfidence < 0.5) {
+            const alertKey = `Uncertain Transaction Pattern-AI confidence is low (${Math.round(avgConfidence * 100)}%) for this transaction pattern-${prediction.merchant_name || 'unknown'}`;
+
+            if (!alertSet.has(alertKey)) {
+              alertSet.add(alertKey);
+              securityAlerts.push({
+                id: `low-conf-${prediction.id}`,
+                type: "pattern",
+                severity: "low",
+                title: "Uncertain Transaction Pattern",
+                description: `AI confidence is low (${Math.round(avgConfidence * 100)}%) for this transaction pattern`,
+                timestamp: prediction.created_at,
+                merchant: prediction.merchant_name || undefined,
+              });
+            }
+          }
+        });
+
+        // If no real alerts, show some demo security alerts
+        if (securityAlerts.length === 0) {
+          securityAlerts.push(
+            {
+              id: "demo-1",
+              type: "pattern",
+              severity: "low",
+              title: "Security Monitoring Active",
+              description: "AI-powered security monitoring is actively protecting your account",
+              timestamp: new Date().toISOString(),
+            },
+            {
+              id: "demo-2",
+              type: "unusual",
+              severity: "low",
+              title: "No Security Issues Detected",
+              description: "All recent transactions appear normal and secure",
+              timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            }
+          );
         }
-      });
 
-      // If no real alerts, show some demo security alerts
-      if (securityAlerts.length === 0) {
-        securityAlerts.push(
+        // Generate security metrics based on real data
+        const totalHighRisk = highRiskPredictions.length;
+        const totalFailed = failedPredictions.length;
+        const totalLowConfidence = lowConfidencePredictions.length;
+
+        const securityMetrics: SecurityMetrics = {
+          riskScore: totalHighRisk > 0 ? Math.min(totalHighRisk * 1.5, 5) : 1.0,
+          totalAlerts: securityAlerts.length,
+          resolvedAlerts: Math.floor(securityAlerts.length * 0.7), // Assume 70% resolved
+          fraudAttempts: totalHighRisk,
+          unusualTransactions: totalFailed + totalLowConfidence,
+          securityScore: Math.max(85 - (totalHighRisk * 10) - (totalFailed * 5), 30),
+        };
+
+        console.log(`Security alerts after deduplication: ${securityAlerts.length} alerts from ${highRiskPredictions.length} high-risk + ${failedPredictions.length} failed + ${lowConfidencePredictions.length} low-confidence predictions`);
+
+        setAlerts(securityAlerts);
+        setMetrics(securityMetrics);
+      } catch (err) {
+        console.error('Failed to load security data:', err);
+        // Fallback to demo data if real data fails
+        setAlerts([
           {
-            id: "demo-1",
-            type: "pattern",
-            severity: "low",
-            title: "Security Monitoring Active",
-            description: "AI-powered security monitoring is actively protecting your account",
-            timestamp: new Date().toISOString(),
-          },
-          {
-            id: "demo-2",
+            id: "error-demo",
             type: "unusual",
             severity: "low",
-            title: "No Security Issues Detected",
-            description: "All recent transactions appear normal and secure",
-            timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            title: "Security Data Loading",
+            description: "Security monitoring is active, but unable to load detailed alerts at this time",
+            timestamp: new Date().toISOString(),
           }
-        );
+        ]);
+        setMetrics({
+          riskScore: 2.0,
+          totalAlerts: 1,
+          resolvedAlerts: 0,
+          fraudAttempts: 0,
+          unusualTransactions: 0,
+          securityScore: 75,
+        });
       }
+      setLoading(false);
+    };
 
-      // Generate security metrics based on real data
-      const totalHighRisk = highRiskPredictions.length;
-      const totalFailed = failedPredictions.length;
-      const totalLowConfidence = lowConfidencePredictions.length;
-
-      const securityMetrics: SecurityMetrics = {
-        riskScore: totalHighRisk > 0 ? Math.min(totalHighRisk * 1.5, 5) : 1.0,
-        totalAlerts: securityAlerts.length,
-        resolvedAlerts: Math.floor(securityAlerts.length * 0.7), // Assume 70% resolved
-        fraudAttempts: totalHighRisk,
-        unusualTransactions: totalFailed + totalLowConfidence,
-        securityScore: Math.max(85 - (totalHighRisk * 10) - (totalFailed * 5), 30),
-      };
-
-      setAlerts(securityAlerts);
-      setMetrics(securityMetrics);
-    } catch (err) {
-      console.error('Failed to load security data:', err);
-      // Fallback to demo data if real data fails
-      setAlerts([
-        {
-          id: "error-demo",
-          type: "unusual",
-          severity: "low",
-          title: "Security Data Loading",
-          description: "Security monitoring is active, but unable to load detailed alerts at this time",
-          timestamp: new Date().toISOString(),
-        }
-      ]);
-      setMetrics({
-        riskScore: 2.0,
-        totalAlerts: 1,
-        resolvedAlerts: 0,
-        fraudAttempts: 0,
-        unusualTransactions: 0,
-        securityScore: 75,
-      });
-    }
-    setLoading(false);
-  }, [auth.user]);
-
-  useEffect(() => {
-    if (auth.isAuthenticated && auth.user) {
-      loadSecurityData();
-    }
-  }, [auth.isAuthenticated, auth.user, loadSecurityData]);
+    loadData();
+  }, [auth.isAuthenticated, auth.user]);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
