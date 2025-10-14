@@ -2,6 +2,7 @@
 LangGraph Node Definitions for Transaction Processing Pipeline
 """
 import logging
+import os
 from typing import Dict, Any, List
 from datetime import datetime
 import uuid
@@ -983,10 +984,32 @@ class TransactionProcessingNodes:
 
                 print(f"PATTERN ANALYSIS: Found {len(state['pattern_insights'])} pattern insights")
             else:
-                state['spending_patterns'] = {}
-                state['pattern_insights'] = {}
-                state['pattern_confidence'] = 0.0
-                print(f"PATTERN ANALYSIS: No transactions to analyze")
+                # For first-time users or no transactions, create baseline pattern structure
+                print(f"PATTERN ANALYSIS: No transactions to analyze - creating baseline for new user")
+
+                state['spending_patterns'] = {
+                    'transaction_count': 0,
+                    'analysis_type': 'new_user_baseline',
+                    'message': 'Insufficient transaction history for pattern analysis. Start tracking transactions to unlock insights!'
+                }
+
+                # Create default insights for new users
+                state['pattern_insights'] = [
+                    {
+                        'insight_type': 'new_user_guidance',
+                        'description': 'Welcome! Track your transactions to unlock spending pattern analysis.',
+                        'severity': 'info',
+                        'category': 'onboarding',
+                        'transactions_involved': [],
+                        'metadata': {
+                            'guidance': 'Add more transactions to see spending trends and patterns',
+                            'next_steps': ['Record daily expenses', 'Categorize transactions accurately', 'Review monthly summaries']
+                        }
+                    }
+                ]
+
+                state['pattern_confidence'] = 0.3  # Lower confidence for new users
+                print(f"PATTERN ANALYSIS: Created baseline analysis for new user")
 
             # Add to processing history
             processing_entry = {
@@ -1021,13 +1044,33 @@ class TransactionProcessingNodes:
         try:
             from ..agents.suggestion_agent import SuggestionAgent, SuggestionAgentInput
             from ..schemas.transaction_schemas import PatternInsight
+            from ..services.transaction_service import TransactionService
+            from supabase import create_client
 
             state['current_stage'] = ProcessingStage.SUGGESTION
-            suggestion_agent = SuggestionAgent()
+
+            # Initialize TransactionService for database access
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_ANON_KEY")
+            if supabase_url and supabase_key:
+                supabase_client = create_client(supabase_url, supabase_key)
+                transaction_service = TransactionService(supabase_client)
+            else:
+                transaction_service = None
+
+            suggestion_agent = SuggestionAgent(transaction_service=transaction_service)
 
             # Get pattern insights and prepare input
             pattern_insights_data = state.get('pattern_insights', {})
             transactions = state.get('processed_transactions', [])
+            # Check if user is first time based on transaction count in preferences
+            user_preferences_check = state.get('user_preferences', {})
+            if not user_preferences_check:
+                conversation_context = state.get('conversation_context', {})
+                user_preferences_check = conversation_context.get('user_preferences', {})
+
+            user_transaction_count = user_preferences_check.get('transaction_count', 0)
+            is_first_time_user = user_transaction_count < 5
 
             # Convert pattern insights to PatternInsight objects
             pattern_insights = []
@@ -1049,32 +1092,113 @@ class TransactionProcessingNodes:
                                 metadata=value
                             ))
 
+            # Only add default insights for genuinely new users, not existing users with no current patterns
+
+            if is_first_time_user:
+                print(f"SUGGESTION: Adding default financial guidance for new user")
+                default_insights = [
+                    PatternInsight(
+                        insight_type="financial_planning",
+                        description="Set up a budget to track your spending goals",
+                        severity="medium",
+                        transactions_involved=[],
+                        metadata={"category": "budgeting", "priority": "high"}
+                    ),
+                    PatternInsight(
+                        insight_type="emergency_fund",
+                        description="Build an emergency fund for unexpected expenses",
+                        severity="high",
+                        transactions_involved=[],
+                        metadata={"category": "savings", "priority": "high"}
+                    ),
+                    PatternInsight(
+                        insight_type="expense_tracking",
+                        description="Track all expenses to identify spending patterns",
+                        severity="medium",
+                        transactions_involved=[],
+                        metadata={"category": "tracking", "priority": "medium"}
+                    )
+                ]
+                pattern_insights.extend(default_insights)
+
             # Default budget thresholds if not provided
             budget_thresholds = state.get('budget_thresholds', {
                 'groceries': 300,
                 'dining': 200,
                 'entertainment': 150,
                 'shopping': 250,
-                'transportation': 100
+                'transportation': 100,
+                'utilities': 200,
+                'healthcare': 150,
+                'savings': 300
             })
+
+            # Get user preferences from conversation context or state
+            user_preferences = state.get('user_preferences', {})
+            if not user_preferences:
+                conversation_context = state.get('conversation_context', {})
+                user_preferences = conversation_context.get('user_preferences', {})
+
+
+
+            # Use existing transaction count from user preferences (historical data)
+            # If not provided, fall back to current workflow transactions
+            if 'transaction_count' not in user_preferences:
+                total_transactions = len(state.get('processed_transactions', []))
+                if total_transactions == 0:
+                    # Check other transaction sources
+                    total_transactions += len(state.get('preprocessed_transactions', []))
+                    if state.get('final_transaction'):
+                        total_transactions += 1
+
+                user_preferences['transaction_count'] = total_transactions
+
+            # Get user_id from state
+            user_id = state.get('user_id', 'default_user')
 
             # Create input for suggestion agent
             input_data = SuggestionAgentInput(
                 pattern_insights=pattern_insights,
                 budget_thresholds=budget_thresholds,
-                user_preferences=state.get('user_preferences', {})
+                user_preferences=user_preferences,
+                user_id=user_id
             )
 
-            # Generate suggestions
-            result = suggestion_agent.process(input_data)
+            # Generate suggestions (now async)
+            import asyncio
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, create a task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, suggestion_agent.process(input_data))
+                        result = future.result()
+                else:
+                    # No running loop, safe to use run_until_complete
+                    result = loop.run_until_complete(suggestion_agent.process(input_data))
+            except RuntimeError:
+                # No event loop exists, create one
+                result = asyncio.run(suggestion_agent.process(input_data))
 
-            state['budget_recommendations'] = [suggestion.dict() for suggestion in result.suggestions if 'budget' in suggestion.title.lower()]
-            state['spending_suggestions'] = [suggestion.dict() for suggestion in result.suggestions if 'budget' not in suggestion.title.lower()]
+            # If no suggestions were generated AND user is genuinely new, add default financial tips
+            all_suggestions = result.suggestions
+            if not all_suggestions and is_first_time_user:
+                print(f"SUGGESTION: Adding default financial tips for new users")
+                default_suggestions = self._generate_default_financial_suggestions()
+                # Convert default suggestions to Suggestion objects
+                from ..schemas.transaction_schemas import Suggestion as SuggestionSchema
+                for default_sugg in default_suggestions:
+                    all_suggestions.append(SuggestionSchema(**default_sugg))
+
+            state['budget_recommendations'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' in suggestion.title.lower() or suggestion.suggestion_type in ['budget_adjustment', 'budget_planning']]
+            state['spending_suggestions'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' not in suggestion.title.lower() and suggestion.suggestion_type not in ['budget_adjustment', 'budget_planning']]
             state['budget_alerts'] = result.alerts
             state['savings_opportunities'] = result.savings_opportunities
-            state['suggestion_confidence'] = 0.85  # Default confidence
+            state['suggestion_confidence'] = 0.85 if not is_first_time_user else 0.7  # Lower confidence for new users
 
-            print(f"SUGGESTION: Generated {len(result.suggestions)} total suggestions")
+            print(f"SUGGESTION: Generated {len(all_suggestions)} total suggestions ({len(state['budget_recommendations'])} budget, {len(state['spending_suggestions'])} spending)")
 
             # Add to processing history
             processing_entry = {
@@ -1141,10 +1265,46 @@ class TransactionProcessingNodes:
 
                 print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts")
             else:
-                state['security_alerts'] = []
-                state['risk_assessment'] = {}
-                state['safety_confidence'] = 0.0
-                print(f"SAFETY GUARD: No transactions to validate")
+                # Even without transactions, perform baseline security checks for new users
+                print(f"SAFETY GUARD: No transactions to validate - performing baseline security assessment")
+
+                # Generate general security recommendations for new users
+                baseline_alerts = [
+                    {
+                        'alert_type': 'security_setup',
+                        'severity': 'info',
+                        'title': 'Enable Account Security Features',
+                        'description': 'Set up two-factor authentication and review account security settings.',
+                        'recommendation': 'Enable 2FA and use strong, unique passwords',
+                        'metadata': {
+                            'category': 'account_security',
+                            'priority': 'high',
+                            'action_items': ['Enable 2FA', 'Update password', 'Review login notifications']
+                        }
+                    },
+                    {
+                        'alert_type': 'fraud_awareness',
+                        'severity': 'info',
+                        'title': 'Monitor Your Accounts Regularly',
+                        'description': 'Check your bank and credit card statements regularly for unauthorized transactions.',
+                        'recommendation': 'Set up account alerts for transactions',
+                        'metadata': {
+                            'category': 'fraud_prevention',
+                            'priority': 'medium',
+                            'action_items': ['Enable transaction alerts', 'Review statements weekly']
+                        }
+                    }
+                ]
+
+                state['security_alerts'] = baseline_alerts
+                state['risk_assessment'] = {
+                    'risk_score': 0.1,  # Low baseline risk for new users
+                    'assessment_type': 'baseline_security_check',
+                    'recommendations': ['Enable account security features', 'Set up monitoring']
+                }
+                state['safety_confidence'] = 0.8  # High confidence in baseline security recommendations
+
+                print(f"SAFETY GUARD: Generated {len(baseline_alerts)} baseline security recommendations")
 
             # Add to processing history
             processing_entry = {
@@ -1236,7 +1396,25 @@ class TransactionProcessingNodes:
                 logger.error(f"❌ Failed to save prediction results to database: {db_error}", exc_info=True)
                 # Don't fail the workflow if database save fails
 
-            print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {state.get('confidence_score', 0):.2f} confidence")
+            # Calculate a rough confidence estimate for logging
+            ingestion_conf = state.get('ingestion_confidence', 0)
+            category_conf = state.get('category_confidence', 0)
+            pattern_insights = len(state.get('pattern_insights', []))
+            suggestions = len(state.get('budget_recommendations', [])) + len(state.get('spending_suggestions', []))
+            alerts = len(state.get('security_alerts', []))
+
+            # Simple confidence estimation
+            stage_confidences = [conf for conf in [ingestion_conf, category_conf] if conf > 0]
+            if pattern_insights > 0:
+                stage_confidences.append(0.75)
+            if suggestions > 0:
+                stage_confidences.append(0.75)
+            if alerts > 0:
+                stage_confidences.append(0.8)
+
+            estimated_confidence = sum(stage_confidences) / len(stage_confidences) if stage_confidences else 0
+
+            print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {estimated_confidence:.2f} confidence")
 
         except Exception as e:
             logger.error(f"Finalization failed: {e}")
@@ -1299,6 +1477,91 @@ class TransactionProcessingNodes:
             history_entry['data'] = data
 
         state['processing_history'].append(history_entry)
+
+    def _generate_default_financial_suggestions(self) -> List[Dict[str, Any]]:
+        """
+        Generate default financial suggestions for new users
+        """
+        return [
+            {
+                'suggestion_type': 'budget_planning',
+                'title': 'Create Your First Budget',
+                'description': 'Start by setting spending limits for essential categories like groceries, housing, and transportation. A good rule of thumb is the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings.',
+                'category': 'budgeting',
+                'priority': 'high',
+                'potential_savings': 0,
+                'action_required': True,
+                'metadata': {
+                    'type': 'onboarding',
+                    'tip': 'Begin with realistic amounts and adjust as you learn your spending habits'
+                }
+            },
+            {
+                'suggestion_type': 'emergency_fund',
+                'title': 'Build an Emergency Fund',
+                'description': 'Start saving for unexpected expenses. Aim for $500-$1000 initially, then work toward 3-6 months of expenses.',
+                'category': 'savings',
+                'priority': 'high',
+                'potential_savings': 0,
+                'action_required': True,
+                'metadata': {
+                    'type': 'financial_security',
+                    'tip': 'Set up automatic transfers to make saving easier'
+                }
+            },
+            {
+                'suggestion_type': 'expense_tracking',
+                'title': 'Track All Your Expenses',
+                'description': 'Record every purchase for at least a month to understand your spending patterns. This will help you make informed budgeting decisions.',
+                'category': 'tracking',
+                'priority': 'medium',
+                'potential_savings': 0,
+                'action_required': True,
+                'metadata': {
+                    'type': 'habit_building',
+                    'tip': 'Use categories consistently to get better insights'
+                }
+            },
+            {
+                'suggestion_type': 'spending_awareness',
+                'title': 'Review Subscription Services',
+                'description': 'List all your recurring subscriptions and memberships. Cancel any you don\'t actively use to save money.',
+                'category': 'subscriptions',
+                'priority': 'medium',
+                'potential_savings': 50,
+                'action_required': True,
+                'metadata': {
+                    'type': 'cost_reduction',
+                    'tip': 'Review subscriptions quarterly to avoid unused services'
+                }
+            },
+            {
+                'suggestion_type': 'financial_goals',
+                'title': 'Set Financial Goals',
+                'description': 'Define short-term (1 year) and long-term (5+ years) financial goals. This will guide your saving and spending decisions.',
+                'category': 'planning',
+                'priority': 'medium',
+                'potential_savings': 0,
+                'action_required': True,
+                'metadata': {
+                    'type': 'goal_setting',
+                    'tip': 'Make goals specific and measurable for better success'
+                }
+            },
+            {
+                'suggestion_type': 'debt_awareness',
+                'title': 'Know Your Debt',
+                'description': 'List all debts with balances, interest rates, and minimum payments. Focus on paying high-interest debt first.',
+                'category': 'debt',
+                'priority': 'high',
+                'potential_savings': 100,
+                'action_required': True,
+                'metadata': {
+                    'type': 'debt_management',
+                    'tip': 'Consider the debt snowball or avalanche method'
+                }
+            }
+        ]
 
     def _convert_to_classified_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
         """

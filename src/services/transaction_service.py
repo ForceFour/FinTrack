@@ -466,6 +466,55 @@ class TransactionService:
         """Get transaction summary from database"""
         return await TransactionCRUD.get_transaction_summary(self.client, user_id, start_date, end_date)
 
+    async def get_user_transaction_count(self, user_id: str) -> int:
+        """Get total number of transactions for a user"""
+        try:
+            filters = {"user_id": user_id, "limit": 1}  # We just need the count
+            _, total_count = await self.get_transactions(filters)
+            return total_count
+        except Exception as e:
+            print(f"Error getting transaction count for user {user_id}: {e}")
+            return 0
+
+    async def get_user_spending_profile(self, user_id: str) -> Dict[str, Any]:
+        """Get comprehensive spending profile for a user to inform suggestions"""
+        try:
+            # Get recent transaction summary (last 3 months)
+            from datetime import datetime, timedelta
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=90)
+
+            summary = await self.get_transaction_summary(user_id, start_date, end_date)
+            transaction_count = await self.get_user_transaction_count(user_id)
+
+            # Get recent transactions to analyze spending patterns
+            filters = {
+                "user_id": user_id,
+                "limit": 50,  # Last 50 transactions for pattern analysis
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat()
+            }
+            recent_transactions, _ = await self.get_transactions(filters)
+
+            return {
+                "total_transactions": transaction_count,
+                "recent_summary": summary,
+                "recent_transactions": [t.dict() for t in recent_transactions],
+                "analysis_period": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "days": 90
+                }
+            }
+        except Exception as e:
+            print(f"Error getting spending profile for user {user_id}: {e}")
+            return {
+                "total_transactions": 0,
+                "recent_summary": {},
+                "recent_transactions": [],
+                "analysis_period": None
+            }
+
     async def process_natural_language_transaction(
         self,
         text: str,
