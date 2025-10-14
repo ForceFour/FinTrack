@@ -61,9 +61,27 @@ class SafetyGuardAgent:
         return []
 
     def detect_time_anomalies(self, transactions: List[ClassifiedTransaction], user_profile: Dict[str, Any]) -> List[ClassifiedTransaction]:
-        """Detect transactions at unusual times"""
-        # Simple implementation: flag transactions after 11 PM or before 5 AM
-        return [tx for tx in transactions if tx.day_of_week >= 5 or tx.date.hour >= 23 or tx.date.hour <= 5]
+        """Detect transactions at unusual times based on user's timezone and habits"""
+        # Get user's timezone and normal transaction hours
+        user_timezone = user_profile.get('timezone', 'UTC')
+        normal_hours = user_profile.get('normal_transaction_hours', list(range(6, 23)))  # 6 AM to 11 PM default
+
+        anomalous_transactions = []
+
+        for tx in transactions:
+            # Convert transaction time to user's timezone if needed
+            tx_hour = tx.date.hour
+
+            # Only flag as anomalous if significantly outside normal hours (before 3 AM or very late patterns)
+            # This is more lenient and considers regional differences
+            is_very_unusual = tx_hour < 3 or tx_hour > 23
+            is_outside_user_hours = tx_hour not in normal_hours
+
+            # Only flag if it's VERY unusual (3 AM rule) AND user has established normal hours
+            if is_very_unusual and len(normal_hours) < 24 and is_outside_user_hours:
+                anomalous_transactions.append(tx)
+
+        return anomalous_transactions
 
     def check_spending_limits(self, transactions: List[ClassifiedTransaction], limits: Dict[str, float]) -> List[SecurityAlert]:
         """Check if transactions exceed predefined spending limits"""
@@ -98,7 +116,7 @@ class SafetyGuardAgent:
         for anomaly in anomalies:
             if abs(anomaly.amount) > 500:
                 risk_score = min(1.0, risk_score + 0.3)
-            elif anomaly.day_of_week >= 5 or anomaly.date.hour >= 23 or anomaly.date.hour <= 5:
+            elif anomaly.date.hour < 3:  # Only very unusual hours (3 AM rule)
                 risk_score = min(1.0, risk_score + 0.1)
 
         return risk_score
@@ -118,12 +136,12 @@ class SafetyGuardAgent:
                     recommended_action="Verify this transaction with your bank",
                     timestamp=datetime.now()
                 ))
-            elif tx.day_of_week >= 5 or tx.date.hour >= 23 or tx.date.hour <= 5:
+            elif tx.date.hour < 3:  # Only flag very unusual hours
                 alerts.append(SecurityAlert(
                     alert_type="time_anomaly",
                     severity="medium",
-                    title="Unusual transaction timing",
-                    description=f"Transaction occurred at unusual time: {tx.date.strftime('%A %H:%M')}",
+                    title="Very unusual transaction timing",
+                    description=f"Transaction occurred at very unusual time: {tx.date.strftime('%A %H:%M')} (between midnight and 3 AM)",
                     transaction_id=tx.id,
                     risk_score=0.4,
                     recommended_action="Review transaction for legitimacy",
