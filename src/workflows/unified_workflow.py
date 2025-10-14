@@ -399,6 +399,9 @@ class UnifiedTransactionWorkflow:
 
             workflow_graph = self.workflows[mode.value]
 
+            # Determine input type
+            input_type = "structured" if raw_transactions else "unstructured"
+
             # Initialize state
             initial_state = TransactionProcessingState(
                 workflow_id=workflow_id,
@@ -406,6 +409,7 @@ class UnifiedTransactionWorkflow:
                 user_id=user_id,
                 conversation_context=conversation_context or {},
                 raw_transactions=raw_transactions or [],
+                input_type=input_type,  # Add input_type to state
                 current_stage=ProcessingStage.INITIAL,
                 processing_history=[],
                 confidence_scores=[],
@@ -421,7 +425,7 @@ class UnifiedTransactionWorkflow:
                 "timestamp": start_time.isoformat(),
                 "mode": mode.value,
                 "workflow_id": workflow_id,
-                "input_type": "structured" if raw_transactions else "unstructured",
+                "input_type": input_type,
                 "user_id": user_id
             })
 

@@ -323,6 +323,13 @@ class ClassifierAgent:
     def predict_category(self, transaction: MerchantTransaction, features: np.ndarray) -> Tuple[str, float, Dict[str, float]]:
         """Predict transaction category using ensemble methods"""
 
+        # CRITICAL FIX: For INCOME transactions, force income-related categories
+        transaction_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+
+        if transaction_type == 'income':
+            # Income transaction - determine which type of income
+            return self._classify_income_transaction(transaction)
+
         ensemble_results = {}
 
         # Signal 1: Merchant-based prediction
@@ -351,6 +358,45 @@ class ClassifierAgent:
 
         # Combine ensemble signals
         return self._combine_category_signals(ensemble_results, transaction)
+
+    def _classify_income_transaction(self, transaction: MerchantTransaction) -> Tuple[str, float, Dict[str, float]]:
+        """Classify income transactions into income-specific categories"""
+        desc = transaction.description_cleaned.lower()
+        merchant = (transaction.merchant_standardized or '').lower()
+        combined_text = f"{desc} {merchant}".strip()
+
+        # Income category keywords
+        income_keywords = {
+            'salary': ['salary', 'payroll', 'wages', 'employer', 'employment', 'paycheck', 'paystub'],
+            'freelance': ['freelance', 'contract', 'consulting', 'client payment', 'invoice', 'gig', 'upwork', 'fiverr'],
+            'business': ['business income', 'revenue', 'sales', 'customer payment', 'stripe', 'paypal business'],
+            'investment': ['dividend', 'interest', 'investment', 'stock', 'bond', 'capital gains', 'mutual fund', 'portfolio'],
+            'rental': ['rent received', 'rental income', 'tenant payment', 'property income'],
+            'refund': ['refund', 'reimbursement', 'return', 'cashback', 'rebate'],
+            'gift': ['gift', 'donation received', 'present'],
+            'other_income': ['income', 'credit', 'deposit', 'transfer in', 'payment received']
+        }
+
+        # Check for keyword matches
+        category_scores = {}
+        for category, keywords in income_keywords.items():
+            score = sum(1.0 if kw in combined_text else 0 for kw in keywords)
+            if score > 0:
+                category_scores[category] = score
+
+        # Determine best category
+        if category_scores:
+            best_category = max(category_scores.keys(), key=lambda x: category_scores[x])
+            confidence = min(0.75 + (category_scores[best_category] * 0.1), 0.95)
+
+            # Create probability distribution
+            total_score = sum(category_scores.values())
+            proba_dist = {cat: score / total_score for cat, score in category_scores.items()}
+
+            return best_category, confidence, proba_dist
+
+        # Default to 'other_income' if no specific keywords found
+        return 'other_income', 0.60, {'other_income': 1.0}
 
     def _predict_category_from_merchant(self, transaction: MerchantTransaction) -> Tuple[Optional[str], float]:
         """Predict category from merchant information"""
