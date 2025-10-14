@@ -31,7 +31,18 @@ class PaymentMethod(str, Enum):
 
 
 class TransactionCategory(str, Enum):
-    """Sri Lankan expense categories"""
+    """Sri Lankan transaction categories (both income and expense)"""
+    # Income categories
+    SALARY = "salary"  # Regular employment income
+    FREELANCE = "freelance"  # Contract/freelance work
+    BUSINESS = "business"  # Business income/revenue
+    INVESTMENT = "investment"  # Dividends, interest, capital gains
+    RENTAL = "rental"  # Rental income
+    REFUND = "refund"  # Refunds, reimbursements, cashback
+    GIFT = "gift"  # Gifts received
+    OTHER_INCOME = "other_income"  # Other income sources
+
+    # Expense categories
     FOOD_DINING = "food_dining"
     GROCERIES = "groceries"
     TRANSPORTATION = "transportation"

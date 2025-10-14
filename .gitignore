@@ -138,6 +138,8 @@ data/
 
 # Development files
 test_*.py
+check_*.py
+analyze_*.py
 debug_*.py
 verify_*.py
 fix_*.py

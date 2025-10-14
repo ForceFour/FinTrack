@@ -572,6 +572,40 @@ async def process_natural_language_transaction(
                     created_tx = await transaction_service.create_transaction(db_data)
                     created_transactions.append(created_tx)
 
+                # After creating transactions, run them through the workflow for prediction_results
+                if created_transactions:
+                    import asyncio
+                    from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
+
+                    # Run workflow in background (don't wait for it)
+                    async def run_workflow_background():
+                        try:
+                            workflow = UnifiedTransactionWorkflow()
+                            raw_transactions = []
+
+                            for tx in created_transactions:
+                                raw_tx = {
+                                    "amount": float(tx["amount"]),
+                                    "description": tx["description"],
+                                    "date": tx["date"],
+                                    "merchant": tx.get("merchant"),
+                                    "category": tx.get("category"),
+                                }
+                                raw_transactions.append(raw_tx)
+
+                            # Run full pipeline to populate prediction_results
+                            await workflow.execute_workflow(
+                                mode=WorkflowMode.FULL_PIPELINE,
+                                user_id=user.id,
+                                raw_transactions=raw_transactions,
+                                user_input=user_input
+                            )
+                        except Exception as e:
+                            print(f"Background workflow error: {e}")
+
+                    # Start background task
+                    asyncio.create_task(run_workflow_background())
+
                 # Generate response for multiple transactions
                 if created_transactions:
                     response_lines = ["✅ Transactions recorded successfully!\n"]

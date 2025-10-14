@@ -397,15 +397,36 @@ class TransactionProcessingNodes:
                     if isinstance(amount_value, str):
                         amount_value = amount_value.replace('$', '').replace(',', '')
 
+                    amount_float = float(amount_value)
+
+                    # Determine transaction type based on amount sign
+                    # Positive = income, Negative = expense
+                    if raw_txn.get('transaction_type'):
+                        # Use explicitly provided transaction type if available
+                        transaction_type = raw_txn.get('transaction_type')
+                    else:
+                        # Determine from amount: positive = income, negative/zero = expense
+                        transaction_type = 'income' if amount_float > 0 else 'expense'
+
+                    # Store NEGATIVE amounts for expenses (database convention)
+                    # If amount is already negative (expense), keep it
+                    # If amount is positive and it's an expense (rare), make it negative
+                    # If amount is positive and it's income, keep it positive
+                    if transaction_type == 'expense' and amount_float > 0:
+                        amount_float = -amount_float
+                    elif transaction_type == 'income' and amount_float < 0:
+                        # If marked as income but amount is negative, fix it
+                        amount_float = abs(amount_float)
+
                     preprocessed_txn = {
                         'id': raw_txn.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
-                        'amount': float(amount_value),
+                        'amount': amount_float,
                         'merchant_name': merchant_name,
                         'description': raw_txn.get('description', ''),
                         'date': raw_txn.get('date', datetime.now().isoformat()),
                         'category': category,
                         'payment_method': raw_txn.get('payment_method', 'unknown'),
-                        'transaction_type': raw_txn.get('transaction_type', 'expense'),  # Use provided type or default to expense
+                        'transaction_type': transaction_type,
                         'has_discount': False,
                         'metadata': {
                             'processed_by': 'raw_transaction_ingestion',
@@ -1195,6 +1216,25 @@ class TransactionProcessingNodes:
                 }
             }
             state['processing_history'].append(processing_entry)
+
+            # Save prediction results to database
+            try:
+                from ..services.prediction_results_service import get_prediction_results_service
+
+                prediction_service = get_prediction_results_service()
+                workflow_mode = getattr(state.get('workflow_mode'), 'value', state.get('workflow_mode', 'full_pipeline'))
+
+                prediction_service.save_prediction_result(
+                    workflow_id=state.get('workflow_id'),
+                    user_id=state.get('user_id', 'default'),
+                    workflow_state=dict(state),
+                    mode=workflow_mode,
+                    status='completed'
+                )
+                logger.info(f"✅ Saved prediction results to database for workflow {state.get('workflow_id')}")
+            except Exception as db_error:
+                logger.error(f"❌ Failed to save prediction results to database: {db_error}", exc_info=True)
+                # Don't fail the workflow if database save fails
 
             print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {state.get('confidence_score', 0):.2f} confidence")
 
