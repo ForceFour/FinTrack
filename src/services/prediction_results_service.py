@@ -51,6 +51,11 @@ class PredictionResultsService:
             Saved prediction result record
         """
         try:
+            # Check if workflow result already exists to prevent duplicates
+            existing_result = self.get_prediction_result(workflow_id)
+            if existing_result:
+                logger.info(f"Prediction result for workflow {workflow_id} already exists, skipping duplicate save")
+                return existing_result
             # Extract data from workflow state and serialize properly
             data = {
                 "workflow_id": workflow_id,
@@ -179,10 +184,13 @@ class PredictionResultsService:
                 self.supabase.table("prediction_results")
                 .select("*")
                 .eq("workflow_id", workflow_id)
-                .single()
                 .execute()
             )
-            return result.data if result.data else None
+
+            # Check if we have data and return the first result
+            if result.data and len(result.data) > 0:
+                return result.data[0]
+            return None
 
         except Exception as e:
             logger.error(f"❌ Error fetching prediction result: {e}")

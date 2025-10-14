@@ -13,10 +13,12 @@ import {
   CogIcon,
   ArrowRightOnRectangleIcon,
   UserCircleIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: HomeIcon },
+  { name: "Transactions", href: "/transactions", icon: DocumentTextIcon },
   { name: "Upload Transactions", href: "/upload", icon: ArrowUpTrayIcon },
   { name: "Agent Workflow", href: "/workflow", icon: CogIcon },
   { name: "Analytics", href: "/analytics", icon: ChartBarIcon },

@@ -10,6 +10,9 @@ from .suggestions import router as suggestions_router
 from .agents import router as agents_router
 from .workflow import router as workflow_router
 
+# Import the new analytics API router for frontend integration
+from ..api.analytics import router as api_analytics_router
+
 # Create main API router
 api_router = APIRouter()
 
@@ -20,6 +23,9 @@ api_router.include_router(analytics_router)
 api_router.include_router(suggestions_router)
 api_router.include_router(agents_router)
 api_router.include_router(workflow_router)
+
+# Include the new analytics API router for frontend integration
+api_router.include_router(api_analytics_router)
 
 # Health check endpoint
 @api_router.get("/health")

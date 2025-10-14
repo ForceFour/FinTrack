@@ -23,9 +23,8 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { format, subDays, startOfMonth, endOfMonth, addDays } from "date-fns";
+import { format, subDays, addDays } from "date-fns";
 import {
-  CalendarIcon,
   FunnelIcon,
   ChartBarIcon,
   BanknotesIcon,
@@ -33,8 +32,8 @@ import {
   ArrowTrendingDownIcon,
   ExclamationTriangleIcon,
   ShoppingBagIcon,
-  ClockIcon,
   DocumentArrowDownIcon,
+  SparklesIcon,
 } from "@heroicons/react/24/outline";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -71,6 +70,10 @@ interface AnalyticsData {
   insights: { type: string; message: string; severity: string }[];
 }
 
+
+
+
+
 export default function AnalyticsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
@@ -78,11 +81,11 @@ export default function AnalyticsPage() {
   const [error, setError] = useState("");
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisType>("overview");
   const [dateRange, setDateRange] = useState({
-    start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
-    end: format(new Date(), 'yyyy-MM-dd')
+    start: '',
+    end: ''
   });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [showAnomalies, setShowAnomalies] = useState(true);
+  const [showAnomalies] = useState(true);
   const [amountRange, setAmountRange] = useState({ min: 0, max: 100000 });
   const { auth } = useApp();
 
@@ -92,302 +95,243 @@ export default function AnalyticsPage() {
     return Math.max(...transactions.map(tx => Math.abs(tx.amount)));
   }, [transactions]);
 
-  const loadTransactions = useCallback(async () => {
+  const loadAnalyticsData = useCallback(async () => {
     if (!auth.user) return;
 
     setLoading(true);
-    const response = await getTransactions(auth.user.id, {}, 1, 1000);
+    setError("");
 
-    if (response.error) {
-      setError(response.error);
-    } else {
-      setTransactions(response.data || []);
-      processAnalyticsData(response.data || []);
-    }
-    setLoading(false);
-  }, [auth.user, dateRange, amountRange, selectedCategories]);
+    const loadTransactionsFallback = async () => {
+      try {
+        // Fallback: Load transactions and process them locally
+        const response = await getTransactions(auth.user!.id, {}, 1, 1000);
 
-  const processAnalyticsData = (txns: Transaction[]) => {
-    // Filter transactions by date range
-    const dateFilteredTxns = txns.filter(tx => {
-      const txDate = new Date(tx.date);
-      const startDate = new Date(dateRange.start);
-      const endDate = new Date(dateRange.end);
-      return txDate >= startDate && txDate <= endDate;
-    });
-
-    // Filter by amount range
-    const amountFilteredTxns = dateFilteredTxns.filter(tx => {
-      const txAmount = Math.abs(tx.amount);
-      return txAmount >= amountRange.min && txAmount <= amountRange.max;
-    });
-
-    // Filter by selected categories if any
-    const finalTxns = selectedCategories.length > 0 
-      ? amountFilteredTxns.filter(tx => selectedCategories.includes(tx.category || ''))
-      : amountFilteredTxns;
-
-    // Calculate basic metrics
-    const incomeTransactions = finalTxns.filter(tx => tx.amount > 0);
-    const expenseTransactions = finalTxns.filter(tx => tx.amount < 0);
-    
-    const totalIncome = incomeTransactions.reduce((sum, tx) => sum + tx.amount, 0);
-    const totalExpenses = Math.abs(expenseTransactions.reduce((sum, tx) => sum + tx.amount, 0));
-    const netCashflow = totalIncome - totalExpenses;
-    const avgExpense = expenseTransactions.length > 0 ? totalExpenses / expenseTransactions.length : 0;
-    const avgIncome = incomeTransactions.length > 0 ? totalIncome / incomeTransactions.length : 0;
-
-    // Monthly data
-    const monthlyMap = new Map<string, { income: number; expenses: number }>();
-    finalTxns.forEach(tx => {
-      const month = format(new Date(tx.date), 'yyyy-MM');
-      if (!monthlyMap.has(month)) {
-        monthlyMap.set(month, { income: 0, expenses: 0 });
+        if (response.error) {
+          setError(response.error);
+        } else {
+          setTransactions(response.data || []);
+          // For fallback, we'll just set empty analytics data since the processAnalyticsData function is complex
+          // and we want to encourage using the backend API instead
+          setAnalyticsData(null);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load analytics data');
       }
-      const data = monthlyMap.get(month)!;
-      if (tx.amount > 0) {
-        data.income += tx.amount;
+    };
+
+    try {
+      // Use unified workflow analytics processing with the analytics agent
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+      // The transactions processing endpoint expects a RawTransaction body.
+      // Send the user's analytics request text in `description`, and pass mode/user_id as query params.
+      const mode = 'full_pipeline';
+      const userId = auth.user.id;
+
+      const rawTransaction = {
+        // Use ISO date for the transaction date (backend accepts string date)
+        date: new Date().toISOString(),
+        // Amount must be a string per RawTransaction schema; analytics request isn't a money tx so set 0
+        amount: "0",
+        // Put the analytics prompt in the description so the workflow can use it as user_input
+        description: "Generate comprehensive analytics report with spending patterns, insights, and recommendations for my financial data",
+        payment_method: "other",
+        // Include the conversation context in metadata so the backend agents can access preferences
+        metadata: {
+          request_type: "analytics_generation",
+          user_preferences: {
+            analytics_focus: ["spending_patterns", "budget_recommendations", "savings_opportunities", "pattern_insights"]
+          }
+        }
+      };
+
+      const url = `${API_BASE}/api/v1/transactions/process?mode=${encodeURIComponent(mode)}&user_id=${encodeURIComponent(userId)}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(rawTransaction)
+      });
+
+      if (response.ok) {
+        const workflowResult = await response.json();
+        console.log('Unified Workflow Analytics Result:', workflowResult);
+
+        if (workflowResult.result) {
+          // Extract analytics data from unified workflow result
+          const result = workflowResult.result;
+
+          // Get pattern insights and spending patterns from workflow
+          const spendingPatterns = result.spending_patterns || {};
+          const patternInsights = result.pattern_insights || [];
+          const budgetRecommendations = result.budget_recommendations || [];
+          const spendingSuggestions = result.spending_suggestions || [];
+          let processedTransactions = result.processed_transactions || [];
+
+          // If the workflow didn't return processed transactions (new user / no data),
+          // fall back to loading stored transactions from the backend and map them
+          // into the same shape expected by the analytics code.
+          if ((!processedTransactions || processedTransactions.length === 0)) {
+            try {
+              const txResp = await getTransactions(auth.user.id, {}, 1, 1000);
+              if (!txResp.error) {
+                const fetched = txResp.data || [];
+                const fetchedTyped = fetched as Transaction[];
+                // Map stored transactions to a minimal processed transaction shape
+                processedTransactions = fetchedTyped.map((t) => ({
+                  amount: t.amount,
+                  date: t.date,
+                  predicted_category: t.category,
+                  category: t.category,
+                  transaction_type: t.transaction_type || (t.amount < 0 ? 'expense' : 'income'),
+                  description: t.description,
+                  merchant: t.merchant
+                }));
+                // Update transactions state so Recent Transactions table shows them
+                setTransactions(fetched);
+              }
+            } catch (e) {
+              console.warn('Failed to load fallback transactions for analytics:', e);
+            }
+          }
+
+          console.log('Workflow Analytics Data:', {
+            spendingPatterns,
+            patternInsightsCount: patternInsights.length,
+            budgetRecommendationsCount: budgetRecommendations.length,
+            spendingSuggestionsCount: spendingSuggestions.length,
+            processedTransactionsCount: processedTransactions.length
+          });
+
+          // Calculate totals from processed transactions
+          let totalIncome = 0;
+          let totalExpenses = 0;
+          const monthlyData: Record<string, { income: number; expenses: number }> = {};
+          const categoryData: Record<string, { amount: number; count: number }> = {};
+
+          processedTransactions.forEach((tx: Record<string, unknown>) => {
+            const amount = Math.abs(Number(tx.amount) || 0);
+            const date = new Date(String(tx.date));
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const category = String(tx.predicted_category || tx.category || 'Uncategorized');
+
+            if (!monthlyData[monthKey]) {
+              monthlyData[monthKey] = { income: 0, expenses: 0 };
+            }
+
+            if (!categoryData[category]) {
+              categoryData[category] = { amount: 0, count: 0 };
+            }
+
+            if ((tx.transaction_type || tx.type) === 'income' || amount < 0) {
+              totalIncome += amount;
+              monthlyData[monthKey].income += amount;
+            } else {
+              totalExpenses += amount;
+              monthlyData[monthKey].expenses += amount;
+              categoryData[category].amount += amount;
+              categoryData[category].count += 1;
+            }
+          });
+
+          // Convert workflow analytics data to frontend format
+          const analyticsDataFromWorkflow: AnalyticsData = {
+            totalIncome,
+            totalExpenses,
+            netCashflow: totalIncome - totalExpenses,
+            transactionCount: processedTransactions.length,
+            avgExpense: totalExpenses / Math.max(processedTransactions.length, 1),
+            avgIncome: totalIncome / Math.max(processedTransactions.length, 1),
+
+            monthlyData: Object.entries(monthlyData).map(([month, data]) => ({
+              month,
+              income: data.income,
+              expenses: data.expenses,
+              net: data.income - data.expenses
+            })).sort((a, b) => a.month.localeCompare(b.month)),
+
+            categoryData: Object.entries(categoryData).map(([category, data]) => ({
+              category: category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, ' '),
+              amount: data.amount,
+              count: data.count,
+              percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0
+            })).filter(item => item.amount > 0).sort((a, b) => b.amount - a.amount),
+
+            dailyData: [],
+            merchantData: [],
+            weeklyPattern: [],
+            recurringPayments: [],
+            anomalies: [],
+
+            // Convert AI insights from unified workflow
+            insights: [
+              ...patternInsights.map((insight: Record<string, unknown>) => ({
+                type: String(insight.insight_type || 'pattern'),
+                message: String(insight.description || 'Pattern insight generated'),
+                severity: String(insight.severity || 'info')
+              })),
+              ...budgetRecommendations.map((rec: Record<string, unknown>) => ({
+                type: 'budget_recommendation',
+                message: String(rec.description || rec.title || 'Budget recommendation'),
+                severity: 'info'
+              })),
+              ...spendingSuggestions.map((sugg: Record<string, unknown>) => ({
+                type: 'spending_suggestion',
+                message: String(sugg.description || sugg.title || 'Spending suggestion'),
+                severity: 'info'
+              }))
+            ]
+          };
+
+          setAnalyticsData(analyticsDataFromWorkflow);
+          setTransactions(processedTransactions);
+
+        } else {
+          console.error('No result data from unified workflow:', workflowResult);
+          // Fallback to transaction-based processing if workflow doesn't return data
+          await loadTransactionsFallback();
+        }
       } else {
-        data.expenses += Math.abs(tx.amount);
+        // Fallback to transaction-based processing if workflow API not available
+        console.warn('Unified workflow API not available, falling back to transaction processing');
+        await loadTransactionsFallback();
       }
-    });
-
-    const monthlyData = Array.from(monthlyMap.entries())
-      .map(([month, data]) => ({
-        month,
-        income: data.income,
-        expenses: data.expenses,
-        net: data.income - data.expenses
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-
-    // Category breakdown
-    const categoryMap = new Map<string, { amount: number; count: number }>();
-    expenseTransactions.forEach(tx => {
-      const category = tx.category || 'Uncategorized';
-      if (!categoryMap.has(category)) {
-        categoryMap.set(category, { amount: 0, count: 0 });
-      }
-      const data = categoryMap.get(category)!;
-      data.amount += Math.abs(tx.amount);
-      data.count += 1;
-    });
-
-    const categoryData = Array.from(categoryMap.entries())
-      .map(([category, data]) => ({
-        category,
-        amount: data.amount,
-        count: data.count,
-        percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0
-      }))
-      .sort((a, b) => b.amount - a.amount);
-
-    // Daily spending for trend analysis
-    const dailyMap = new Map<string, number>();
-    expenseTransactions.forEach(tx => {
-      const date = format(new Date(tx.date), 'yyyy-MM-dd');
-      dailyMap.set(date, (dailyMap.get(date) || 0) + Math.abs(tx.amount));
-    });
-
-    const dailyData = Array.from(dailyMap.entries())
-      .map(([date, amount]) => ({ date, amount, ma7: 0, ma30: 0 }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    // Calculate moving averages
-    dailyData.forEach((item, index) => {
-      const last7 = dailyData.slice(Math.max(0, index - 6), index + 1);
-      const last30 = dailyData.slice(Math.max(0, index - 29), index + 1);
-      item.ma7 = last7.reduce((sum, d) => sum + d.amount, 0) / last7.length;
-      item.ma30 = last30.reduce((sum, d) => sum + d.amount, 0) / last30.length;
-    });
-
-    // Merchant analysis
-    const merchantMap = new Map<string, { total: number; count: number; firstVisit: Date; lastVisit: Date }>();
-    expenseTransactions.forEach(tx => {
-      const merchant = tx.merchant || tx.description?.split(' ')[0] || 'Unknown';
-      const txDate = new Date(tx.date);
-      
-      if (!merchantMap.has(merchant)) {
-        merchantMap.set(merchant, { 
-          total: 0, 
-          count: 0, 
-          firstVisit: txDate, 
-          lastVisit: txDate 
-        });
-      }
-      const data = merchantMap.get(merchant)!;
-      data.total += Math.abs(tx.amount);
-      data.count += 1;
-      
-      // Update first and last visit dates
-      if (txDate < data.firstVisit) {
-        data.firstVisit = txDate;
-      }
-      if (txDate > data.lastVisit) {
-        data.lastVisit = txDate;
-      }
-    });
-
-    const merchantData = Array.from(merchantMap.entries())
-      .map(([merchant, data]) => ({
-        merchant,
-        totalSpent: data.total,
-        avgTransaction: data.total / data.count,
-        count: data.count,
-        firstVisit: data.firstVisit.toISOString(),
-        lastVisit: data.lastVisit.toISOString()
-      }))
-      .sort((a, b) => b.totalSpent - a.totalSpent)
-      .slice(0, 10);
-
-    // Weekly spending pattern
-    const weeklyMap = new Map<string, number>();
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    
-    expenseTransactions.forEach(tx => {
-      const dayOfWeek = dayNames[new Date(tx.date).getDay()];
-      weeklyMap.set(dayOfWeek, (weeklyMap.get(dayOfWeek) || 0) + Math.abs(tx.amount));
-    });
-
-    const weeklyPattern = dayNames.map(day => ({
-      day: day.substring(0, 3),
-      amount: weeklyMap.get(day) || 0
-    }));
-
-    // Detect recurring payments (simplified)
-    const recurringMap = new Map<string, Transaction[]>();
-    finalTxns.forEach(tx => {
-      const key = `${tx.merchant || 'Unknown'}_${Math.abs(tx.amount)}`;
-      if (!recurringMap.has(key)) {
-        recurringMap.set(key, []);
-      }
-      recurringMap.get(key)!.push(tx);
-    });
-
-    const recurringPayments = Array.from(recurringMap.entries())
-      .filter(([_, txs]) => txs.length >= 2)
-      .map(([key, txs]) => {
-        const [merchant] = key.split('_');
-        const dates = txs.map(tx => new Date(tx.date)).sort((a, b) => a.getTime() - b.getTime());
-        const intervals = [];
-        for (let i = 1; i < dates.length; i++) {
-          intervals.push((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
-        }
-        const avgInterval = intervals.reduce((sum, int) => sum + int, 0) / intervals.length;
-        
-        let frequency = 'irregular';
-        let confidence = 0.5;
-        
-        if (avgInterval >= 28 && avgInterval <= 32) {
-          frequency = 'monthly';
-          confidence = 0.9;
-        } else if (avgInterval >= 6 && avgInterval <= 8) {
-          frequency = 'weekly';
-          confidence = 0.9;
-        }
-
-        return {
-          merchant,
-          amount: Math.abs(txs[0].amount),
-          frequency,
-          confidence
-        };
-      })
-      .filter(item => item.confidence > 0.7)
-      .sort((a, b) => b.amount - a.amount);
-
-    // Detect anomalies (simplified)
-    const amounts = expenseTransactions.map(tx => Math.abs(tx.amount));
-    const mean = amounts.reduce((sum, amt) => sum + amt, 0) / amounts.length;
-    const variance = amounts.reduce((sum, amt) => sum + Math.pow(amt - mean, 2), 0) / amounts.length;
-    const stdDev = Math.sqrt(variance);
-
-    const anomalies = expenseTransactions
-      .filter(tx => Math.abs(tx.amount) > mean + (2 * stdDev))
-      .map(tx => ({
-        date: format(new Date(tx.date), 'yyyy-MM-dd'),
-        amount: Math.abs(tx.amount),
-        category: tx.category || 'Uncategorized',
-        deviation: (Math.abs(tx.amount) - mean) / stdDev
-      }))
-      .sort((a, b) => b.deviation - a.deviation)
-      .slice(0, 5);
-
-    // Generate insights
-    const insights = [];
-    
-    if (netCashflow < 0) {
-      insights.push({
-        type: 'cash_flow',
-        message: `Net cash flow is negative: LKR ${Math.abs(netCashflow).toFixed(2)}`,
-        severity: 'warning'
-      });
-    } else if (totalIncome > 0 && (netCashflow / totalIncome) > 0.2) {
-      insights.push({
-        type: 'cash_flow',
-        message: `Healthy savings rate: ${((netCashflow/totalIncome)*100).toFixed(1)}% of income`,
-        severity: 'success'
-      });
+    } catch (err) {
+      console.warn('Unified workflow analytics not available:', err);
+      // Fallback to transaction-based processing
+      await loadTransactionsFallback();
     }
 
-    if (categoryData.length > 0 && categoryData[0].percentage > 40) {
-      insights.push({
-        type: 'spending_category',
-        message: `${categoryData[0].category} represents ${categoryData[0].percentage.toFixed(1)}% of total expenses`,
-        severity: categoryData[0].percentage > 60 ? 'warning' : 'info'
-      });
-    }
+    setLoading(false);
+  }, [auth.user]);
 
-    if (recurringPayments.length > 0) {
-      const totalRecurring = recurringPayments.reduce((sum, rp) => sum + rp.amount, 0);
-      insights.push({
-        type: 'recurring_payments',
-        message: `${recurringPayments.length} recurring payments identified (LKR ${totalRecurring.toFixed(2)})`,
-        severity: 'info'
-      });
-    }
 
-    if (anomalies.length > 0) {
-      insights.push({
-        type: 'spending_anomaly',
-        message: `${anomalies.length} unusual spending spikes detected`,
-        severity: 'warning'
-      });
-    }
-
-    setAnalyticsData({
-      totalIncome,
-      totalExpenses,
-      netCashflow,
-      transactionCount: finalTxns.length,
-      avgExpense,
-      avgIncome,
-      monthlyData,
-      categoryData,
-      dailyData,
-      merchantData,
-      weeklyPattern,
-      recurringPayments,
-      anomalies,
-      insights
-    });
-  };
 
   useEffect(() => {
-    loadTransactions();
-  }, [loadTransactions]);
-
-  // Re-process analytics when filters change
-  useEffect(() => {
-    if (transactions.length > 0) {
-      processAnalyticsData(transactions);
+    if (auth.isAuthenticated && auth.user) {
+      loadAnalyticsData();
     }
-  }, [dateRange, amountRange, selectedCategories, transactions]);
+  }, [auth.isAuthenticated, auth.user, loadAnalyticsData]);
+
+  // Re-load analytics when filters change
+  useEffect(() => {
+    if (auth.isAuthenticated && auth.user) {
+      // Debounce the API call to avoid too many requests
+      const timeoutId = setTimeout(() => {
+        loadAnalyticsData();
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, amountRange, selectedCategories]);
 
   const formatCurrency = (amount: number) => {
-    return `LKR ${Math.abs(amount).toLocaleString('en-US', { 
-      minimumFractionDigits: 0, 
-      maximumFractionDigits: 0 
+    return `LKR ${Math.abs(amount).toLocaleString('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     })}`;
   };
 
@@ -400,6 +344,7 @@ export default function AnalyticsPage() {
   };
 
   // Helper to get lastAutoTable.finalY safely
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getLastTableY = (pdf: any, fallback: number) => {
     return pdf.lastAutoTable && typeof pdf.lastAutoTable.finalY === 'number'
       ? pdf.lastAutoTable.finalY + 20
@@ -416,22 +361,22 @@ export default function AnalyticsPage() {
     const getNextYPosition = (defaultY: number = 20) => {
       return getLastTableY(pdf, defaultY);
     };
-    
+
     // Get analysis type label
     const currentAnalysis = ANALYSIS_TYPES.find(type => type.id === selectedAnalysis);
     const analysisTitle = currentAnalysis?.label || 'Overview';
-    
+
     // Title
     pdf.setFontSize(20);
     pdf.setTextColor(40);
     pdf.text(`FinTrack ${analysisTitle} Report`, pageWidth / 2, 20, { align: 'center' });
-    
+
     // Date range and filters
     pdf.setFontSize(12);
     pdf.setTextColor(100);
     pdf.text(`Period: ${dateRange.start} to ${dateRange.end}`, pageWidth / 2, 30, { align: 'center' });
     pdf.text(`Amount Range: LKR ${amountRange.min.toLocaleString()} - LKR ${amountRange.max.toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
-    
+
     let yPosition = 60;
 
     // Analysis-specific content based on selected type
@@ -504,11 +449,11 @@ export default function AnalyticsPage() {
        yPosition += 20;
 
        // Weekly pattern analysis
-       const highestDay = analyticsData.weeklyPattern.reduce((prev, current) => 
+       const highestDay = analyticsData.weeklyPattern.reduce((prev, current) =>
          (prev.amount > current.amount) ? prev : current);
-       const lowestDay = analyticsData.weeklyPattern.reduce((prev, current) => 
+       const lowestDay = analyticsData.weeklyPattern.reduce((prev, current) =>
          (prev.amount < current.amount) ? prev : current);
-       
+
        const weekendSpending = analyticsData.weeklyPattern
          .filter(d => d.day === 'Saturday' || d.day === 'Sunday')
          .reduce((sum, d) => sum + d.amount, 0);
@@ -575,9 +520,9 @@ export default function AnalyticsPage() {
          theme: 'striped',
          headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontSize: 11 },
          bodyStyles: { fontSize: 9 },
-         columnStyles: { 
-           0: { cellWidth: 40 }, 
-           1: { cellWidth: 45 }, 
+         columnStyles: {
+           0: { cellWidth: 40 },
+           1: { cellWidth: 45 },
            2: { cellWidth: 35 },
            3: { cellWidth: 45 }
          },
@@ -611,9 +556,9 @@ export default function AnalyticsPage() {
          theme: 'striped',
          headStyles: { fillColor: [155, 89, 182], textColor: [255, 255, 255], fontSize: 11 },
          bodyStyles: { fontSize: 9 },
-         columnStyles: { 
-           0: { cellWidth: 20 }, 
-           1: { cellWidth: 50 }, 
+         columnStyles: {
+           0: { cellWidth: 20 },
+           1: { cellWidth: 50 },
            2: { cellWidth: 40 },
            3: { cellWidth: 30 },
            4: { cellWidth: 25 }
@@ -635,7 +580,7 @@ export default function AnalyticsPage() {
 
        // Generate insights based on patterns
        const behaviorInsights = [];
-       
+
        if (weekendSpending > weekdaySpending) {
          behaviorInsights.push(['Weekend Spender', 'You tend to spend more on weekends', 'Consider weekend budgeting']);
        } else {
@@ -659,9 +604,9 @@ export default function AnalyticsPage() {
            theme: 'striped',
            headStyles: { fillColor: [241, 196, 15], textColor: [0, 0, 0], fontSize: 11 },
            bodyStyles: { fontSize: 9 },
-           columnStyles: { 
-             0: { cellWidth: 45 }, 
-             1: { cellWidth: 60 }, 
+           columnStyles: {
+             0: { cellWidth: 45 },
+             1: { cellWidth: 60 },
              2: { cellWidth: 60 }
            },
          });
@@ -675,10 +620,10 @@ export default function AnalyticsPage() {
 
       // Calculate trend metrics
       const dailyAmounts = analyticsData.dailyData.map(d => d.amount);
-      const trendDirection = dailyAmounts.length > 1 ? 
+      const trendDirection = dailyAmounts.length > 1 ?
         (dailyAmounts[dailyAmounts.length - 1] > dailyAmounts[0] ? 'Increasing' : 'Decreasing') : 'Stable';
       const avgDaily = dailyAmounts.reduce((sum, amt) => sum + amt, 0) / dailyAmounts.length;
-      const volatility = dailyAmounts.length > 1 ? 
+      const volatility = dailyAmounts.length > 1 ?
         Math.sqrt(dailyAmounts.reduce((sum, amt) => sum + Math.pow(amt - avgDaily, 2), 0) / dailyAmounts.length) / avgDaily * 100 : 0;
 
       const trendsData = [
@@ -777,7 +722,7 @@ export default function AnalyticsPage() {
       const recentTrend = recentDays.reduce((sum, d) => sum + d.amount, 0) / recentDays.length;
       const historicalAvg = analyticsData.dailyData.reduce((sum, d) => sum + d.amount, 0) / analyticsData.dailyData.length;
       const trendChange = historicalAvg > 0 ? ((recentTrend - historicalAvg) / historicalAvg * 100) : 0;
-      
+
       const forecast30Days = recentTrend * 30;
       const confidence = Math.max(0.4, Math.min(0.95, analyticsData.dailyData.length / 60));
 
@@ -802,6 +747,7 @@ export default function AnalyticsPage() {
     }
 
     // Footer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pageCount = (pdf as any).internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       pdf.setPage(i);
@@ -850,33 +796,95 @@ export default function AnalyticsPage() {
 
   if (!analyticsData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <ChartBarIcon className="h-12 w-12 text-gray-400 mx-auto" />
-          <p className="mt-4 text-gray-600">No data available for analysis</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-lg p-12 border border-slate-200 text-center max-w-lg">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mx-auto mb-6 flex items-center justify-center">
+            <ChartBarIcon className="h-10 w-10 text-white" />
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">Analytics Dashboard</h3>
+          <p className="text-gray-600 mb-6">
+            Advanced financial insights and AI-powered analytics are coming soon.
+            Add some transactions to see your personalized analytics.
+          </p>
+          <div className="flex items-center justify-center space-x-2 text-blue-600">
+            <SparklesIcon className="w-5 h-5" />
+            <span className="text-sm font-medium">Powered by AI Intelligence</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  const categories = Array.from(new Set(transactions.map(tx => tx.category || 'Uncategorized')));
+
+
+  // Check if we have no filtered transactions to show empty state
+  if (!loading && (!analyticsData || (transactions.length > 0 && !analyticsData))) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+            <div className="text-center py-12">
+              <ChartBarIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Transactions Found</h3>
+              <p className="text-gray-600 mb-6">
+                No transactions match your current filters or date range. Try adjusting your filters or add some transactions to see analytics.
+              </p>
+              <button
+                onClick={() => {
+                  // Reset filters
+                  setSelectedCategories([]);
+                  setAmountRange({ min: 0, max: maxAmount });
+                  setDateRange({
+                    start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+                    end: format(new Date(), 'yyyy-MM-dd')
+                  });
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+              >
+                Reset Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Advanced Analytics</h1>
-          <p className="text-gray-600">AI-Powered Financial Intelligence & Insights</p>
+        <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                Advanced Analytics
+              </h1>
+              <p className="text-slate-600 mt-2 text-lg">AI-Powered Financial Intelligence & Insights</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={generatePDFReport}
+                className="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg transition-colors duration-200"
+              >
+                <DocumentArrowDownIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">Export PDF</span>
+              </button>
+              <div className="hidden md:flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white px-4 py-2 rounded-full">
+                <SparklesIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">AI Analytics</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Controls */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <FunnelIcon className="h-5 w-5 mr-2" />
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+            <FunnelIcon className="h-6 w-6 mr-2 text-blue-600" />
             Analytics Controls
           </h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Date Range */}
             <div>
@@ -982,8 +990,8 @@ export default function AnalyticsPage() {
                       {formatCurrencyCompact(analyticsData.netCashflow)}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {analyticsData.totalIncome > 0 ? 
-                        `${((analyticsData.netCashflow / analyticsData.totalIncome) * 100).toFixed(1)}%` : 
+                      {analyticsData.totalIncome > 0 ?
+                        `${((analyticsData.netCashflow / analyticsData.totalIncome) * 100).toFixed(1)}%` :
                         '0%'
                       } savings rate
                     </p>
@@ -1008,6 +1016,8 @@ export default function AnalyticsPage() {
                 </div>
               </div>
             </div>
+
+
 
             {/* Income vs Expenses Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1156,7 +1166,7 @@ export default function AnalyticsPage() {
                   {analyticsData.categoryData.slice(0, 5).map((category, index) => (
                     <div key={category.category} className="flex items-center justify-between">
                       <div className="flex items-center">
-                        <div 
+                        <div
                           className="w-4 h-4 rounded-full mr-3"
                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         ></div>
@@ -1184,9 +1194,9 @@ export default function AnalyticsPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} />
                   <YAxis tickFormatter={formatCurrencyCompact} />
-                  <Tooltip 
+                  <Tooltip
                     labelFormatter={(date) => format(new Date(date), 'PPP')}
-                    formatter={(value, name) => [formatCurrency(Number(value)), name]} 
+                    formatter={(value, name) => [formatCurrency(Number(value)), name]}
                   />
                   <Legend />
                   <Line type="monotone" dataKey="amount" stroke="#94A3B8" strokeWidth={1} name="Daily Spending" />
@@ -1251,7 +1261,7 @@ export default function AnalyticsPage() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="count" name="Transaction Count" />
                     <YAxis dataKey="totalSpent" name="Total Spent" tickFormatter={formatCurrencyCompact} />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(value, name) => {
                         const displayValue = name === 'totalSpent' ? formatCurrency(Number(value)) : value;
                         const displayName = name === 'totalSpent' ? 'Total Spent' : 'Transaction Count';
@@ -1330,20 +1340,27 @@ export default function AnalyticsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(analyticsData.dailyData.slice(-30).reduce((sum, d) => sum + d.amount, 0) * 1.05)}
+                    {formatCurrency(analyticsData.dailyData.slice(-30).reduce((sum, d) => sum + d.amount, 0))}
                   </div>
-                  <div className="text-sm text-gray-600">Predicted Monthly Spending</div>
+                  <div className="text-sm text-gray-600">Recent Monthly Spending</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">+5.2%</div>
-                  <div className="text-sm text-gray-600">Predicted Change</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {analyticsData.dailyData.length > 7 ?
+                      `${((analyticsData.dailyData.slice(-7).reduce((sum, d) => sum + d.amount, 0) /
+                          Math.max(1, analyticsData.dailyData.slice(-14, -7).reduce((sum, d) => sum + d.amount, 0)) - 1) * 100).toFixed(1)}%`
+                      : '0%'}
+                  </div>
+                  <div className="text-sm text-gray-600">Weekly Change</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">78%</div>
-                  <div className="text-sm text-gray-600">Forecast Confidence</div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {Math.min(95, Math.max(40, analyticsData.dailyData.length * 2))}%
+                  </div>
+                  <div className="text-sm text-gray-600">Data Confidence</div>
                 </div>
               </div>
-              
+
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={[
                   ...analyticsData.dailyData.slice(-30),
@@ -1358,16 +1375,16 @@ export default function AnalyticsPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} />
                   <YAxis tickFormatter={formatCurrencyCompact} />
-                  <Tooltip 
+                  <Tooltip
                     labelFormatter={(date) => format(new Date(date), 'PPP')}
-                    formatter={(value, name) => [formatCurrency(Number(value)), name === 'amount' ? 'Predicted Spending' : name]} 
+                    formatter={(value, name) => [formatCurrency(Number(value)), name === 'amount' ? 'Predicted Spending' : name]}
                   />
                   <Legend />
-                  <Area 
-                    type="monotone" 
-                    dataKey="amount" 
-                    stroke="#3B82F6" 
-                    fill="#3B82F6" 
+                  <Area
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="#3B82F6"
+                    fill="#3B82F6"
                     fillOpacity={0.3}
                     name="Predicted Spending"
                   />

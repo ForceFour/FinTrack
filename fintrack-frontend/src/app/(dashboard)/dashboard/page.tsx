@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
 import { useApp } from "@/app/providers";
@@ -39,13 +40,15 @@ export default function DashboardPage() {
     if (!auth.user) return;
 
     setLoading(true);
-    const response = await getTransactions(auth.user.id, {}, 1, 100);
 
+    // Load transactions
+    const response = await getTransactions(auth.user.id, {}, 1, 100);
     if (response.error) {
       setError(response.error);
     } else {
       setTransactions(response.data || []);
     }
+
     setLoading(false);
   }, [auth.user]);
 
@@ -303,59 +306,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* AI Insights */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-slate-800 flex items-center">
-              <span className="text-2xl mr-2">🤖</span>
-              AI-Generated Insights
-            </h3>
-            <div className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-sm">
-              <div className="w-2 h-2 bg-white rounded-full"></div>
-              <span>Smart Analysis</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InsightCard
-              icon="📈"
-              title="Spending Trend"
-              message={`Your spending increased by 12% compared to last month. Total: $${totalExpenses.toFixed(
-                2
-              )}`}
-              type="warning"
-            />
-            <InsightCard
-              icon="🏪"
-              title="Top Category"
-              message={`Most spending in '${
-                categoryChartData[0]?.name || "N/A"
-              }' category ($${categoryChartData[0]?.value.toFixed(2) || 0})`}
-              type="info"
-            />
-            <InsightCard
-              icon="💰"
-              title="Savings Rate"
-              message={`You saved ${((netCashFlow / totalIncome) * 100).toFixed(
-                1
-              )}% of your income this month`}
-              type="success"
-            />
-            <InsightCard
-              icon="⚠️"
-              title="Budget Alert"
-              message="You've exceeded your dining budget by 15% this month"
-              type="error"
-            />
-          </div>
-        </div>
-
         {/* Recent Transactions */}
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-bold text-slate-800">Recent Transactions</h3>
-            <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+            <Link href="/transactions" className="text-blue-600 hover:text-blue-700 text-sm font-medium transition-colors">
               View All →
-            </button>
+            </Link>
           </div>
           <div className="overflow-hidden rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200">
@@ -412,37 +369,6 @@ export default function DashboardPage() {
             </table>
           </div>
         </div>
-
-        {/* AI-Generated Insights (Duplicate - keeping for now but should be removed) */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-          <h3 className="text-lg font-semibold mb-4">AI-Generated Insights</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InsightCard
-              icon="📊"
-              title="Spending Pattern Detected"
-              message="You spend most on dining and entertainment on weekends. Consider setting a weekly dining budget."
-              type="info"
-            />
-            <InsightCard
-              icon="📈"
-              title="Monthly Trend"
-              message="Your grocery spending has increased 15% this month. This might be due to inflation or changed shopping habits."
-              type="warning"
-            />
-            <InsightCard
-              icon="🎯"
-              title="Unusual Activity"
-              message="Unusual spending pattern detected at electronics stores. Verify these transactions for accuracy."
-              type="warning"
-            />
-            <InsightCard
-              icon="💡"
-              title="Budget Recommendation"
-              message="Consider setting a budget limit for restaurant expenses. You're currently 23% over your typical spending."
-              type="success"
-            />
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -489,46 +415,6 @@ function MetricCard({
             {delta}
           </p>
         )}
-      </div>
-    </div>
-  );
-}
-
-function InsightCard({
-  icon,
-  title,
-  message,
-  type,
-}: {
-  icon: string;
-  title: string;
-  message: string;
-  type: "info" | "warning" | "error" | "success";
-}) {
-  const bgColors = {
-    info: "bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200",
-    warning: "bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-200",
-    error: "bg-gradient-to-br from-red-50 to-pink-50 border-red-200",
-    success: "bg-gradient-to-br from-green-50 to-emerald-50 border-green-200",
-  };
-
-  const iconColors = {
-    info: "text-blue-600",
-    warning: "text-yellow-600",
-    error: "text-red-600",
-    success: "text-green-600",
-  };
-
-  return (
-    <div className={`p-5 rounded-xl border-2 ${bgColors[type]} hover:shadow-md transition-shadow`}>
-      <div className="flex items-start">
-        <div className={`w-10 h-10 rounded-full bg-white flex items-center justify-center mr-4 shadow-sm`}>
-          <span className={`text-xl ${iconColors[type]}`}>{icon}</span>
-        </div>
-        <div className="flex-1">
-          <h4 className="font-bold text-slate-800 mb-2">{title}</h4>
-          <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
-        </div>
       </div>
     </div>
   );

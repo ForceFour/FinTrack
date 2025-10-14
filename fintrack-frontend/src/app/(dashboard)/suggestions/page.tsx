@@ -13,7 +13,6 @@ import {
   CheckCircleIcon,
   XMarkIcon,
   ArrowPathIcon,
-  FunnelIcon,
   StarIcon,
 } from "@heroicons/react/24/outline";
 
@@ -34,7 +33,7 @@ interface Suggestion {
   category?: string;
   created_at?: string;
   expires_at?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface BudgetRecommendation {
@@ -53,35 +52,11 @@ interface BudgetRecommendation {
   confidence_score: number;
 }
 
-interface SavingsOpportunity {
-  opportunity_type: string;
-  title: string;
-  description: string;
-  current_spending: number;
-  potential_savings: number;
-  savings_percentage: number;
-  difficulty: string;
-  timeframe: string;
-  action_steps: string[];
-  confidence: number;
-}
 
-interface ActionableInsight {
-  insight_type: string;
-  title: string;
-  description: string;
-  data_points: Array<Record<string, any>>;
-  recommended_actions: string[];
-  potential_impact: string;
-  urgency: SuggestionPriority;
-  confidence: number;
-}
 
 export default function SuggestionsPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [budgetRecommendations, setBudgetRecommendations] = useState<BudgetRecommendation | null>(null);
-  const [savingsOpportunities, setSavingsOpportunities] = useState<SavingsOpportunity[]>([]);
-  const [actionableInsights, setActionableInsights] = useState<ActionableInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
@@ -92,86 +67,83 @@ export default function SuggestionsPage() {
     if (auth.isAuthenticated && auth.user) {
       loadSuggestions();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.isAuthenticated, auth.user, selectedFilter]);
 
   const loadSuggestions = async () => {
     setLoading(true);
     setError("");
-    
+
     try {
-      // Load main suggestions
-      const response = await fetch(
-        `http://localhost:8000/api/v1/suggestions/${selectedFilter}?limit=20`,
-        {
-          headers: {
-            Authorization: `Bearer ${auth.token}`,
-            "Content-Type": "application/json",
-          },
+      // Load backend suggestions
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE}/api/analytics/suggestions/${auth.user?.id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
         }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch suggestions");
-      }
-
-      const data = await response.json();
-      setSuggestions(data.suggestions || []);
-
-      // Load additional data in parallel
-      await Promise.all([
-        loadSavingsOpportunities(),
-        loadActionableInsights(),
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSavingsOpportunities = async () => {
-    try {
-      const response = await fetch(
-        "http://localhost:8000/api/v1/suggestions/savings",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${auth.token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ insights: [], thresholds: {} }),
-        }
-      );
+      });
 
       if (response.ok) {
         const data = await response.json();
-        setSavingsOpportunities(data.opportunities || []);
-      }
-    } catch (err) {
-      console.error("Failed to load savings opportunities:", err);
-    }
-  };
 
-  const loadActionableInsights = async () => {
-    try {
-      const response = await fetch(
-        "http://localhost:8000/api/v1/suggestions/trends/actionable",
-        {
-          headers: {
-            Authorization: `Bearer ${auth.token}`,
-            "Content-Type": "application/json",
-          },
+        // Convert backend suggestions to frontend format
+        const allSuggestions: Suggestion[] = [];
+
+        // Add budget recommendations
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data.suggestions.forEach((suggestion: any) => {
+          allSuggestions.push({
+            id: `suggestion_${Math.random().toString(36).substr(2, 9)}`,
+            type: mapSuggestionType(suggestion.suggestion_type),
+            title: suggestion.title,
+            description: suggestion.description,
+            priority: suggestion.priority as SuggestionPriority,
+            status: "active",
+            potential_savings: suggestion.potential_savings,
+            implementation_difficulty: suggestion.metadata?.difficulty || "medium",
+            category: suggestion.category,
+            created_at: new Date().toISOString(),
+            metadata: suggestion.metadata
+          });
+        });
+
+        setSuggestions(allSuggestions);
+
+        // Set other data if available
+        if (data.budget_recommendations) {
+          setBudgetRecommendations(data.budget_recommendations);
         }
-      );
 
-      if (response.ok) {
-        const data = await response.json();
-        setActionableInsights(data || []);
+      } else {
+        // No suggestions available from backend
+        setSuggestions([]);
+        console.log('No suggestions available from backend');
       }
     } catch (err) {
-      console.error("Failed to load actionable insights:", err);
+      console.warn('Backend suggestions not available:', err);
+      setSuggestions([]);
     }
+
+    setLoading(false);
   };
+
+  const mapSuggestionType = (backendType: string): SuggestionType => {
+    const typeMap: Record<string, SuggestionType> = {
+      'budget_adjustment': 'budget',
+      'savings_opportunity': 'savings',
+      'spending_reduction': 'spending',
+      'category_optimization': 'category',
+      'merchant_analysis': 'merchant',
+      'security_alert': 'security',
+      'goal_setting': 'goal'
+    };
+    return typeMap[backendType] || 'budget';
+  };
+
+
+
+
 
   const loadBudgetRecommendations = async () => {
     try {
@@ -391,7 +363,7 @@ export default function SuggestionsPage() {
           />
           <StatCard
             title="Savings Rate"
-            value={`${savingsOpportunities.length}`}
+            value="0"
             icon={<ArrowTrendingUpIcon className="w-6 h-6" />}
             gradient="from-orange-500 to-red-500"
             description="Opportunities found"
@@ -403,85 +375,33 @@ export default function SuggestionsPage() {
           <div className="flex items-center space-x-2 overflow-x-auto">
             <FilterTab
               label="All"
-              value="all"
               active={selectedFilter === "all"}
               onClick={() => setSelectedFilter("all")}
             />
             <FilterTab
               label="Budget"
-              value="budget"
               active={selectedFilter === "budget"}
               onClick={() => setSelectedFilter("budget")}
             />
             <FilterTab
               label="Savings"
-              value="savings"
               active={selectedFilter === "savings"}
               onClick={() => setSelectedFilter("savings")}
             />
             <FilterTab
               label="Spending"
-              value="spending"
               active={selectedFilter === "spending"}
               onClick={() => setSelectedFilter("spending")}
             />
             <FilterTab
               label="Goals"
-              value="goals"
               active={selectedFilter === "goals"}
               onClick={() => setSelectedFilter("goals")}
             />
           </div>
         </div>
 
-        {/* Savings Opportunities Highlight */}
-        {savingsOpportunities.length > 0 && (
-          <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl shadow-lg p-8 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-bold mb-2 flex items-center">
-                  <BanknotesIcon className="w-8 h-8 mr-3" />
-                  Top Savings Opportunities
-                </h3>
-                <p className="text-green-100 text-lg">
-                  We found {savingsOpportunities.length} ways to save money
-                </p>
-              </div>
-              <div className="text-right">
-                <div className="text-4xl font-bold">
-                  $
-                  {savingsOpportunities
-                    .reduce((sum, opp) => sum + opp.potential_savings, 0)
-                    .toFixed(2)}
-                </div>
-                <div className="text-green-100 text-sm">
-                  Total potential savings
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {savingsOpportunities.slice(0, 3).map((opp, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30"
-                >
-                  <div className="font-semibold text-lg mb-1">{opp.title}</div>
-                  <div className="text-green-100 text-sm mb-3">
-                    {opp.description}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold">
-                      ${opp.potential_savings.toFixed(2)}
-                    </span>
-                    <span className="bg-white/30 px-3 py-1 rounded-full text-xs font-medium">
-                      {opp.savings_percentage.toFixed(1)}% savings
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+
 
         {/* Main Suggestions Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -510,67 +430,7 @@ export default function SuggestionsPage() {
           )}
         </div>
 
-        {/* Actionable Insights */}
-        {actionableInsights.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-            <h3 className="text-2xl font-bold text-slate-800 mb-6 flex items-center">
-              <ChartBarIcon className="w-7 h-7 mr-3 text-blue-600" />
-              Actionable Insights
-            </h3>
-            <div className="space-y-4">
-              {actionableInsights.map((insight, idx) => (
-                <div
-                  key={idx}
-                  className="border-2 border-slate-200 rounded-xl p-5 hover:border-blue-400 transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h4 className="text-lg font-bold text-slate-800">
-                          {insight.title}
-                        </h4>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
-                            insight.urgency
-                          )}`}
-                        >
-                          {insight.urgency.toUpperCase()}
-                        </span>
-                      </div>
-                      <p className="text-slate-600 mb-4">
-                        {insight.description}
-                      </p>
-                      {insight.recommended_actions.length > 0 && (
-                        <div className="bg-blue-50 rounded-lg p-4">
-                          <div className="font-semibold text-sm text-blue-900 mb-2">
-                            Recommended Actions:
-                          </div>
-                          <ul className="space-y-1">
-                            {insight.recommended_actions.map((action, i) => (
-                              <li
-                                key={i}
-                                className="text-sm text-blue-800 flex items-start"
-                              >
-                                <CheckCircleIcon className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
-                                {action}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                    <div className="ml-4 text-right">
-                      <div className="text-sm text-slate-500">Confidence</div>
-                      <div className="text-2xl font-bold text-blue-600">
-                        {(insight.confidence * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+
 
         {/* Budget Recommendations Modal */}
         {showBudgetModal && budgetRecommendations && (
@@ -751,12 +611,10 @@ function StatCard({
 
 function FilterTab({
   label,
-  value,
   active,
   onClick,
 }: {
   label: string;
-  value: string;
   active: boolean;
   onClick: () => void;
 }) {
