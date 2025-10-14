@@ -21,6 +21,7 @@ from src.routes.auth import router as auth_router
 from src.routes.analytics import router as analytics_router
 from src.routes.suggestions import router as suggestions_router
 from src.routes.workflow import router as workflow_router
+from src.api.analytics import router as ai_analytics_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +49,9 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(suggestions_router, prefix="/api/v1")
 app.include_router(workflow_router, prefix="/api/v1")
+
+# Include AI analytics router (matches frontend calls to /api/analytics/...)
+app.include_router(ai_analytics_router, prefix="/api")
 
 # Health check endpoint
 @app.get("/api/v1/health")
@@ -139,14 +143,15 @@ async def process_transaction(
                 detail=f"Invalid workflow mode: {mode}. Valid modes: {[m.value for m in WorkflowMode]}"
             )
 
-        # Execute workflow
+        # Execute workflow using the unified workflow API. Pass the transaction
+        # description as user_input and include the raw transaction data in
+        # raw_transactions / conversation_context so agents can access it.
         result = await workflow.execute_workflow(
             mode=workflow_mode,
             user_input=transaction.description,
+            raw_transactions=[transaction.dict()],
             user_id=user_id,
-            amount=transaction.amount,
-            date=transaction.date,
-            merchant=transaction.merchant
+            conversation_context={"request_source": "api_v1_transactions_process", "original_transaction": transaction.dict()}
         )
 
         return {

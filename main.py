@@ -95,6 +95,10 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
 
+# Include analytics API directly for frontend integration (without v1 prefix)
+from src.api.analytics import router as frontend_analytics_router
+app.include_router(frontend_analytics_router, prefix="/api")
+
 # Root endpoint
 @app.get("/")
 async def root():

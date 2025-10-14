@@ -114,7 +114,7 @@ export async function getTransactions(
     }
 
     if (filters.transaction_type) {
-      query = query.eq('transaction_type', filters.transaction_type as 'DEBIT' | 'CREDIT')
+      query = query.eq('transaction_type', filters.transaction_type)
     }
 
     if (filters.status) {
@@ -172,6 +172,25 @@ export async function deleteTransaction(id: string, userId: string): Promise<{ e
     }
 
     return { error: null }
+  } catch {
+    return { error: 'An unexpected error occurred' }
+  }
+}
+
+// Delete multiple transactions
+export async function deleteTransactions(ids: string[], userId: string): Promise<{ error: string | null, deletedCount?: number }> {
+  try {
+    const { error, count } = await supabase
+      .from('transactions')
+      .delete({ count: 'exact' })
+      .in('id', ids)
+      .eq('user_id', userId)
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return { error: null, deletedCount: count || 0 }
   } catch {
     return { error: 'An unexpected error occurred' }
   }
