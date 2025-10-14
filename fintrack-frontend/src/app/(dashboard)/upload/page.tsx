@@ -26,7 +26,7 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateAgentStatus, refreshTransactions } = useApp();
+  const { updateAgentStatus, refreshTransactions, auth } = useApp();
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -93,11 +93,16 @@ export default function UploadPage() {
     }
 
     try {
+      // Check if user is authenticated
+      if (!auth.user?.id) {
+        throw new Error("Please log in to upload transactions");
+      }
+
       // Create a new File object to avoid reference issues
       const fileToUpload = new File([file], file.name, { type: file.type });
 
       // Upload file to backend API for AI processing
-      const response = await apiClient.uploadTransactions(fileToUpload);
+      const response = await apiClient.uploadTransactions(fileToUpload, auth.user.id);
 
       if (response.status === "error") {
         throw new Error(response.error || "Upload failed");
@@ -222,13 +227,18 @@ export default function UploadPage() {
             <div className="mt-6 flex justify-center">
               <button
                 onClick={handleUpload}
-                disabled={uploading}
+                disabled={uploading || !auth.user?.id}
                 className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
               >
                 {uploading ? (
                   <div className="flex items-center space-x-2">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                     <span>Uploading... {progress}%</span>
+                  </div>
+                ) : !auth.user?.id ? (
+                  <div className="flex items-center space-x-2">
+                    <ArrowUpTrayIcon className="h-5 w-5" />
+                    <span>Please Login to Upload</span>
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2">

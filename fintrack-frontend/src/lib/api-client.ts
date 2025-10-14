@@ -202,13 +202,29 @@ class APIClient {
     });
   }
 
-  async uploadTransactions(file: File) {
+  async uploadTransactions(file: File, userId?: string) {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("file_type", "csv"); // Add file_type parameter
 
+    // If userId not provided, try to get from Supabase session
+    if (!userId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+
+    if (!userId) {
+      throw new Error("User ID is required for file upload");
+    }
+
+    // Add user_id as query parameter
+    const uploadUrl = new URL(`${this.baseUrl}/transactions/upload`);
+    uploadUrl.searchParams.append("user_id", userId);
+
     try {
-      const response = await fetch(`${this.baseUrl}/transactions/upload`, {
+      const response = await fetch(uploadUrl.toString(), {
         method: "POST",
         headers: {
           ...(this.token && { Authorization: `Bearer ${this.token}` }),
