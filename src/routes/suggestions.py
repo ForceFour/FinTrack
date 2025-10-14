@@ -13,8 +13,7 @@ from ..models.suggestion import (
     BudgetRecommendation, SavingsOpportunity
 )
 from ..services.suggestion_service import SuggestionService
-from ..services.auth_service import get_current_user
-from ..core.database import get_db_session
+from ..core.database_config import get_db_client
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
@@ -22,8 +21,8 @@ router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 async def get_suggestions(
     suggestion_type: str = "all",
     limit: int = Query(default=10, ge=1, le=50),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get AI-generated suggestions for the user
@@ -41,7 +40,7 @@ async def get_suggestions(
             )
 
         suggestions = await suggestion_service.get_suggestions(
-            user_id=user.id,
+            user_id=user_id,
             suggestion_type=suggestion_type,
             limit=limit
         )
@@ -61,8 +60,8 @@ async def get_suggestions(
 @router.post("/budget", response_model=BudgetRecommendation)
 async def get_budget_recommendations(
     income_data: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get personalized budget recommendations based on income and spending patterns
@@ -80,7 +79,7 @@ async def get_budget_recommendations(
                 )
 
         recommendations = await suggestion_service.generate_budget_recommendations(
-            user_id=user.id,
+            user_id=user_id,
             income_data=income_data
         )
 
@@ -94,8 +93,8 @@ async def get_budget_recommendations(
 @router.post("/savings", response_model=Dict[str, Any])
 async def get_savings_opportunities(
     analysis_data: Optional[Dict[str, Any]] = None,
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Identify savings opportunities based on spending patterns
@@ -104,7 +103,7 @@ async def get_savings_opportunities(
         suggestion_service = SuggestionService(db)
 
         opportunities = await suggestion_service.identify_savings_opportunities(
-            user_id=user.id,
+            user_id=user_id,
             analysis_data=analysis_data or {}
         )
 
@@ -123,8 +122,8 @@ async def get_savings_opportunities(
 @router.get("/spending/optimization", response_model=Dict[str, Any])
 async def get_spending_optimization(
     category: Optional[str] = Query(default=None),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get spending optimization suggestions for specific categories or overall
@@ -133,7 +132,7 @@ async def get_spending_optimization(
         suggestion_service = SuggestionService(db)
 
         optimization = await suggestion_service.get_spending_optimization(
-            user_id=user.id,
+            user_id=user_id,
             category=category
         )
 
@@ -145,8 +144,8 @@ async def get_spending_optimization(
 @router.post("/goals/recommendations", response_model=Dict[str, Any])
 async def get_goal_recommendations(
     goal_data: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get recommendations for achieving financial goals
@@ -164,7 +163,7 @@ async def get_goal_recommendations(
                 )
 
         recommendations = await suggestion_service.generate_goal_recommendations(
-            user_id=user.id,
+            user_id=user_id,
             goal_data=goal_data
         )
 
@@ -177,8 +176,8 @@ async def get_goal_recommendations(
 
 @router.get("/categories/optimization", response_model=Dict[str, Any])
 async def get_category_optimization(
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get suggestions for optimizing spending categories
@@ -187,7 +186,7 @@ async def get_category_optimization(
         suggestion_service = SuggestionService(db)
 
         optimization = await suggestion_service.get_category_optimization(
-            user_id=user.id
+            user_id=user_id
         )
 
         return optimization
@@ -199,8 +198,8 @@ async def get_category_optimization(
 async def get_merchant_alternatives(
     merchant: str = Query(..., description="Merchant name to find alternatives for"),
     category: Optional[str] = Query(default=None),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get alternative merchants that might offer better value
@@ -209,7 +208,7 @@ async def get_merchant_alternatives(
         suggestion_service = SuggestionService(db)
 
         alternatives = await suggestion_service.find_merchant_alternatives(
-            user_id=user.id,
+            user_id=user_id,
             merchant=merchant,
             category=category
         )
@@ -227,8 +226,8 @@ async def get_merchant_alternatives(
 @router.post("/personalized", response_model=Dict[str, Any])
 async def get_personalized_suggestions(
     preferences: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get personalized suggestions based on user preferences and behavior
@@ -237,7 +236,7 @@ async def get_personalized_suggestions(
         suggestion_service = SuggestionService(db)
 
         suggestions = await suggestion_service.generate_personalized_suggestions(
-            user_id=user.id,
+            user_id=user_id,
             preferences=preferences
         )
 
@@ -258,8 +257,8 @@ async def get_personalized_suggestions(
 
 @router.get("/trends/actionable", response_model=Dict[str, Any])
 async def get_actionable_insights(
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get actionable insights based on spending trends and patterns
@@ -268,7 +267,7 @@ async def get_actionable_insights(
         suggestion_service = SuggestionService(db)
 
         insights = await suggestion_service.generate_actionable_insights(
-            user_id=user.id
+            user_id=user_id
         )
 
         return insights
@@ -279,8 +278,8 @@ async def get_actionable_insights(
 @router.post("/feedback", response_model=Dict[str, Any])
 async def submit_suggestion_feedback(
     feedback_data: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Submit feedback on suggestions to improve AI recommendations
@@ -298,7 +297,7 @@ async def submit_suggestion_feedback(
                 )
 
         result = await suggestion_service.record_suggestion_feedback(
-            user_id=user.id,
+            user_id=user_id,
             feedback_data=feedback_data
         )
 
@@ -318,8 +317,8 @@ async def submit_suggestion_feedback(
 async def get_suggestion_history(
     limit: int = Query(default=50, ge=1, le=100),
     suggestion_type: Optional[str] = Query(default=None),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get history of suggestions provided to the user
@@ -328,7 +327,7 @@ async def get_suggestion_history(
         suggestion_service = SuggestionService(db)
 
         history = await suggestion_service.get_suggestion_history(
-            user_id=user.id,
+            user_id=user_id,
             limit=limit,
             suggestion_type=suggestion_type
         )
@@ -346,8 +345,8 @@ async def get_suggestion_history(
 @router.post("/batch-generate", response_model=Dict[str, Any])
 async def batch_generate_suggestions(
     generation_config: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Generate multiple types of suggestions in batch for dashboard
@@ -356,7 +355,7 @@ async def batch_generate_suggestions(
         suggestion_service = SuggestionService(db)
 
         batch_suggestions = await suggestion_service.batch_generate_suggestions(
-            user_id=user.id,
+            user_id=user_id,
             config=generation_config
         )
 
