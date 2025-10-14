@@ -112,7 +112,9 @@ class NaturalLanguageProcessor:
 
 Today's date is {today_date}.
 
-Extract the following information:
+CRITICAL: Return ONLY valid JSON. Do not include any explanatory text, comments, or formatting. Just pure JSON.
+
+Extract the following information for each transaction:
 - date: Convert relative dates (yesterday, today, this month, last month, Monday, etc.) to YYYY-MM-DD format. For "this month", use today's date. If no date mentioned, set to null.
 - amount: Extract monetary amount with currency symbol or description
 - description: Clean, descriptive transaction description
@@ -123,14 +125,20 @@ Extract the following information:
 - location: Physical location if mentioned
 - confidence: Your confidence in the extraction (0.0 to 1.0)
 
-Return ONLY a valid JSON object with these fields. If information is missing or unclear, set the field to null.
+For multiple transactions, return JSON array. For single transaction, return single JSON object.
+
+Rules:
+1. NEVER include explanatory text
+2. NEVER add "Here's the extracted..." or similar phrases
+3. Return ONLY the JSON object or array
+4. If unclear about dates, assume current year but don't explain
 
 Examples:
 Input: "I spent $25 at Starbucks yesterday using my credit card"
-Output: {{"date": "2024-01-14", "amount": "$25", "description": "Coffee purchase at Starbucks", "merchant": "Starbucks", "category": "food_dining", "payment_method": "credit_card", "offer_discount": null, "location": null, "confidence": 0.9}}
+Output: {{"date": "2025-10-13", "amount": "$25", "description": "Coffee purchase at Starbucks", "merchant": "Starbucks", "category": "food_dining", "payment_method": "credit_card", "offer_discount": null, "location": null, "confidence": 0.9}}
 
-Input: "Grocery shopping $120 at Walmart this month"
-Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shopping", "merchant": "Walmart", "category": "groceries", "payment_method": null, "offer_discount": null, "location": null, "confidence": 0.8}}
+Input: "Paid $200 electricity bill on 15th September, bought gas for $60 yesterday"
+Output: [{{"date": "2025-09-15", "amount": "$200", "description": "Electricity bill payment", "merchant": null, "category": "utilities", "payment_method": null, "offer_discount": null, "location": null, "confidence": 0.9}}, {{"date": "2025-10-13", "amount": "$60", "description": "Gas purchase", "merchant": null, "category": "transportation", "payment_method": null, "offer_discount": null, "location": null, "confidence": 0.8}}]
 """),
             ("human", "Extract transaction information from: {input_text}")
         ])
@@ -162,6 +170,16 @@ Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shoppi
 
             logger.info(f"LLM extraction successful: {result}")
 
+            # Handle both single transaction (dict) and multiple transactions (list)
+            if isinstance(result, list):
+                # Multiple transactions detected - for this method, return the first one
+                # The caller should handle multiple transactions separately
+                if len(result) > 0:
+                    result = result[0]  # Take the first transaction
+                    logger.info(f"LLM returned {len(result)} transactions, using first one for single extraction")
+                else:
+                    raise ValueError("LLM returned empty list")
+
             # Extract confidence and log it prominently
             llm_confidence = result.get("confidence", 0.8)
             print(f"LLM CONFIDENCE: {llm_confidence:.2f} | Input: '{text[:60]}{'...' if len(text) > 60 else ''}' | Method: LLM")
@@ -180,8 +198,68 @@ Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shoppi
             )
 
         except Exception as e:
+            logger.warning(f"LLM extraction failed: {e}")
+            raise e  # Re-raise so process_input can handle the fallback
+
+    def extract_multiple_with_llm(self, text: str) -> List[TransactionExtraction]:
+        """Extract multiple transactions using LLM - handles both single and multiple transactions"""
+        if not self.extraction_chain:
+            logger.info("LLM not available, falling back to regex extraction")
+            return [self.extract_with_regex(text)]
+
+        try:
+            logger.info(f"Processing multiple transactions with LLM: {text[:50]}...")
+
+            # Get today's date for relative date processing
+            today_date = datetime.now().strftime("%Y-%m-%d")
+
+            # Invoke the extraction chain
+            result = self.extraction_chain.invoke({
+                "input_text": text,
+                "today_date": today_date
+            })
+
+            logger.info(f"LLM extraction successful: {result}")
+
+            # Handle both single transaction (dict) and multiple transactions (list)
+            if isinstance(result, list):
+                transactions = []
+                for i, tx_data in enumerate(result):
+                    llm_confidence = tx_data.get("confidence", 0.8)
+                    print(f"LLM CONFIDENCE: {llm_confidence:.2f} | Transaction {i+1}: '{tx_data.get('description', 'N/A')[:40]}...' | Method: LLM")
+
+                    transactions.append(TransactionExtraction(
+                        date=tx_data.get("date"),
+                        amount=tx_data.get("amount"),
+                        description=tx_data.get("description"),
+                        merchant=tx_data.get("merchant"),
+                        category=tx_data.get("category"),
+                        payment_method=tx_data.get("payment_method"),
+                        offer_discount=tx_data.get("offer_discount"),
+                        location=tx_data.get("location"),
+                        confidence=llm_confidence
+                    ))
+                return transactions
+            else:
+                # Single transaction
+                llm_confidence = result.get("confidence", 0.8)
+                print(f"LLM CONFIDENCE: {llm_confidence:.2f} | Input: '{text[:60]}{'...' if len(text) > 60 else ''}' | Method: LLM")
+
+                return [TransactionExtraction(
+                    date=result.get("date"),
+                    amount=result.get("amount"),
+                    description=result.get("description"),
+                    merchant=result.get("merchant"),
+                    category=result.get("category"),
+                    payment_method=result.get("payment_method"),
+                    offer_discount=result.get("offer_discount"),
+                    location=result.get("location"),
+                    confidence=llm_confidence
+                )]
+
+        except Exception as e:
             logger.warning(f"LLM extraction failed: {e}, falling back to regex")
-            return self.extract_with_regex(text)
+            return [self.extract_with_regex(text)]
 
     def extract_with_regex(self, text: str) -> TransactionExtraction:
         """Fallback extraction using regex patterns"""
@@ -317,11 +395,21 @@ Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shoppi
         try:
             logger.info(f"Starting NL processing for: {text[:50]}...")
 
+            # Initialize tracking variables
+            used_llm = False
+
             # Try LLM first if available, fallback to regex
             if self.extraction_chain:
-                extraction = self.extract_with_llm(text)
+                try:
+                    extraction = self.extract_with_llm(text)
+                    used_llm = True
+                except Exception as e:
+                    logger.warning(f"LLM processing failed: {e}, falling back to regex")
+                    extraction = self.extract_with_regex(text)
+                    used_llm = False
             else:
                 extraction = self.extract_with_regex(text)
+                used_llm = False
 
             # Convert to dictionary format
             result = {
@@ -335,7 +423,7 @@ Output: {{"date": "2024-01-15", "amount": "$120", "description": "Grocery shoppi
                 'location': extraction.location,
                 'confidence': extraction.confidence,
                 'raw_input': text,
-                'extraction_method': 'llm' if self.extraction_chain else 'regex'
+                'extraction_method': 'llm' if used_llm else 'regex'
             }
 
             logger.info(f"NL processing completed with confidence: {extraction.confidence}")
