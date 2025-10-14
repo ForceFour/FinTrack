@@ -3,6 +3,7 @@ const API_BASE_URL =
 const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || "v1";
 
 import { ConversationContext } from "./types";
+import { supabase } from "./supabase";
 
 export interface ApiResponse<T = unknown> {
   status: string;
@@ -37,8 +38,6 @@ export interface AuthResponse {
   token_type: string;
   user: User;
 }
-
-
 
 export interface ConversationContextRequest {
   previous_transactions?: Transaction[];
@@ -219,7 +218,9 @@ class APIClient {
 
       if (!response.ok) {
         const errorData = await response.text();
-        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorData}`);
+        throw new Error(
+          `Upload failed: ${response.status} ${response.statusText} - ${errorData}`
+        );
       }
 
       const data = await response.json();
@@ -321,11 +322,21 @@ class APIClient {
   // Conversational Transaction Entry
   async processNaturalLanguageTransaction(
     userInput: string,
-    conversationContext?: ConversationContext
+    conversationContext?: ConversationContext,
+    userId?: string
   ) {
+    // If userId not provided, try to get from Supabase session
+    if (!userId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+
     return this.request("/transactions/natural-language", {
       method: "POST",
       body: JSON.stringify({
+        user_id: userId,
         user_input: userInput,
         conversation_context: conversationContext,
       }),

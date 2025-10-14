@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from .transactions import router as transactions_router
 from .analytics import router as analytics_router
 from .suggestions import router as suggestions_router
-from .auth import router as auth_router
+# from .auth import router as auth_router  # ❌ DISABLED - Using Supabase Auth in Frontend
 from .agents import router as agents_router
 from .workflow import router as workflow_router
 
@@ -14,7 +14,7 @@ from .workflow import router as workflow_router
 api_router = APIRouter()
 
 # Include all route modules
-api_router.include_router(auth_router)
+# api_router.include_router(auth_router)  # ❌ DISABLED - Auth handled by Supabase in Frontend
 api_router.include_router(transactions_router)
 api_router.include_router(analytics_router)
 api_router.include_router(suggestions_router)
@@ -33,7 +33,7 @@ async def health_check():
         "version": "2.0.0",
         "components": {
             "authentication": "operational",
-            "transactions": "operational", 
+            "transactions": "operational",
             "analytics": "operational",
             "suggestions": "operational",
             "agents": "operational",
@@ -54,7 +54,7 @@ async def api_info():
         "endpoints": {
             "authentication": "/api/auth/*",
             "transactions": "/api/transactions/*",
-            "analytics": "/api/analytics/*", 
+            "analytics": "/api/analytics/*",
             "suggestions": "/api/suggestions/*",
             "agents": "/api/agents/*",
             "workflows": "/api/workflow/*"

@@ -8,11 +8,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from ..models.user import UserCreate, UserUpdate, UserResponse
+from ..models.user import UserCreate, UserUpdate, UserResponse, User
 from ..models.auth import Token, TokenData, LoginRequest
 from ..services.auth_service import AuthService, get_current_user
-from ..core.database_config import get_db_session
-from ..db.models.user import UserORM
+from ..core.database_config import get_db_client
 
 # Configuration constants
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -24,7 +23,7 @@ security = HTTPBearer()
 @router.post("/register", response_model=UserResponse)
 async def register_user(
     user_data: UserCreate,
-    db = Depends(get_db_session)
+    db = Depends(get_db_client)
 ):
     """
     Register a new user account
@@ -77,7 +76,7 @@ async def register_user(
 @router.post("/login", response_model=Token)
 async def login_user(
     login_data: LoginRequest,
-    db = Depends(get_db_session)
+    db = Depends(get_db_client)
 ):
     """
     Authenticate user and return access token
@@ -154,7 +153,7 @@ async def login_user(
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     refresh_token_data: Dict[str, str],
-    db = Depends(get_db_session)
+    db = Depends(get_db_client)
 ):
     """
     Refresh access token using refresh token
@@ -209,8 +208,8 @@ async def refresh_token(
 @router.post("/logout")
 async def logout_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Logout user and invalidate token
@@ -234,7 +233,7 @@ async def logout_user(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
-    user: UserORM = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Get current user profile
@@ -254,8 +253,8 @@ async def get_current_user_profile(
 @router.put("/me", response_model=UserResponse)
 async def update_user_profile(
     user_update: UserUpdate,
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Update current user profile
@@ -299,8 +298,8 @@ async def update_user_profile(
 @router.post("/change-password")
 async def change_password(
     password_data: Dict[str, str],
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Change user password
@@ -343,7 +342,7 @@ async def change_password(
 @router.post("/forgot-password")
 async def forgot_password(
     email_data: Dict[str, str],
-    db = Depends(get_db_session)
+    db = Depends(get_db_client)
 ):
     """
     Send password reset email
@@ -389,7 +388,7 @@ async def forgot_password(
 @router.post("/reset-password")
 async def reset_password(
     reset_data: Dict[str, str],
-    db = Depends(get_db_session)
+    db = Depends(get_db_client)
 ):
     """
     Reset password using reset token
@@ -441,8 +440,8 @@ async def reset_password(
 @router.delete("/account")
 async def delete_account(
     confirmation_data: Dict[str, str],
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Delete user account (requires password confirmation)
@@ -482,8 +481,8 @@ async def delete_account(
 
 @router.get("/sessions")
 async def get_active_sessions(
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Get active user sessions
@@ -507,8 +506,8 @@ async def get_active_sessions(
 @router.post("/sessions/{session_id}/revoke")
 async def revoke_session(
     session_id: str,
-    user: UserORM = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user: User = Depends(get_current_user),
+    db = Depends(get_db_client)
 ):
     """
     Revoke a specific user session

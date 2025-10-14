@@ -3,7 +3,7 @@ Backend API Routes - Transaction Management
 Handles all transaction-related API endpoints
 """
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query, Header
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
@@ -15,21 +15,14 @@ import logging
 from ..models.transaction import Transaction, TransactionCreate, TransactionUpdate, TransactionResponse
 from ..models.user import User
 from ..services.transaction_service import TransactionService
-# from ..services.auth_service import get_current_user  # Temporarily disabled during migration
 from ..core.database_config import get_db_client
 
-# Temporary dummy user for testing during migration
-async def get_current_user():
-    """Temporary dummy user function during migration"""
-    from datetime import datetime
-    import uuid
-    return User(
-        id="e6afed5f-6e3b-4349-8526-0fc2d9658915",  # Use existing profile ID
-        email="duwaragie22@gmail.com",
-        username="testuser",
-        hashed_password="dummy_hash",
-        created_at=datetime.now()
-    )
+# No authentication - using Supabase in frontend
+async def get_current_user_id(user_id: str = None) -> str:
+    """Get user ID from request - pass from frontend"""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    return user_id
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +32,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 async def upload_transactions(
     file: UploadFile = File(...),
     file_type: str = "csv",
-    # user: User = Depends(get_current_user),  # Temporarily disabled for testing
+    user_id: str = Query(...),
     client = Depends(get_db_client)
 ):
     """
@@ -85,7 +78,7 @@ async def upload_transactions(
 
         # Process transactions
         result = await transaction_service.process_uploaded_transactions(
-            df, "e6afed5f-6e3b-4349-8526-0fc2d9658915"  # Use dummy user ID for testing
+            df, user_id
         )
 
         return {
@@ -114,7 +107,7 @@ async def get_transactions(
     min_amount: Optional[float] = Query(default=None),
     max_amount: Optional[float] = Query(default=None),
     search: Optional[str] = Query(default=None),
-    user: User = Depends(get_current_user),
+    user_id: str = Query(...),
     client = Depends(get_db_client)
 ):
     """
@@ -125,7 +118,7 @@ async def get_transactions(
 
         # Build filters
         filters = {
-            "user_id": user.id,
+            "user_id": user_id,
             "limit": limit,
             "offset": offset
         }
@@ -159,7 +152,7 @@ async def get_transactions(
 @router.post("/", response_model=TransactionResponse)
 async def create_transaction(
     transaction: TransactionCreate,
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -170,7 +163,7 @@ async def create_transaction(
 
         # Add user ID to transaction
         transaction_data = transaction.dict()
-        transaction_data["user_id"] = user.id
+        transaction_data["user_id"] = user_id
 
         created_transaction = await transaction_service.create_transaction(transaction_data)
 
@@ -182,7 +175,7 @@ async def create_transaction(
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
     transaction_id: str,
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -191,7 +184,7 @@ async def get_transaction(
     try:
         transaction_service = TransactionService(client)
 
-        transaction = await transaction_service.get_transaction(transaction_id, user.id)
+        transaction = await transaction_service.get_transaction(transaction_id, user_id)
 
         if not transaction:
             raise HTTPException(status_code=404, detail="Transaction not found")
@@ -207,7 +200,7 @@ async def get_transaction(
 async def update_transaction(
     transaction_id: str,
     transaction_update: TransactionUpdate,
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -217,7 +210,7 @@ async def update_transaction(
         transaction_service = TransactionService(client)
 
         # Verify transaction exists and belongs to user
-        existing_transaction = await transaction_service.get_transaction(transaction_id, user.id)
+        existing_transaction = await transaction_service.get_transaction(transaction_id, user_id)
         if not existing_transaction:
             raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -235,7 +228,7 @@ async def update_transaction(
 @router.delete("/{transaction_id}")
 async def delete_transaction(
     transaction_id: str,
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -245,7 +238,7 @@ async def delete_transaction(
         transaction_service = TransactionService(client)
 
         # Verify transaction exists and belongs to user
-        existing_transaction = await transaction_service.get_transaction(transaction_id, user.id)
+        existing_transaction = await transaction_service.get_transaction(transaction_id, user_id)
         if not existing_transaction:
             raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -264,7 +257,7 @@ async def delete_transaction(
 @router.post("/batch", response_model=Dict[str, Any])
 async def batch_create_transactions(
     transactions: List[TransactionCreate],
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -277,7 +270,7 @@ async def batch_create_transactions(
         transactions_data = []
         for transaction in transactions:
             transaction_data = transaction.dict()
-            transaction_data["user_id"] = user.id
+            transaction_data["user_id"] = user_id
             transactions_data.append(transaction_data)
 
         result = await transaction_service.batch_create_transactions(transactions_data)
@@ -296,7 +289,7 @@ async def batch_create_transactions(
 @router.put("/batch", response_model=Dict[str, Any])
 async def batch_update_transactions(
     updates: List[Dict[str, Any]],  # List of {id: str, data: dict}
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -308,7 +301,7 @@ async def batch_update_transactions(
         # Validate that all transactions belong to user
         transaction_ids = [update["id"] for update in updates]
         owned_transactions = await transaction_service.verify_transaction_ownership(
-            transaction_ids, user.id
+            transaction_ids, user_id
         )
 
         if len(owned_transactions) != len(transaction_ids):
@@ -335,7 +328,7 @@ async def batch_update_transactions(
 @router.delete("/batch", response_model=Dict[str, Any])
 async def batch_delete_transactions(
     transaction_ids: List[str],
-    user: User = Depends(get_current_user),
+    user_id: str,
     client = Depends(get_db_client)
 ):
     """
@@ -346,7 +339,7 @@ async def batch_delete_transactions(
 
         # Validate that all transactions belong to user
         owned_transactions = await transaction_service.verify_transaction_ownership(
-            transaction_ids, user.id
+            transaction_ids, user_id
         )
 
         if len(owned_transactions) != len(transaction_ids):
@@ -376,7 +369,7 @@ async def export_transactions(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     category: Optional[str] = Query(default=None),
-    user: User = Depends(get_current_user),
+    user_id: str = Query(...),
     client = Depends(get_db_client)
 ):
     """
@@ -393,7 +386,7 @@ async def export_transactions(
 
         # Get all matching transactions (no limit for export)
         filters = {
-            "user_id": user.id,
+            "user_id": user_id,
             "limit": 10000,  # Large number for export
             "offset": 0
         }
@@ -448,7 +441,7 @@ async def export_transactions(
 async def get_transaction_summary(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
-    user: User = Depends(get_current_user),
+    user_id: str = Query(...),
     client = Depends(get_db_client)
 ):
     """
@@ -458,7 +451,7 @@ async def get_transaction_summary(
         transaction_service = TransactionService(client)
 
         summary = await transaction_service.get_transaction_summary(
-            user.id, start_date, end_date
+            user_id, start_date, end_date
         )
 
         return summary
@@ -469,25 +462,44 @@ async def get_transaction_summary(
 @router.post("/natural-language", response_model=Dict[str, Any])
 async def process_natural_language_transaction(
     request: Dict[str, Any],
-    user: User = Depends(get_current_user),
     client = Depends(get_db_client)
 ):
     """
     Process natural language transaction input through conversational interface
+
+    Required fields in request body:
+    - user_id: User ID from Supabase Auth (UUID)
+    - user_input: Natural language transaction description
+    - conversation_context: Optional conversation context
     """
     try:
+        # Log the incoming request for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Natural language request received: {request}")
+
         user_input = request.get("user_input", "").strip()
         conversation_context = request.get("conversation_context", {})
+        user_id = request.get("user_id", "").strip()
+
+        # Validate required fields
+        if not user_id:
+            logger.error(f"Missing user_id. Request keys: {list(request.keys())}")
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required in request body. Frontend must send user.id from Supabase session."
+            )
 
         if not user_input:
-            raise HTTPException(status_code=400, detail="user_input is required")
+            logger.error(f"Missing user_input. Request keys: {list(request.keys())}")
+            raise HTTPException(status_code=400, detail="user_input is required in request body")
 
         # Initialize transaction service
         transaction_service = TransactionService(client)
 
         # Parse the natural language input
         parsed_transactions = await _parse_natural_language_transaction(
-            user_input, conversation_context, user.id, transaction_service
+            user_input, conversation_context, user_id, transaction_service
         )
 
         if not parsed_transactions:
@@ -552,14 +564,14 @@ async def process_natural_language_transaction(
                     transaction_obj = TransactionData(tx_data)
 
                     # Check for duplicates before saving
-                    is_duplicate = await transaction_service._is_duplicate_transaction(transaction_obj, user.id)
+                    is_duplicate = await transaction_service._is_duplicate_transaction(transaction_obj, user_id)
                     if is_duplicate:
                         print(f"Skipping duplicate transaction from chat: {tx_data['description']}")
                         skipped_duplicates.append(tx_data)
                         continue  # Skip duplicates
 
                     db_data = {
-                        "user_id": user.id,
+                        "user_id": user_id,
                         "amount": tx_data["amount"],
                         "description": tx_data["description"],
                         "date": (datetime.fromisoformat(tx_data["date"]) if isinstance(tx_data["date"], str) else tx_data["date"]).isoformat(),
@@ -596,7 +608,7 @@ async def process_natural_language_transaction(
                             # Run full pipeline to populate prediction_results
                             await workflow.execute_workflow(
                                 mode=WorkflowMode.FULL_PIPELINE,
-                                user_id=user.id,
+                                user_id=user_id,
                                 raw_transactions=raw_transactions,
                                 user_input=user_input
                             )
@@ -608,30 +620,30 @@ async def process_natural_language_transaction(
 
                 # Generate response for multiple transactions
                 if created_transactions:
-                    response_lines = ["✅ Transactions recorded successfully!\n"]
+                    response_lines = ["Transactions recorded successfully!\n"]
                     for i, tx in enumerate(created_transactions, 1):
-                        response_lines.append(f"📝 Transaction {i}: {tx['description']}")
+                        response_lines.append(f"Transaction {i}: {tx['description']}")
                         # Show amount with sign and type indicator
                         amount_str = f"${abs(tx['amount']):.2f}"
                         if tx['amount'] < 0:
-                            response_lines.append(f"💸 Expense: -{amount_str}")
+                            response_lines.append(f"Expense: -{amount_str}")
                         else:
-                            response_lines.append(f"💰 Income: +{amount_str}")
-                        response_lines.append(f"📅 {tx['date']}")
+                            response_lines.append(f"Income: +{amount_str}")
+                        response_lines.append(f"{tx['date']}")
                         if tx.get('merchant'):
-                            response_lines.append(f"🏪 {tx['merchant']}")
+                            response_lines.append(f"{tx['merchant']}")
                         if tx.get('category'):
-                            response_lines.append(f"📂 {tx['category']}")
+                            response_lines.append(f"{tx['category']}")
                         response_lines.append("")  # Empty line between transactions
 
                     if skipped_duplicates:
-                        response_lines.append(f"⚠️ {len(skipped_duplicates)} duplicate transaction(s) were skipped (already exist in your records)")
+                        response_lines.append(f"{len(skipped_duplicates)} duplicate transaction(s) were skipped (already exist in your records)")
 
                     response_text = "\n".join(response_lines)
                     response_text += "\nYou can view all your transactions in the Dashboard."
                 else:
                     # All transactions were duplicates
-                    response_text = f"⚠️ All {len(skipped_duplicates)} transaction(s) were skipped because they already exist in your records.\n\nYou can view all your transactions in the Dashboard."
+                    response_text = f"All {len(skipped_duplicates)} transaction(s) were skipped because they already exist in your records.\n\nYou can view all your transactions in the Dashboard."
 
                 return {
                     "status": "completed",

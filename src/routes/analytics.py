@@ -14,8 +14,7 @@ from ..models.analytics import (
     AnalyticsPeriod, AnalyticsMetric
 )
 from ..services.analytics_service import AnalyticsService
-from ..services.auth_service import get_current_user
-from ..core.database import get_db_session
+from ..core.database_config import get_db_client
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -38,8 +37,8 @@ async def get_spending_analytics(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     categories: Optional[List[str]] = Query(default=None),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+    user_id: str = Query(...),
+    db = Depends(get_db_client)
 ):
     """
     Get comprehensive spending analytics
@@ -62,7 +61,7 @@ async def get_spending_analytics(
             end_date = date.today()
 
         analytics = await analytics_service.get_spending_analytics(
-            user_id=user.id,
+            user_id=user_id,
             period=period.value,
             start_date=start_date,
             end_date=end_date,
@@ -79,8 +78,8 @@ async def get_category_breakdown(
     period: PeriodType,
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get spending breakdown by categories
@@ -103,7 +102,7 @@ async def get_category_breakdown(
             end_date = date.today()
 
         breakdown = await analytics_service.get_category_breakdown(
-            user_id=user.id,
+            user_id=user_id,
             period=period.value,
             start_date=start_date,
             end_date=end_date
@@ -119,8 +118,8 @@ async def get_trends(
     metric: MetricType = Query(default=MetricType.spending),
     period: PeriodType = Query(default=PeriodType.daily),
     lookback_days: int = Query(default=30, ge=7, le=365),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get trend analysis for various metrics
@@ -132,7 +131,7 @@ async def get_trends(
         start_date = end_date - timedelta(days=lookback_days)
 
         trends = await analytics_service.get_trend_analysis(
-            user_id=user.id,
+            user_id=user_id,
             metric=metric.value,
             period=period.value,
             start_date=start_date,
@@ -146,8 +145,8 @@ async def get_trends(
 
 @router.get("/summary/dashboard", response_model=Dict[str, Any])
 async def get_dashboard_summary(
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+    db = Depends(get_db_client)
 ):
     """
     Get comprehensive dashboard summary with key metrics
@@ -169,7 +168,7 @@ async def get_dashboard_summary(
 
         # Get all dashboard data
         dashboard_data = await analytics_service.get_dashboard_summary(
-            user_id=user.id,
+            user_id=user_id,
             current_period_start=current_month_start,
             current_period_end=current_month_end,
             previous_period_start=prev_month_start,
@@ -185,8 +184,8 @@ async def get_dashboard_summary(
 async def get_top_merchants(
     limit: int = Query(default=10, ge=1, le=50),
     period_days: int = Query(default=30, ge=1, le=365),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get top merchants by spending
@@ -198,7 +197,7 @@ async def get_top_merchants(
         start_date = end_date - timedelta(days=period_days)
 
         top_merchants = await analytics_service.get_top_merchants(
-            user_id=user.id,
+            user_id=user_id,
             start_date=start_date,
             end_date=end_date,
             limit=limit
@@ -216,8 +215,8 @@ async def get_top_merchants(
 @router.get("/spending/forecast", response_model=Dict[str, Any])
 async def get_spending_forecast(
     forecast_days: int = Query(default=30, ge=7, le=90),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get spending forecast based on historical data
@@ -226,7 +225,7 @@ async def get_spending_forecast(
         analytics_service = AnalyticsService(db)
 
         forecast = await analytics_service.get_spending_forecast(
-            user_id=user.id,
+            user_id=user_id,
             forecast_days=forecast_days
         )
 
@@ -238,8 +237,8 @@ async def get_spending_forecast(
 @router.get("/budget/performance", response_model=Dict[str, Any])
 async def get_budget_performance(
     period: PeriodType = Query(default=PeriodType.monthly),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get budget performance analysis
@@ -260,7 +259,7 @@ async def get_budget_performance(
         end_date = date.today()
 
         budget_performance = await analytics_service.get_budget_performance(
-            user_id=user.id,
+            user_id=user_id,
             period=period.value,
             start_date=start_date,
             end_date=end_date
@@ -275,8 +274,8 @@ async def get_budget_performance(
 async def get_cash_flow_analysis(
     period: PeriodType = Query(default=PeriodType.monthly),
     lookback_periods: int = Query(default=12, ge=3, le=24),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Get cash flow analysis (income vs expenses over time)
@@ -285,7 +284,7 @@ async def get_cash_flow_analysis(
         analytics_service = AnalyticsService(db)
 
         cash_flow = await analytics_service.get_cash_flow_analysis(
-            user_id=user.id,
+            user_id=user_id,
             period=period.value,
             lookback_periods=lookback_periods
         )
@@ -297,8 +296,8 @@ async def get_cash_flow_analysis(
 
 @router.get("/patterns/spending", response_model=Dict[str, Any])
 async def get_spending_patterns(
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+    db = Depends(get_db_client)
 ):
     """
     Get spending patterns analysis (day of week, time of day, etc.)
@@ -306,7 +305,7 @@ async def get_spending_patterns(
     try:
         analytics_service = AnalyticsService(db)
 
-        patterns = await analytics_service.get_spending_patterns(user_id=user.id)
+        patterns = await analytics_service.get_spending_patterns(user_id=user_id)
 
         return patterns
 
@@ -317,8 +316,8 @@ async def get_spending_patterns(
 async def get_category_comparison(
     compare_periods: int = Query(default=2, ge=2, le=12),
     period_type: PeriodType = Query(default=PeriodType.monthly),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Compare spending across categories over multiple periods
@@ -327,7 +326,7 @@ async def get_category_comparison(
         analytics_service = AnalyticsService(db)
 
         comparison = await analytics_service.get_category_comparison(
-            user_id=user.id,
+            user_id=user_id,
             compare_periods=compare_periods,
             period_type=period_type.value
         )
@@ -341,8 +340,8 @@ async def get_category_comparison(
 async def get_spending_anomalies(
     lookback_days: int = Query(default=30, ge=7, le=90),
     sensitivity: float = Query(default=2.0, ge=1.0, le=5.0),
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+        db = Depends(get_db_client)
 ):
     """
     Detect spending anomalies using statistical analysis
@@ -354,7 +353,7 @@ async def get_spending_anomalies(
         start_date = end_date - timedelta(days=lookback_days)
 
         anomalies = await analytics_service.detect_spending_anomalies(
-            user_id=user.id,
+            user_id=user_id,
             start_date=start_date,
             end_date=end_date,
             sensitivity=sensitivity
@@ -367,8 +366,8 @@ async def get_spending_anomalies(
 
 @router.get("/goals/progress", response_model=Dict[str, Any])
 async def get_goal_progress(
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+    db = Depends(get_db_client)
 ):
     """
     Get progress on financial goals
@@ -376,7 +375,7 @@ async def get_goal_progress(
     try:
         analytics_service = AnalyticsService(db)
 
-        goal_progress = await analytics_service.get_goal_progress(user_id=user.id)
+        goal_progress = await analytics_service.get_goal_progress(user_id=user_id)
 
         return goal_progress
 
@@ -386,8 +385,8 @@ async def get_goal_progress(
 @router.post("/report/custom", response_model=Dict[str, Any])
 async def generate_custom_report(
     report_config: Dict[str, Any],
-    user: User = Depends(get_current_user),
-    db = Depends(get_db_session)
+        user_id: str = Query(...),
+    db = Depends(get_db_client)
 ):
     """
     Generate custom analytics report based on user configuration
@@ -396,7 +395,7 @@ async def generate_custom_report(
         analytics_service = AnalyticsService(db)
 
         custom_report = await analytics_service.generate_custom_report(
-            user_id=user.id,
+            user_id=user_id,
             config=report_config
         )
 

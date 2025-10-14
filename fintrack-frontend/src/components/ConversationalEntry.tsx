@@ -3,24 +3,37 @@
 import { useState, useRef, useEffect } from "react";
 import { apiClient } from "@/lib/api-client";
 import { ConversationMessage, ConversationContext } from "@/lib/types";
-import { SendIcon, MessageCircleIcon, BotIcon, UserIcon, RefreshCwIcon, CheckCircle } from "lucide-react";
+import {
+  SendIcon,
+  MessageCircleIcon,
+  BotIcon,
+  UserIcon,
+  RefreshCwIcon,
+  CheckCircle,
+} from "lucide-react";
 import { useApp } from "@/app/providers";
 
 interface ConversationalEntryProps {
   onTransactionAdded?: () => void;
 }
 
-export default function ConversationalEntry({ onTransactionAdded }: ConversationalEntryProps) {
+export default function ConversationalEntry({
+  onTransactionAdded,
+}: ConversationalEntryProps) {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [conversationContext, setConversationContext] = useState<ConversationContext>({});
+  const [conversationContext, setConversationContext] =
+    useState<ConversationContext>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { refreshTransactions } = useApp();
+  const { refreshTransactions, auth } = useApp();
 
   // Check if we have a pending transaction that needs more info
-  const contextData = conversationContext as { pending_transaction?: unknown; missing_fields?: unknown };
+  const contextData = conversationContext as {
+    pending_transaction?: unknown;
+    missing_fields?: unknown;
+  };
   const hasPendingTransaction = !!contextData.pending_transaction;
   const missingFields = (contextData.missing_fields as string[]) || [];
 
@@ -41,14 +54,15 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
       timestamp: new Date().toISOString(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
 
     try {
       const response = await apiClient.processNaturalLanguageTransaction(
         userMessage.content,
-        conversationContext
+        conversationContext,
+        auth.user?.id
       );
 
       if (response.status === "success" && response.data) {
@@ -69,7 +83,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
           timestamp: new Date().toISOString(),
         };
 
-        setMessages(prev => [...prev, assistantMessage]);
+        setMessages((prev) => [...prev, assistantMessage]);
 
         // Update conversation context if provided
         if (data.conversation_context) {
@@ -85,38 +99,42 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
           // Add a follow-up message with next steps
           const nextStepsMessage: ConversationMessage = {
             type: "assistant",
-            content: `🎉 Transaction saved! ${data.next_action || "You can view it in your Dashboard or continue adding more transactions."}`,
+            content: `🎉 Transaction saved! ${
+              data.next_action ||
+              "You can view it in your Dashboard or continue adding more transactions."
+            }`,
             timestamp: new Date().toISOString(),
           };
-          setMessages(prev => [...prev, nextStepsMessage]);
+          setMessages((prev) => [...prev, nextStepsMessage]);
 
           // Clear context for new transaction after a delay
           setTimeout(() => {
             setConversationContext({});
           }, 3000);
-
         } else if (data.status === "incomplete" || data.needs_more_info) {
           // More information needed, keep context for continuation
           // Context is already updated above
         } else if (data.status === "error") {
           // Error occurred, but we still show the response message
         }
-
       } else {
         const errorMessage: ConversationMessage = {
           type: "assistant",
-          content: response.error || "Sorry, I couldn't process your request. Please try again.",
+          content:
+            response.error ||
+            "Sorry, I couldn't process your request. Please try again.",
           timestamp: new Date().toISOString(),
         };
-        setMessages(prev => [...prev, errorMessage]);
+        setMessages((prev) => [...prev, errorMessage]);
       }
     } catch {
       const errorMessage: ConversationMessage = {
         type: "assistant",
-        content: "Sorry, I encountered an error. Please try again or use the file upload option.",
+        content:
+          "Sorry, I encountered an error. Please try again or use the file upload option.",
         timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -138,7 +156,7 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
     "I spent $25 at Starbucks yesterday",
     "Paid $120 for groceries at Walmart today using my credit card",
     "Gas station charge of $45.50 on Monday",
-    "Coffee shop $4.75 this morning"
+    "Coffee shop $4.75 this morning",
   ];
 
   return (
@@ -150,16 +168,20 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
             <MessageCircleIcon className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-white">Conversational Transaction Entry</h3>
+            <h3 className="text-xl font-bold text-white">
+              Conversational Transaction Entry
+            </h3>
             <p className="text-sm text-blue-100 mt-1">
-              Enter transaction details naturally - I&apos;ll understand and process them for you!
+              Enter transaction details naturally - I&apos;ll understand and
+              process them for you!
             </p>
           </div>
         </div>
         {hasPendingTransaction && missingFields.length > 0 && (
           <div className="mt-4 p-3 bg-yellow-400/20 border border-yellow-300/30 rounded-lg backdrop-blur-sm">
             <p className="text-sm text-yellow-100">
-              <span className="font-semibold">Missing information:</span> {missingFields.join(", ")}
+              <span className="font-semibold">Missing information:</span>{" "}
+              {missingFields.join(", ")}
             </p>
           </div>
         )}
@@ -180,7 +202,9 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
             <div className="p-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
               <BotIcon className="h-10 w-10 text-blue-600" />
             </div>
-            <h4 className="text-xl font-bold text-gray-900 mb-3">Start a conversation!</h4>
+            <h4 className="text-xl font-bold text-gray-900 mb-3">
+              Start a conversation!
+            </h4>
             <p className="text-gray-600 mb-6">Try saying something like:</p>
             <div className="space-y-3 max-w-md mx-auto">
               {exampleMessages.map((example, index) => (
@@ -199,7 +223,9 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
         {messages.map((message, index) => (
           <div
             key={index}
-            className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
+            className={`flex ${
+              message.type === "user" ? "justify-end" : "justify-start"
+            }`}
           >
             <div
               className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm ${
@@ -214,13 +240,17 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
                 ) : (
                   <BotIcon className="h-4 w-4 text-blue-600" />
                 )}
-                <span className={`text-xs font-medium ${
-                  message.type === "user" ? "text-blue-100" : "text-gray-500"
-                }`}>
+                <span
+                  className={`text-xs font-medium ${
+                    message.type === "user" ? "text-blue-100" : "text-gray-500"
+                  }`}
+                >
                   {message.type === "user" ? "You" : "AI Assistant"}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                {message.content}
+              </p>
             </div>
           </div>
         ))}
@@ -234,10 +264,18 @@ export default function ConversationalEntry({ onTransactionAdded }: Conversation
                 </div>
                 <div className="flex space-x-1">
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                  <div
+                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.1s" }}
+                  ></div>
+                  <div
+                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  ></div>
                 </div>
-                <span className="text-xs text-gray-500 font-medium">AI is thinking...</span>
+                <span className="text-xs text-gray-500 font-medium">
+                  AI is thinking...
+                </span>
               </div>
             </div>
           </div>

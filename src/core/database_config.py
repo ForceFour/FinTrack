@@ -8,15 +8,12 @@ import logging
 from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from sqlalchemy.orm import declarative_base
 
 # Load environment variables
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# SQLAlchemy Base for backward compatibility (to be removed after full migration)
-Base = declarative_base()
 
 class DatabaseSettings:
     """Database configuration settings for Supabase"""
