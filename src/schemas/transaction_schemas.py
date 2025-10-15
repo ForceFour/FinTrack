@@ -53,11 +53,23 @@ class TransactionCategory(str, Enum):
     SUBSCRIPTIONS = "subscriptions"
     EDUCATION = "education"
     TRAVEL = "travel"
+    # Housing & Insurance
+    HOUSING = "housing"  # Rent, mortgage, property expenses
+    INSURANCE = "insurance"  # All types of insurance
+    # Technology & Communication
+    ELECTRONICS = "electronics"  # Laptops, phones, gadgets
+    TELECOMMUNICATIONS = "telecommunications"  # Mobile, internet bills
+    # Finance & Banking
+    BANKING = "banking"  # ATM fees, bank charges, transfers
+    # Personal Care
+    PERSONAL_CARE = "personal_care"  # Salon, spa, grooming
+    FITNESS = "fitness"  # Gym, sports, wellness
+    PETS = "pets"  # Pet food, vet, pet care
+    CHARITABLE = "charitable"  # Donations, charity
     # Sri Lanka specific categories
     RELIGIOUS_DONATIONS = "religious_donations"  # Temple, Church donations
     GOVERNMENT_SERVICES = "government_services"  # License fees, taxes, etc.
     DOMESTIC_HELP = "domestic_help"  # Maid, driver payments
-    TELECOMMUNICATIONS = "telecommunications"  # Mobile, internet bills
     FUEL = "fuel"  # Petrol, diesel - important category in Sri Lanka
     MEDICAL_INSURANCE = "medical_insurance"
     MISCELLANEOUS = "miscellaneous"

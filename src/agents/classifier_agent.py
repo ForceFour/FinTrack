@@ -136,42 +136,115 @@ class ClassifierAgent:
             (200000, float('inf')): [TransactionCategory.TRAVEL, TransactionCategory.EDUCATION],
         }
 
-        # Enhanced keyword mapping for categories
+        # Enhanced keyword mapping for categories - COMPREHENSIVE VERSION
         self.category_keywords = {
-            TransactionCategory.FOOD_DINING: {
-                'high_weight': ['restaurant', 'cafe', 'hotel', 'kfc', 'mcdonalds', 'pizza'],
-                'medium_weight': ['food', 'dining', 'coffee', 'burger', 'rice', 'curry'],
-                'low_weight': ['eat', 'meal', 'lunch', 'dinner', 'breakfast']
+            # HOUSING - High priority keywords
+            TransactionCategory.HOUSING: {
+                'high_weight': ['rent', 'mortgage', 'landlord', 'housing', 'apartment', 'condo'],
+                'medium_weight': ['lease', 'rental', 'property', 'real estate'],
+                'low_weight': ['dwelling', 'residence']
             },
+            # INSURANCE - High priority keywords
+            TransactionCategory.INSURANCE: {
+                'high_weight': ['insurance', 'premium', 'policy', 'coverage', 'insurer'],
+                'medium_weight': ['car insurance', 'health insurance', 'life insurance', 'auto insurance'],
+                'low_weight': ['insure', 'claim']
+            },
+            # TELECOMMUNICATIONS - High priority keywords
+            TransactionCategory.TELECOMMUNICATIONS: {
+                'high_weight': ['phone bill', 'mobile bill', 'internet bill', 'broadband', 'data plan', 'bill payment'],
+                'medium_weight': ['dialog', 'mobitel', 'airtel', 'hutch', 'telecom', 'cellular', 'sim'],
+                'low_weight': ['recharge', 'top up']
+            },
+            # ELECTRONICS - High priority keywords
+            TransactionCategory.ELECTRONICS: {
+                'high_weight': ['laptop', 'computer', 'tablet', 'electronics', 'gadget', 'macbook', 'ipad'],
+                'medium_weight': ['samsung', 'dell', 'hp', 'lenovo', 'desktop', 'monitor'],
+                'low_weight': ['tech', 'device', 'hardware', 'accessory']
+            },
+            # FOOD & DINING
+            TransactionCategory.FOOD_DINING: {
+                'high_weight': ['restaurant', 'cafe', 'hotel', 'kfc', 'mcdonalds', 'pizza', 'dining', 'lunch', 'dinner', 'breakfast'],
+                'medium_weight': ['food', 'coffee', 'burger', 'rice', 'curry', 'meal'],
+                'low_weight': ['eat']
+            },
+            # GROCERIES
             TransactionCategory.GROCERIES: {
-                'high_weight': ['keells', 'cargills', 'food city', 'laugfs', 'arpico'],
-                'medium_weight': ['super', 'market', 'grocery'],
+                'high_weight': ['keells', 'cargills', 'food city', 'laugfs', 'arpico', 'walmart', 'grocery', 'groceries', 'grocery shopping'],
+                'medium_weight': ['super', 'market', 'supermarket', 'weekly shopping', 'food shopping'],
                 'low_weight': ['supplies', 'essentials']
             },
+            # TRANSPORTATION & FUEL
             TransactionCategory.TRANSPORTATION: {
-                'high_weight': ['uber', 'pickme', 'taxi', 'ceypetco', 'ioc', 'shell'],
-                'medium_weight': ['fuel', 'petrol', 'diesel', 'transport', 'bus'],
-                'low_weight': ['parking', 'toll', 'car']
+                'high_weight': ['uber', 'pickme', 'taxi', 'ceypetco', 'ioc', 'shell', 'gas station', 'fuel'],
+                'medium_weight': ['petrol', 'diesel', 'transport', 'bus', 'train', 'vehicle'],
+                'low_weight': ['parking', 'toll', 'car', 'bike']
             },
+            # UTILITIES
             TransactionCategory.UTILITIES: {
-                'high_weight': ['dialog', 'mobitel', 'airtel', 'ceb', 'nwsdb'],
-                'medium_weight': ['electricity', 'water', 'internet', 'phone', 'bill'],
-                'low_weight': ['utility', 'service']
+                'high_weight': ['ceb', 'electricity', 'water board', 'nwsdb', 'utility', 'utilities'],
+                'medium_weight': ['water', 'electric', 'power', 'bill payment'],
+                'low_weight': ['service charge', 'maintenance fee']
             },
+            # ENTERTAINMENT
             TransactionCategory.ENTERTAINMENT: {
-                'high_weight': ['netflix', 'spotify', 'youtube'],
-                'medium_weight': ['movie', 'cinema', 'game', 'entertainment'],
-                'low_weight': ['subscription', 'streaming']
+                'high_weight': ['netflix', 'spotify', 'youtube', 'subscription', 'streaming'],
+                'medium_weight': ['movie', 'cinema', 'game', 'entertainment', 'concert', 'show'],
+                'low_weight': ['premium', 'membership']
             },
+            # HEALTHCARE
             TransactionCategory.HEALTHCARE: {
-                'high_weight': ['nawaloka', 'asiri', 'hospital', 'doctor'],
-                'medium_weight': ['medical', 'pharmacy', 'health', 'clinic'],
-                'low_weight': ['medicine', 'treatment']
+                'high_weight': ['nawaloka', 'asiri', 'hospital', 'doctor', 'medical', 'clinic'],
+                'medium_weight': ['pharmacy', 'health', 'medicine', 'treatment', 'consultation'],
+                'low_weight': ['drug', 'prescription', 'wellness']
             },
+            # SHOPPING - General retail
             TransactionCategory.SHOPPING: {
-                'high_weight': ['daraz', 'ikman', 'singer', 'abans', 'softlogic'],
-                'medium_weight': ['shop', 'store', 'buy', 'purchase'],
-                'low_weight': ['retail', 'goods']
+                'high_weight': ['daraz', 'ikman', 'singer', 'abans', 'softlogic', 'shopping'],
+                'medium_weight': ['shop', 'store', 'buy', 'purchase', 'retail'],
+                'low_weight': ['goods', 'item']
+            },
+            # EDUCATION
+            TransactionCategory.EDUCATION: {
+                'high_weight': ['school fee', 'tuition', 'university', 'college', 'education'],
+                'medium_weight': ['course', 'class', 'training', 'book', 'textbook'],
+                'low_weight': ['learning', 'study']
+            },
+            # TRAVEL
+            TransactionCategory.TRAVEL: {
+                'high_weight': ['airline', 'flight', 'hotel booking', 'airbnb', 'hotel stay', 'travel'],
+                'medium_weight': ['trip', 'vacation', 'tourism', 'booking', 'reservation'],
+                'low_weight': ['tour', 'visit']
+            },
+            # PERSONAL CARE
+            TransactionCategory.PERSONAL_CARE: {
+                'high_weight': ['salon', 'spa', 'barber', 'haircut', 'beauty'],
+                'medium_weight': ['cosmetics', 'grooming', 'personal care', 'skincare'],
+                'low_weight': ['hygiene', 'toiletries']
+            },
+            # FITNESS
+            TransactionCategory.FITNESS: {
+                'high_weight': ['gym', 'fitness', 'yoga', 'sports club', 'trainer'],
+                'medium_weight': ['exercise', 'workout', 'sports', 'athletic'],
+                'low_weight': ['health club']
+            },
+            # PETS
+            TransactionCategory.PETS: {
+                'high_weight': ['pet', 'veterinary', 'vet', 'pet store', 'animal'],
+                'medium_weight': ['pet food', 'pet care', 'pet supplies'],
+                'low_weight': ['animal care']
+            },
+            # CHARITABLE
+            TransactionCategory.CHARITABLE: {
+                'high_weight': ['donation', 'charity', 'temple', 'church', 'mosque', 'charitable'],
+                'medium_weight': ['dana', 'offering', 'contribution', 'gift'],
+                'low_weight': ['giving']
+            },
+            # BANKING
+            TransactionCategory.BANKING: {
+                'high_weight': ['atm', 'withdrawal', 'bank charge', 'service fee', 'bank fee'],
+                'medium_weight': ['transfer', 'deposit', 'banking'],
+                'low_weight': ['account']
             }
         }
 
@@ -233,11 +306,10 @@ class ClassifierAgent:
 
         # Ensemble weights for category classification
         self.category_ensemble_weights = {
-            'ml_model': 0.4,
-            'merchant_rules': 0.3,
-            'amount_heuristics': 0.15,
-            'temporal_patterns': 0.1,
-            'keywords': 0.05
+            'ml_model': 0.25,           # ML model prediction
+            'merchant': 0.30,           # Merchant-based classification
+            'keywords': 0.35,           # Keyword-based classification (HIGHEST - most reliable)
+            'amount': 0.10,             # Amount-based heuristics
         }
 
         # Ensemble weights for transaction type classification
@@ -457,7 +529,10 @@ class ClassifierAgent:
         if category_scores:
             best_category = max(category_scores.keys(), key=lambda x: category_scores[x])
             best_score = category_scores[best_category]
-            confidence = min(best_score * 0.4, 0.8)
+            # Higher confidence for keyword matches - they're very reliable
+            # Score of 1.0+ (high_weight match) → confidence 0.65+
+            # Score of 2.0+ (multiple matches) → confidence 0.85+
+            confidence = min(best_score * 0.65, 0.92)
             return best_category.value, confidence
 
         return None, 0.0

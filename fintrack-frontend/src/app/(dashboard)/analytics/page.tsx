@@ -103,15 +103,13 @@ export default function AnalyticsPage() {
 
     const loadTransactionsFallback = async () => {
       try {
-        // Fallback: Load transactions and process them locally
+        // Fallback: Load transactions from database
         const response = await getTransactions(auth.user!.id, {}, 1, 1000);
 
         if (response.error) {
           setError(response.error);
         } else {
           setTransactions(response.data || []);
-          // For fallback, we'll just set empty analytics data since the processAnalyticsData function is complex
-          // and we want to encourage using the backend API instead
           setAnalyticsData(null);
         }
       } catch (err) {
@@ -120,257 +118,125 @@ export default function AnalyticsPage() {
     };
 
     try {
-      // Use unified workflow analytics processing with the analytics agent
+      // READ FROM STORED PREDICTION RESULTS - NO PIPELINE TRIGGER
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
-      // The transactions processing endpoint expects a RawTransaction body.
-      // Send the user's analytics request text in `description`, and pass mode/user_id as query params.
-      const mode = 'full_pipeline';
       const userId = auth.user.id;
 
-      const rawTransaction = {
-        // Use ISO date for the transaction date (backend accepts string date)
-        date: new Date().toISOString(),
-        // Amount must be a string per RawTransaction schema; analytics request isn't a money tx so set 0
-        amount: "0",
-        // Put the analytics prompt in the description so the workflow can use it as user_input
-        description: "Generate comprehensive analytics report with spending patterns, insights, and recommendations for my financial data",
-        payment_method: "other",
-        // Include the conversation context in metadata so the backend agents can access preferences
-        metadata: {
-          request_type: "analytics_generation",
-          user_preferences: {
-            analytics_focus: ["spending_patterns", "budget_recommendations", "savings_opportunities", "pattern_insights"]
-          }
-        }
-      };
-
-      const url = `${API_BASE}/api/v1/transactions/process?mode=${encodeURIComponent(mode)}&user_id=${encodeURIComponent(userId)}`;
-
-      const response = await fetch(url, {
-        method: 'POST',
+      // Fetch analytics from stored prediction results
+      const response = await fetch(`${API_BASE}/api/prediction-results/user/${userId}/analytics`, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(rawTransaction)
+        }
       });
 
       if (response.ok) {
-        const workflowResult = await response.json();
-        console.log('Unified Workflow Analytics Result:', workflowResult);
+        const result = await response.json();
+        console.log('Analytics from prediction results:', result);
 
-        if (workflowResult.result) {
-          // Extract analytics data from unified workflow result
-          const result = workflowResult.result;
-
-          // Get pattern insights and spending patterns from workflow
-          const spendingPatterns = result.spending_patterns || {};
-          const patternInsights = result.pattern_insights || [];
-          const budgetRecommendations = result.budget_recommendations || [];
-          const spendingSuggestions = result.spending_suggestions || [];
-          let processedTransactions = result.processed_transactions || [];
-
-          // If the workflow didn't return processed transactions (new user / no data),
-          // fall back to loading stored transactions from the backend and map them
-          // into the same shape expected by the analytics code.
-          if ((!processedTransactions || processedTransactions.length === 0)) {
-            try {
-              const txResp = await getTransactions(auth.user.id, {}, 1, 1000);
-              if (!txResp.error) {
-                const fetched = txResp.data || [];
-                const fetchedTyped = fetched as Transaction[];
-                // Map stored transactions to a minimal processed transaction shape
-                processedTransactions = fetchedTyped.map((t) => ({
-                  amount: t.amount,
-                  date: t.date,
-                  predicted_category: t.category,
-                  category: t.category,
-                  transaction_type: t.transaction_type || (t.amount < 0 ? 'expense' : 'income'),
-                  description: t.description,
-                  merchant: t.merchant
-                }));
-                // Update transactions state so Recent Transactions table shows them
-                setTransactions(fetched);
-              }
-            } catch (e) {
-              console.warn('Failed to load fallback transactions for analytics:', e);
-            }
-          }
-
-          console.log('Workflow Analytics Data:', {
-            spendingPatterns,
-            patternInsightsCount: patternInsights.length,
-            budgetRecommendationsCount: budgetRecommendations.length,
-            spendingSuggestionsCount: spendingSuggestions.length,
-            processedTransactionsCount: processedTransactions.length
-          });
-
-          // Calculate totals and richer analytics from processed transactions
-          let totalIncome = 0;
-          let totalExpenses = 0;
-          const monthlyData: Record<string, { income: number; expenses: number }> = {};
-          const categoryData: Record<string, { amount: number; count: number }> = {};
-          const merchantAgg: Record<string, { amount: number; count: number }> = {};
-          const dailyAgg: Record<string, number> = {};
-          const weeklyAgg: Record<string, number> = {
-            Sunday: 0,
-            Monday: 0,
-            Tuesday: 0,
-            Wednesday: 0,
-            Thursday: 0,
-            Friday: 0,
-            Saturday: 0
-          };
-
-          type ProcTx = {
-            amount?: string | number;
-            date?: string;
-            predicted_category?: string;
-            category?: string;
-            merchant?: string;
-            description?: string;
-            transaction_type?: string;
-            type?: string;
-          };
-
-          processedTransactions.forEach((tx: ProcTx) => {
-            // Use signed amount to infer income vs expense reliably
-            const signedAmount = Number(tx.amount) || 0;
-            const absAmount = Math.abs(signedAmount);
-            const date = new Date(String(tx.date));
-            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            const dateKey = date.toISOString().slice(0, 10);
-            const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
-            const category = String(tx.predicted_category || tx.category || 'Uncategorized');
-            const merchant = String(tx.merchant || tx.description || 'Unknown');
-
-            if (!monthlyData[monthKey]) {
-              monthlyData[monthKey] = { income: 0, expenses: 0 };
-            }
-
-            if (!categoryData[category]) {
-              categoryData[category] = { amount: 0, count: 0 };
-            }
-
-            if (!merchantAgg[merchant]) {
-              merchantAgg[merchant] = { amount: 0, count: 0 };
-            }
-
-            if (!dailyAgg[dateKey]) {
-              dailyAgg[dateKey] = 0;
-            }
-
-            // Decide income vs expense: prefer explicit transaction_type, otherwise infer from sign
-            const txType = (tx.transaction_type || tx.type || '').toString().toLowerCase();
-            const isIncome = txType === 'income' || (txType === '' && signedAmount > 0);
-
-            if (isIncome) {
-              totalIncome += absAmount;
-              monthlyData[monthKey].income += absAmount;
-            } else {
-              totalExpenses += absAmount;
-              monthlyData[monthKey].expenses += absAmount;
-              categoryData[category].amount += absAmount;
-              categoryData[category].count += 1;
-              merchantAgg[merchant].amount += absAmount;
-              merchantAgg[merchant].count += 1;
-              dailyAgg[dateKey] += absAmount;
-              weeklyAgg[dayName] += absAmount;
-            }
-          });
-
-          // Build weekly, daily and merchant arrays (prefer workflow-provided fields if available)
-          const weeklyPatternFromWorkflow = result.weekly_pattern || result.weeklyPattern || null;
-          const dailyDataFromWorkflow = result.daily_data || result.dailyData || null;
-          const merchantDataFromWorkflow = result.merchant_data || result.merchantData || null;
-          const recurringFromWorkflow = result.recurring_payments || result.recurringPayments || null;
-
-          const weeklyPattern = weeklyPatternFromWorkflow || Object.entries(weeklyAgg).map(([day, amt]) => ({ day, amount: amt }));
-
-          const dailyData = dailyDataFromWorkflow || Object.entries(dailyAgg)
-            .map(([dateStr, amt]) => ({ date: dateStr, amount: amt }))
-            .sort((a, b) => a.date.localeCompare(b.date));
-
-          const merchantData = merchantDataFromWorkflow || Object.entries(merchantAgg).map(([merchant, info]) => ({
-            merchant,
-            totalSpent: info.amount,
-            avgTransaction: info.count > 0 ? info.amount / info.count : 0,
-            count: info.count
-          })).sort((a, b) => b.totalSpent - a.totalSpent);
-
-          // Simple recurring detection: merchant with >2 occurrences across months
-          const recurringPayments = recurringFromWorkflow || Object.entries(merchantAgg)
-            .filter(([, info]) => info.count > 2)
-            .map(([merchant, info]) => ({ merchant, frequency: info.count, average_amount: info.amount / Math.max(info.count, 1) }));
-
-          const anomaliesFromWorkflow = result.anomalies || [];
-
-          // Convert workflow analytics data to frontend format
-          const analyticsDataFromWorkflow: AnalyticsData = {
-            totalIncome,
-            totalExpenses,
-            netCashflow: totalIncome - totalExpenses,
-            transactionCount: processedTransactions.length,
-            avgExpense: totalExpenses / Math.max(processedTransactions.length, 1),
-            avgIncome: totalIncome / Math.max(processedTransactions.length, 1),
-
-            monthlyData: Object.entries(monthlyData).map(([month, data]) => ({
-              month,
-              income: data.income,
-              expenses: data.expenses,
-              net: data.income - data.expenses
-            })).sort((a, b) => a.month.localeCompare(b.month)),
-
-            categoryData: Object.entries(categoryData).map(([category, data]) => ({
-              category: category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, ' '),
-              amount: data.amount,
-              count: data.count,
-              percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0
-            })).filter(item => item.amount > 0).sort((a, b) => b.amount - a.amount),
-
-            dailyData,
-            merchantData,
-            weeklyPattern,
-            recurringPayments,
-            anomalies: anomaliesFromWorkflow,
-
-            // Convert AI insights from unified workflow (keep existing insight sources)
-            insights: [
-              ...patternInsights.map((insight: Record<string, unknown>) => ({
-                type: String(insight.insight_type || 'pattern'),
-                message: String(insight.description || 'Pattern insight generated'),
-                severity: String(insight.severity || 'info')
-              })),
-              ...budgetRecommendations.map((rec: Record<string, unknown>) => ({
-                type: 'budget_recommendation',
-                message: String(rec.description || rec.title || 'Budget recommendation'),
-                severity: 'info'
-              })),
-              ...spendingSuggestions.map((sugg: Record<string, unknown>) => ({
-                type: 'spending_suggestion',
-                message: String(sugg.description || sugg.title || 'Spending suggestion'),
-                severity: 'info'
-              }))
-            ]
-          };
-
-          setAnalyticsData(analyticsDataFromWorkflow);
-          setTransactions(processedTransactions);
-
-        } else {
-          console.error('No result data from unified workflow:', workflowResult);
-          // Fallback to transaction-based processing if workflow doesn't return data
+        if (result.transactions_analyzed === 0) {
+          // No analytics data available, load transactions for display
           await loadTransactionsFallback();
+          setError("No analytics data available. Upload transactions to generate analytics insights.");
+          setLoading(false);
+          return;
         }
+
+        // Extract analytics data from stored prediction results
+        const spendingPatterns = result.spending_patterns || {};
+        const patternInsights = result.pattern_insights || [];
+
+        // Also load transactions for the Recent Transactions table
+        try {
+          const txResp = await getTransactions(auth.user.id, {}, 1, 1000);
+          if (!txResp.error) {
+            setTransactions(txResp.data || []);
+          }
+        } catch (e) {
+          console.warn('Failed to load transactions for display:', e);
+        }
+
+        console.log('Stored Analytics Data:', {
+          spendingPatterns,
+          patternInsightsCount: patternInsights.length,
+          transactionsAnalyzed: result.transactions_analyzed
+        });
+
+        // Process the stored analytics data
+        const categories = spendingPatterns.categories || {};
+        const merchants = spendingPatterns.merchants || {};
+
+        let totalExpenses = 0;
+        const categoryDataArray: { category: string; amount: number; count: number; percentage: number }[] = [];
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Object.entries(categories).forEach(([category, data]: [string, any]) => {
+          const amount = data.total_amount || 0;
+          totalExpenses += amount;
+          categoryDataArray.push({
+            category,
+            amount,
+            count: data.count || 0,
+            percentage: 0 // Will calculate after we have total
+          });
+        });
+
+        // Calculate percentages
+        categoryDataArray.forEach(item => {
+          item.percentage = totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0;
+        });
+
+        const merchantDataArray: { merchant: string; totalSpent: number; avgTransaction: number; count: number; firstVisit: string; lastVisit: string }[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Object.entries(merchants).forEach(([merchant, data]: [string, any]) => {
+          const totalSpent = data.total_amount || 0;
+          const count = data.count || 1;
+          merchantDataArray.push({
+            merchant,
+            totalSpent,
+            avgTransaction: totalSpent / count,
+            count,
+            firstVisit: new Date().toISOString(), // We don't have this data in aggregated results
+            lastVisit: new Date().toISOString()
+          });
+        });
+
+        // Create insights from pattern_insights
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const insights: { type: string; message: string; severity: string }[] = patternInsights.map((insight: any) => ({
+          type: insight.insight_type || insight.type || "info",
+          message: insight.message || insight.description || "",
+          severity: insight.severity || insight.priority || "medium"
+        }));
+
+        const analyticsData: AnalyticsData = {
+          totalIncome: 0, // Not available in aggregated data
+          totalExpenses,
+          netCashflow: -totalExpenses,
+          transactionCount: result.transactions_analyzed,
+          avgExpense: totalExpenses / (result.transactions_analyzed || 1),
+          avgIncome: 0,
+          monthlyData: [], // Not available in current aggregation
+          categoryData: categoryDataArray,
+          dailyData: [],
+          merchantData: merchantDataArray,
+          weeklyPattern: [],
+          recurringPayments: [],
+          anomalies: [],
+          insights
+        };
+
+        setAnalyticsData(analyticsData);
+
       } else {
-        // Fallback to transaction-based processing if workflow API not available
-        console.warn('Unified workflow API not available, falling back to transaction processing');
+        // Fallback to loading transactions
         await loadTransactionsFallback();
+        setError("No analytics data available. Upload transactions to generate analytics.");
       }
     } catch (err) {
-      console.warn('Unified workflow analytics not available:', err);
-      // Fallback to transaction-based processing
+      console.warn('Failed to load analytics:', err);
       await loadTransactionsFallback();
+      setError("Failed to load analytics. Please try again later.");
     }
 
     setLoading(false);

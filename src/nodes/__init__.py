@@ -1092,34 +1092,8 @@ class TransactionProcessingNodes:
                                 metadata=value
                             ))
 
-            # Only add default insights for genuinely new users, not existing users with no current patterns
-
-            if is_first_time_user:
-                print(f"SUGGESTION: Adding default financial guidance for new user")
-                default_insights = [
-                    PatternInsight(
-                        insight_type="financial_planning",
-                        description="Set up a budget to track your spending goals",
-                        severity="medium",
-                        transactions_involved=[],
-                        metadata={"category": "budgeting", "priority": "high"}
-                    ),
-                    PatternInsight(
-                        insight_type="emergency_fund",
-                        description="Build an emergency fund for unexpected expenses",
-                        severity="high",
-                        transactions_involved=[],
-                        metadata={"category": "savings", "priority": "high"}
-                    ),
-                    PatternInsight(
-                        insight_type="expense_tracking",
-                        description="Track all expenses to identify spending patterns",
-                        severity="medium",
-                        transactions_involved=[],
-                        metadata={"category": "tracking", "priority": "medium"}
-                    )
-                ]
-                pattern_insights.extend(default_insights)
+            # No default insights for new users - they should upload transactions first
+            # Pattern insights will be generated from actual transaction data
 
             # Default budget thresholds if not provided
             budget_thresholds = state.get('budget_thresholds', {
@@ -1480,88 +1454,11 @@ class TransactionProcessingNodes:
 
     def _generate_default_financial_suggestions(self) -> List[Dict[str, Any]]:
         """
-        Generate default financial suggestions for new users
+        No hardcoded suggestions for new users.
+        Frontend will display appropriate onboarding message.
+        Real suggestions will be generated after transactions are uploaded.
         """
-        return [
-            {
-                'suggestion_type': 'budget_planning',
-                'title': 'Create Your First Budget',
-                'description': 'Start by setting spending limits for essential categories like groceries, housing, and transportation. A good rule of thumb is the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings.',
-                'category': 'budgeting',
-                'priority': 'high',
-                'potential_savings': 0,
-                'action_required': True,
-                'metadata': {
-                    'type': 'onboarding',
-                    'tip': 'Begin with realistic amounts and adjust as you learn your spending habits'
-                }
-            },
-            {
-                'suggestion_type': 'emergency_fund',
-                'title': 'Build an Emergency Fund',
-                'description': 'Start saving for unexpected expenses. Aim for $500-$1000 initially, then work toward 3-6 months of expenses.',
-                'category': 'savings',
-                'priority': 'high',
-                'potential_savings': 0,
-                'action_required': True,
-                'metadata': {
-                    'type': 'financial_security',
-                    'tip': 'Set up automatic transfers to make saving easier'
-                }
-            },
-            {
-                'suggestion_type': 'expense_tracking',
-                'title': 'Track All Your Expenses',
-                'description': 'Record every purchase for at least a month to understand your spending patterns. This will help you make informed budgeting decisions.',
-                'category': 'tracking',
-                'priority': 'medium',
-                'potential_savings': 0,
-                'action_required': True,
-                'metadata': {
-                    'type': 'habit_building',
-                    'tip': 'Use categories consistently to get better insights'
-                }
-            },
-            {
-                'suggestion_type': 'spending_awareness',
-                'title': 'Review Subscription Services',
-                'description': 'List all your recurring subscriptions and memberships. Cancel any you don\'t actively use to save money.',
-                'category': 'subscriptions',
-                'priority': 'medium',
-                'potential_savings': 50,
-                'action_required': True,
-                'metadata': {
-                    'type': 'cost_reduction',
-                    'tip': 'Review subscriptions quarterly to avoid unused services'
-                }
-            },
-            {
-                'suggestion_type': 'financial_goals',
-                'title': 'Set Financial Goals',
-                'description': 'Define short-term (1 year) and long-term (5+ years) financial goals. This will guide your saving and spending decisions.',
-                'category': 'planning',
-                'priority': 'medium',
-                'potential_savings': 0,
-                'action_required': True,
-                'metadata': {
-                    'type': 'goal_setting',
-                    'tip': 'Make goals specific and measurable for better success'
-                }
-            },
-            {
-                'suggestion_type': 'debt_awareness',
-                'title': 'Know Your Debt',
-                'description': 'List all debts with balances, interest rates, and minimum payments. Focus on paying high-interest debt first.',
-                'category': 'debt',
-                'priority': 'high',
-                'potential_savings': 100,
-                'action_required': True,
-                'metadata': {
-                    'type': 'debt_management',
-                    'tip': 'Consider the debt snowball or avalanche method'
-                }
-            }
-        ]
+        return []
 
     def _convert_to_classified_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
         """
