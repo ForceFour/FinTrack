@@ -969,14 +969,68 @@ Return only valid JSON:
         return None, 0.0
 
     def _fallback_extraction(self, description: str) -> Tuple[Optional[str], float]:
-        """Fallback extraction for difficult cases"""
+        """Fallback extraction for difficult cases - improved to handle descriptive transactions"""
         desc_upper = description.upper()
+        desc_lower = description.lower()
+
+        # CRITICAL FIX: Extract key concept words from descriptive transactions
+        # These are actual services/merchants, not time indicators or adjectives
+        priority_concepts = {
+            # Housing & Rent
+            'rent': ('Rent Payment', 0.85, TransactionCategory.HOUSING),
+            'landlord': ('Landlord', 0.85, TransactionCategory.HOUSING),
+            'mortgage': ('Mortgage', 0.85, TransactionCategory.HOUSING),
+            'housing': ('Housing', 0.80, TransactionCategory.HOUSING),
+
+            # Insurance
+            'insurance': ('Insurance', 0.90, TransactionCategory.INSURANCE),
+            'premium': ('Insurance Premium', 0.85, TransactionCategory.INSURANCE),
+            'policy': ('Insurance Policy', 0.80, TransactionCategory.INSURANCE),
+
+            # Electronics
+            'laptop': ('Electronics Store', 0.85, TransactionCategory.ELECTRONICS),
+            'computer': ('Electronics Store', 0.85, TransactionCategory.ELECTRONICS),
+            'phone': ('Electronics Store', 0.85, TransactionCategory.ELECTRONICS),
+            'tablet': ('Electronics Store', 0.80, TransactionCategory.ELECTRONICS),
+            'electronics': ('Electronics Store', 0.85, TransactionCategory.ELECTRONICS),
+
+            # Utilities
+            'utility': ('Utility Provider', 0.85, TransactionCategory.UTILITIES),
+            'utilities': ('Utility Provider', 0.85, TransactionCategory.UTILITIES),
+            'electricity': ('Electricity Provider', 0.85, TransactionCategory.UTILITIES),
+            'water': ('Water Utility', 0.85, TransactionCategory.UTILITIES),
+            'gas': ('Gas Utility', 0.85, TransactionCategory.UTILITIES),
+
+            # Banking
+            'atm': ('ATM', 0.90, TransactionCategory.BANKING),
+            'withdrawal': ('ATM Withdrawal', 0.85, TransactionCategory.BANKING),
+            'bank': ('Bank', 0.80, TransactionCategory.BANKING),
+
+            # Subscriptions
+            'subscription': ('Subscription Service', 0.80, TransactionCategory.ENTERTAINMENT),
+            'netflix': ('Netflix', 0.95, TransactionCategory.ENTERTAINMENT),
+            'spotify': ('Spotify', 0.95, TransactionCategory.ENTERTAINMENT),
+
+            # Salary
+            'salary': ('Salary', 0.95, 'income'),
+            'payroll': ('Payroll', 0.95, 'income'),
+            'wages': ('Wages', 0.90, 'income'),
+        }
+
+        # Check for priority concepts in the description
+        for keyword, (merchant_name, confidence, category) in priority_concepts.items():
+            if keyword in desc_lower:
+                # Found a priority concept - use it as merchant
+                logger.debug(f"Priority concept extraction: '{keyword}' → '{merchant_name}' (category: {category})")
+                return merchant_name, confidence
 
         # Remove common prefixes/suffixes
         cleanup_patterns = [
             r'^(POS\s+|POS\s*\*|SQ\s+\*|TST\s+\*)',  # Point of sale prefixes
             r'^(RECURRING\s+|AUTO\s+PAY\s+)',          # Recurring payment prefixes
             r'(\s+PENDING|\s+AUTHORIZED|\s+POSTED)$',   # Transaction status suffixes
+            r'^(MONTHLY\s+|WEEKLY\s+|DAILY\s+|ANNUAL\s+)',  # CRITICAL: Remove time indicators
+            r'^(NEW\s+|OLD\s+|USED\s+)',                     # CRITICAL: Remove adjectives
         ]
 
         cleaned_desc = desc_upper
@@ -986,8 +1040,14 @@ Return only valid JSON:
         # Extract first substantial word group
         words = cleaned_desc.split()
         if words:
-            # Skip obviously non-merchant words
-            skip_words = {'PAYMENT', 'TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'FEE', 'CHARGE', 'DEBIT', 'CREDIT'}
+            # Skip obviously non-merchant words - ENHANCED LIST
+            skip_words = {
+                'PAYMENT', 'TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'FEE', 'CHARGE', 'DEBIT', 'CREDIT',
+                'MONTHLY', 'WEEKLY', 'DAILY', 'YEARLY', 'ANNUAL', 'QUARTERLY',  # Time indicators
+                'NEW', 'OLD', 'USED', 'FRESH', 'LATEST',  # Adjectives
+                'AM', 'PM', 'AT', 'IN', 'ON', 'FOR', 'TO', 'FROM',  # Prepositions/time
+                'THE', 'A', 'AN', 'AND', 'OR', 'BUT',  # Articles/conjunctions
+            }
             filtered_words = [w for w in words if w not in skip_words and len(w) > 2]
 
             if filtered_words:
@@ -1022,16 +1082,61 @@ Return only valid JSON:
         if not merchant or len(merchant.strip()) < 3:
             return False
 
+        merchant_upper = merchant.upper().strip()
+
         # Reject purely numeric or single character
         if merchant.isdigit() or len(merchant) == 1:
             return False
 
-        # Reject common false positives
+        # COMPREHENSIVE FALSE POSITIVES - Reject time indicators, adjectives, and common noise words
         false_positives = {
-            'POS', 'SQ', 'TST', 'PENDING', 'AUTHORIZED', 'POSTED',
-            'PAYMENT', 'TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'FEE', 'CHARGE'
+            # Transaction status
+            'POS', 'SQ', 'TST', 'PENDING', 'AUTHORIZED', 'POSTED', 'COMPLETED',
+            'PAYMENT', 'TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'FEE', 'CHARGE',
+
+            # Time indicators - CRITICAL FIX
+            'MONTHLY', 'WEEKLY', 'DAILY', 'YEARLY', 'ANNUAL', 'QUARTERLY',
+            'BIWEEKLY', 'BIMONTHLY', 'PERIODIC', 'RECURRING',
+
+            # Adjectives and descriptors - CRITICAL FIX
+            'NEW', 'OLD', 'USED', 'FRESH', 'LATEST', 'CURRENT', 'PREVIOUS',
+            'NEXT', 'LAST', 'FIRST', 'SECOND', 'THIRD',
+
+            # Time of day - CRITICAL FIX
+            'AM', 'PM', 'MORNING', 'AFTERNOON', 'EVENING', 'NIGHT',
+
+            # Generic words
+            'TRANSACTION', 'PURCHASE', 'SALE', 'BUY', 'SELL',
+            'ONLINE', 'OFFLINE', 'DEBIT', 'CREDIT', 'CASH',
+
+            # Transaction types
+            'REFUND', 'RETURN', 'EXCHANGE', 'VOID', 'CANCELLED',
+            'ADJUSTMENT', 'CORRECTION', 'REVERSAL',
+
+            # Common false merchant names
+            'PAYMENT TO', 'FROM', 'TO', 'AT', 'THE', 'AND', 'OR',
+            'FOR', 'WITH', 'WITHOUT', 'IN', 'ON', 'OFF',
+
+            # Account related
+            'ACCOUNT', 'BALANCE', 'CHECKING', 'SAVINGS', 'CARD',
+
+            # Generic locations (not actual merchants)
+            'CITY', 'TOWN', 'STATE', 'COUNTRY', 'LOCATION', 'PLACE',
+
+            # Additional common words
+            'SERVICE', 'PRODUCT', 'ITEM', 'ORDER', 'DELIVERY'
         }
-        if merchant.upper().strip() in false_positives:
+
+        if merchant_upper in false_positives:
+            return False
+
+        # Reject if it's just a number with letters (like "1234AB")
+        if re.match(r'^\d+[A-Z]{1,2}$', merchant_upper):
+            return False
+
+        # Reject if it's mostly numbers (>50% digits)
+        digit_ratio = sum(c.isdigit() for c in merchant) / len(merchant)
+        if digit_ratio > 0.5:
             return False
 
         return True

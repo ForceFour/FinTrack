@@ -75,9 +75,9 @@ export default function SuggestionsPage() {
     setError("");
 
     try {
-      // Load backend suggestions
+      // Load suggestions from stored prediction results (READ-ONLY, no pipeline trigger)
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE}/api/analytics/suggestions/${auth.user?.id}`, {
+      const response = await fetch(`${API_BASE}/api/prediction-results/user/${auth.user?.id}/suggestions`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -87,42 +87,55 @@ export default function SuggestionsPage() {
       if (response.ok) {
         const data = await response.json();
 
+        // Check if we have suggestions
+        if (data.total_count === 0) {
+          setSuggestions([]);
+          setError("No suggestions available. Please upload some transactions to generate personalized suggestions.");
+          setLoading(false);
+          return;
+        }
+
         // Convert backend suggestions to frontend format
         const allSuggestions: Suggestion[] = [];
 
-        // Add budget recommendations
+        // Process all suggestions from the response
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         data.suggestions.forEach((suggestion: any) => {
           allSuggestions.push({
-            id: `suggestion_${Math.random().toString(36).substr(2, 9)}`,
+            id: `suggestion_${suggestion.workflow_id}_${Math.random().toString(36).substr(2, 9)}`,
             type: mapSuggestionType(suggestion.suggestion_type),
-            title: suggestion.title,
-            description: suggestion.description,
-            priority: suggestion.priority as SuggestionPriority,
+            title: suggestion.title || suggestion.category || "Financial Suggestion",
+            description: suggestion.description || suggestion.message || "",
+            priority: suggestion.priority as SuggestionPriority || "medium",
             status: "active",
-            potential_savings: suggestion.potential_savings,
-            implementation_difficulty: suggestion.metadata?.difficulty || "medium",
+            potential_savings: suggestion.potential_savings || suggestion.potential_monthly_savings || 0,
+            implementation_difficulty: suggestion.implementation_difficulty || suggestion.metadata?.difficulty || "medium",
             category: suggestion.category,
-            created_at: new Date().toISOString(),
-            metadata: suggestion.metadata
+            created_at: suggestion.generated_at || new Date().toISOString(),
+            metadata: {
+              ...suggestion.metadata,
+              workflow_id: suggestion.workflow_id
+            }
           });
         });
 
         setSuggestions(allSuggestions);
 
-        // Set other data if available
-        if (data.budget_recommendations) {
-          setBudgetRecommendations(data.budget_recommendations);
+        // Set budget recommendations if available
+        if (data.budget_recommendations && data.budget_recommendations.length > 0) {
+          // You can process budget recommendations here if needed
+          console.log('Budget recommendations available:', data.budget_recommendations.length);
         }
 
       } else {
         // No suggestions available from backend
         setSuggestions([]);
-        console.log('No suggestions available from backend');
+        setError("Unable to load suggestions. Please try again later.");
       }
     } catch (err) {
-      console.warn('Backend suggestions not available:', err);
+      console.warn('Failed to load suggestions:', err);
       setSuggestions([]);
+      setError("Failed to load suggestions. Please check your connection and try again.");
     }
 
     setLoading(false);

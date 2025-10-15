@@ -467,10 +467,12 @@ class TransactionService:
         return await TransactionCRUD.get_transaction_summary(self.client, user_id, start_date, end_date)
 
     async def get_user_transaction_count(self, user_id: str) -> int:
-        """Get total number of transactions for a user"""
+        """Get total number of transactions for a user (all time, not just recent)"""
         try:
-            filters = {"user_id": user_id, "limit": 1}  # We just need the count
-            _, total_count = await self.get_transactions(filters)
+            # Query database directly for accurate count
+            result = self.db.table("transactions").select("id", count="exact").eq("user_id", user_id).execute()
+            total_count = result.count if hasattr(result, 'count') else len(result.data or [])
+            print(f"Transaction count for user {user_id}: {total_count}")
             return total_count
         except Exception as e:
             print(f"Error getting transaction count for user {user_id}: {e}")

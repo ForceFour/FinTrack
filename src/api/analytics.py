@@ -122,22 +122,12 @@ async def get_suggestions(
         result = supabase.table("transactions").select("*").eq("user_id", user_id).gte("date", recent_date).execute()
 
         if not result.data:
-            # Return default suggestions for new users
+            # Return empty suggestions for new users - no hardcoded data
             return {
-                "suggestions": [
-                    {
-                        "suggestion_type": "budget_setup",
-                        "title": "Set Up Your First Budget",
-                        "description": "Create a monthly budget to track your income and expenses effectively.",
-                        "priority": "high",
-                        "potential_savings": 200.0,
-                        "category": "budgeting",
-                        "action_required": True,
-                        "metadata": {"new_user": True}
-                    }
-                ],
-                "total_count": 1,
-                "high_priority_count": 1
+                "suggestions": [],
+                "total_count": 0,
+                "high_priority_count": 0,
+                "message": "No transactions found. Upload transactions to generate personalized suggestions."
             }
 
         # Convert and analyze transactions

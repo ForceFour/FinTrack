@@ -254,40 +254,13 @@ class SuggestionAgent:
 
         print(f"SUGGESTION: User {input_data.user_id} - Transaction count: {actual_transaction_count}, Is new user: {is_new_user}")
 
-
-
         if is_new_user:
-            # New user scenario - provide comprehensive default suggestions
-            new_user_suggestions = self.recommendation_engine.generate_new_user_suggestions()
-
-            # Convert to Suggestion objects
-            suggestions = [
-                Suggestion(
-                    suggestion_type=sugg.get('type', 'general'),
-                    title=sugg['title'],
-                    description=sugg['description'],
-                    category=sugg.get('category', 'general'),
-                    priority=sugg['priority'],
-                    potential_savings=sugg.get('potential_savings', 0),
-                    action_required=True,
-                    metadata=sugg.get('metadata', {})
-                )
-                for sugg in new_user_suggestions
-            ]
-
-            # Add basic alerts for new users
-            alerts = [{
-                'type': 'onboarding',
-                'title': 'Welcome to FinTrack!',
-                'description': 'Start by tracking your expenses for a few weeks to unlock personalized insights.',
-                'priority': 'high',
-                'category': 'onboarding'
-            }]
-
+            # New user scenario - return empty suggestions
+            # Frontend will display appropriate onboarding message
             return SuggestionAgentOutput(
-                suggestions=suggestions,
-                alerts=alerts,
-                savings_opportunities=new_user_suggestions[-2:]  # Last 2 suggestions as opportunities
+                suggestions=[],
+                alerts=[],
+                savings_opportunities=[]
             )
 
         # Existing user - generate personalized suggestions based on their profile and patterns

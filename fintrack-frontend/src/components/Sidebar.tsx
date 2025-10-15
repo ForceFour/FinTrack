@@ -23,7 +23,7 @@ const navigation = [
   { name: "Agent Workflow", href: "/workflow", icon: CogIcon },
   { name: "Analytics", href: "/analytics", icon: ChartBarIcon },
   { name: "Suggestions", href: "/suggestions", icon: LightBulbIcon },
-  { name: "Categories", href: "/categories", icon: TagIcon },
+  // { name: "Categories", href: "/categories", icon: TagIcon },
   { name: "Security", href: "/security", icon: ShieldCheckIcon },
 ];
 

@@ -200,96 +200,12 @@ class RecommendationEngine:
         return tips_map.get(category, ["Look for discounts and deals", "Consider alternatives", "Budget carefully"])
 
     def generate_new_user_suggestions(self) -> List[Dict[str, Any]]:
-        """Generate comprehensive suggestions for new users without transaction history"""
-        return [
-            {
-                'type': SuggestionType.BUDGET_ADJUSTMENT,
-                'category': 'budgeting',
-                'title': 'Set Up Your First Budget',
-                'description': 'Create a monthly budget using the 50/30/20 rule: 50% needs, 30% wants, 20% savings.',
-                'priority': SuggestionPriority.HIGH,
-                'potential_savings': 200,
-                'action_items': [
-                    'Calculate monthly after-tax income',
-                    'List all fixed expenses (rent, utilities, loans)',
-                    'Set limits for variable expenses',
-                    'Allocate 20% to savings and debt payment'
-                ],
-                'metadata': {
-                    'onboarding': True,
-                    'estimated_time': '30 minutes',
-                    'difficulty': 'beginner'
-                }
-            },
-            {
-                'type': SuggestionType.SAVINGS_OPPORTUNITY,
-                'category': 'emergency_fund',
-                'title': 'Build an Emergency Fund',
-                'description': 'Start with $500, then work toward 3-6 months of expenses for financial security.',
-                'priority': SuggestionPriority.HIGH,
-                'potential_savings': 500,
-                'action_items': [
-                    'Open a separate high-yield savings account',
-                    'Set up automatic transfers of $50-100/month',
-                    'Save any windfalls (tax refunds, bonuses)'
-                ],
-                'metadata': {
-                    'goal_amount': 1000,
-                    'timeframe': '6-12 months'
-                }
-            },
-            {
-                'type': SuggestionType.SPENDING_REDUCTION,
-                'category': 'subscriptions',
-                'title': 'Audit Your Subscriptions',
-                'description': 'Review and cancel unused subscriptions to free up monthly budget.',
-                'priority': SuggestionPriority.MEDIUM,
-                'potential_savings': 75,
-                'action_items': [
-                    'List all recurring subscriptions',
-                    'Cancel unused or duplicate services',
-                    'Downgrade overpriced plans',
-                    'Set calendar reminders to review quarterly'
-                ],
-                'metadata': {
-                    'average_savings': 75,
-                    'review_frequency': 'quarterly'
-                }
-            },
-            {
-                'type': SuggestionType.SPENDING_REDUCTION,
-                'category': 'shopping',
-                'title': 'Use the 24-Hour Rule',
-                'description': 'Wait 24 hours before non-essential purchases over $50 to avoid impulse buying.',
-                'priority': SuggestionPriority.MEDIUM,
-                'potential_savings': 150,
-                'action_items': [
-                    'Add items to wishlist instead of cart',
-                    'Set spending alerts on cards',
-                    'Use cash for discretionary spending'
-                ],
-                'metadata': {
-                    'behavior_change': True,
-                    'success_rate': 0.7
-                }
-            },
-            {
-                'type': SuggestionType.SAVINGS_OPPORTUNITY,
-                'category': 'automation',
-                'title': 'Automate Your Savings',
-                'description': 'Set up automatic transfers to savings accounts to pay yourself first.',
-                'priority': SuggestionPriority.MEDIUM,
-                'potential_savings': 300,
-                'action_items': [
-                    'Set up automatic savings transfers',
-                    'Automate bill payments to avoid late fees',
-                    'Use employer 401k matching if available'
-                ],
-                'metadata': {
-                    'automation_benefits': ['consistency', 'reduced_decision_fatigue', 'compound_growth']
-                }
-            }
-        ]
+        """
+        No hardcoded suggestions for new users.
+        Frontend will display appropriate onboarding message.
+        Real suggestions will be generated after transactions are uploaded.
+        """
+        return []
 
     def prioritize_suggestions(self, suggestions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort suggestions by priority and potential impact"""
