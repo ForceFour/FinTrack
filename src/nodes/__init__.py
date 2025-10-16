@@ -1365,9 +1365,9 @@ class TransactionProcessingNodes:
                     mode=workflow_mode,
                     status='completed'
                 )
-                logger.info(f"✅ Saved prediction results to database for workflow {state.get('workflow_id')}")
+                logger.info(f"Saved prediction results to database for workflow {state.get('workflow_id')}")
             except Exception as db_error:
-                logger.error(f"❌ Failed to save prediction results to database: {db_error}", exc_info=True)
+                logger.error(f"Failed to save prediction results to database: {db_error}", exc_info=True)
                 # Don't fail the workflow if database save fails
 
             # Calculate a rough confidence estimate for logging
@@ -1388,7 +1388,7 @@ class TransactionProcessingNodes:
 
             estimated_confidence = sum(stage_confidences) / len(stage_confidences) if stage_confidences else 0
 
-            print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {estimated_confidence:.2f} confidence")
+            print(f"FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {estimated_confidence:.2f} confidence")
 
         except Exception as e:
             logger.error(f"Finalization failed: {e}")

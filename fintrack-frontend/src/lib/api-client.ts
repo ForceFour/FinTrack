@@ -284,6 +284,10 @@ class APIClient {
     return this.request(`/analytics/spending?${queryParams}`);
   }
 
+  async getDashboardSummary(userId: string) {
+    return this.request(`/analytics/summary/dashboard?user_id=${userId}`);
+  }
+
   async getCategoryBreakdown(period: string = "monthly") {
     return this.request(`/analytics/categories/${period}`);
   }

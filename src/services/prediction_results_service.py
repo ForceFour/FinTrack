@@ -135,14 +135,14 @@ class PredictionResultsService:
             result = self.supabase.table("prediction_results").insert(data).execute()
 
             if result.data:
-                logger.info(f"✅ Saved prediction result for workflow {workflow_id}")
+                logger.info(f"Saved prediction result for workflow {workflow_id}")
                 return result.data[0]
             else:
-                logger.error(f"❌ Failed to save prediction result: {result}")
+                logger.error(f"Failed to save prediction result: {result}")
                 return {}
 
         except Exception as e:
-            logger.error(f"❌ Error saving prediction result: {e}", exc_info=True)
+            logger.error(f"Error saving prediction result: {e}", exc_info=True)
             raise
 
     def update_prediction_result(

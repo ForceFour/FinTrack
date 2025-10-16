@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, JSX } from "react";
 import Link from "next/link";
 import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
@@ -20,6 +20,13 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { format } from "date-fns";
+
+import { CurrencyDollarIcon,
+  CreditCardIcon,
+  PresentationChartLineIcon,
+  ReceiptPercentIcon,
+  ChartBarIcon
+} from "@heroicons/react/24/outline";
 
 const COLORS = [
   "#0088FE",
@@ -172,7 +179,7 @@ export default function DashboardPage() {
             value={`$${totalExpenses.toFixed(2)}`}
             delta={`${expenseRatio.toFixed(1)}% of income`}
             deltaType="neutral"
-            icon="💸"
+            icon= {<CurrencyDollarIcon className="w-15 h-15" />}
             gradient="from-red-500 to-pink-500"
           />
           <MetricCard
@@ -180,7 +187,7 @@ export default function DashboardPage() {
             value={`$${totalIncome.toFixed(2)}`}
             delta={`$${incomePerDay.toFixed(2)} per day`}
             deltaType="neutral"
-            icon="💰"
+            icon={<CreditCardIcon className="w-15 h-15" />}
             gradient="from-green-500 to-emerald-500"
           />
           <MetricCard
@@ -188,7 +195,7 @@ export default function DashboardPage() {
             value={`$${netCashFlow.toFixed(2)}`}
             delta={totalIncome > 0 ? `${((netCashFlow / totalIncome) * 100).toFixed(1)}% savings` : "N/A"}
             deltaType={netCashFlow >= 0 ? "positive" : "negative"}
-            icon="📈"
+            icon={<PresentationChartLineIcon className="w-15 h-15" />}
             gradient={netCashFlow >= 0 ? "from-blue-500 to-cyan-500" : "from-orange-500 to-red-500"}
           />
           <MetricCard
@@ -196,7 +203,7 @@ export default function DashboardPage() {
             value={`$${avgTransaction.toFixed(2)}`}
             delta={`${avgTransactionCategory} spending`}
             deltaType="neutral"
-            icon="🧾"
+            icon={<ReceiptPercentIcon className="w-15 h-15" />}
             gradient="from-purple-500 to-violet-500"
           />
           <MetricCard
@@ -204,7 +211,7 @@ export default function DashboardPage() {
             value={transactions.length.toString()}
             delta={`${transactionsPerDay.toFixed(1)} per day`}
             deltaType="neutral"
-            icon="📊"
+            icon={<ChartBarIcon className="w-15 h-15" />}
             gradient="from-indigo-500 to-blue-500"
           />
         </div>
@@ -386,7 +393,7 @@ function MetricCard({
   value: string;
   delta?: string;
   deltaType?: "positive" | "negative" | "neutral";
-  icon?: string;
+  icon?: JSX.Element;
   gradient?: string;
 }) {
   return (
@@ -394,7 +401,7 @@ function MetricCard({
       <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -mr-10 -mt-10"></div>
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-3xl">{icon || '📊'}</span>
+          <span className="text-3xl">{icon}</span>
           <div className={`w-3 h-3 rounded-full ${
             deltaType === "positive" ? "bg-green-300" :
             deltaType === "negative" ? "bg-red-300" : "bg-white/50"

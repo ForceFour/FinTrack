@@ -283,6 +283,12 @@ class AnalyticsService:
             user_id, previous_period_start, previous_period_end
         )
 
+        # Get total transaction count for the user (all time)
+        total_transactions_filters = {
+            'user_id': user_id,
+        }
+        _, total_transaction_count = await TransactionCRUD.get_transactions(self.db, total_transactions_filters)
+
         # Calculate current period metrics
         current_spending = sum(abs(Decimal(str(tx['amount']))) for tx in current_transactions if Decimal(str(tx['amount'])) < 0)
         current_income = sum(Decimal(str(tx['amount'])) for tx in current_transactions if Decimal(str(tx['amount'])) > 0)
@@ -321,7 +327,7 @@ class AnalyticsService:
             "current_income": current_income,
             "previous_spending": previous_spending,
             "spending_change": spending_change,
-            "transaction_count": len(current_transactions),
+            "transaction_count": total_transaction_count,  # Changed to total count
             "top_categories": top_categories,
             "period_start": current_period_start.isoformat(),
             "period_end": current_period_end.isoformat()
