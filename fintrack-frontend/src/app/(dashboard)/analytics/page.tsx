@@ -34,6 +34,8 @@ import {
   ShoppingBagIcon,
   DocumentArrowDownIcon,
   SparklesIcon,
+  XMarkIcon,
+  LightBulbIcon,
 } from "@heroicons/react/24/outline";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -86,14 +88,8 @@ export default function AnalyticsPage() {
   });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showAnomalies] = useState(true);
-  const [amountRange, setAmountRange] = useState({ min: 0, max: 100000 });
+  const [amountRange, setAmountRange] = useState({ min: 0, max: 0 });
   const { auth } = useApp();
-
-  // Calculate max amount from transactions
-  const maxAmount = useMemo(() => {
-    if (transactions.length === 0) return 100000;
-    return Math.max(...transactions.map(tx => Math.abs(tx.amount)));
-  }, [transactions]);
 
   const loadAnalyticsData = useCallback(async () => {
     if (!auth.user) return;
@@ -146,11 +142,13 @@ export default function AnalyticsPage() {
         const spendingPatterns = result.spending_patterns || {};
         const patternInsights = result.pattern_insights || [];
 
-        // Also load transactions for the Recent Transactions table
+        // Load transactions for generating time-series data
+        let transactionsForAnalysis: Transaction[] = [];
         try {
           const txResp = await getTransactions(auth.user.id, {}, 1, 1000);
           if (!txResp.error) {
-            setTransactions(txResp.data || []);
+            transactionsForAnalysis = txResp.data || [];
+            setTransactions(transactionsForAnalysis);
           }
         } catch (e) {
           console.warn('Failed to load transactions for display:', e);
@@ -159,20 +157,26 @@ export default function AnalyticsPage() {
         console.log('Stored Analytics Data:', {
           spendingPatterns,
           patternInsightsCount: patternInsights.length,
-          transactionsAnalyzed: result.transactions_analyzed
+          transactionsAnalyzed: result.transactions_analyzed,
+          loadedTransactions: transactionsForAnalysis.length
         });
 
         // Process the stored analytics data
-        const categories = spendingPatterns.categories || {};
+        const categories = spendingPatterns.expense_categories || spendingPatterns.categories || {};
+        const incomeCategories = spendingPatterns.income_categories || {};
         const merchants = spendingPatterns.merchants || {};
 
-        let totalExpenses = 0;
+        // Get totals from spending patterns
+        const totalExpenses = spendingPatterns.total_expenses || 0;
+        const totalIncome = spendingPatterns.total_income || 0;
+        const totalTransactions = spendingPatterns.total_transactions || result.transactions_analyzed || 0;
+
         const categoryDataArray: { category: string; amount: number; count: number; percentage: number }[] = [];
 
+        // Process expense categories
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Object.entries(categories).forEach(([category, data]: [string, any]) => {
           const amount = data.total_amount || 0;
-          totalExpenses += amount;
           categoryDataArray.push({
             category,
             amount,
@@ -186,20 +190,31 @@ export default function AnalyticsPage() {
           item.percentage = totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0;
         });
 
+        // Sort by amount descending
+        categoryDataArray.sort((a, b) => b.amount - a.amount);
+
+        // Process merchant data - ONLY EXPENSES (negative amounts)
         const merchantDataArray: { merchant: string; totalSpent: number; avgTransaction: number; count: number; firstVisit: string; lastVisit: string }[] = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Object.entries(merchants).forEach(([merchant, data]: [string, any]) => {
-          const totalSpent = data.total_amount || 0;
+          const totalSpent = Math.abs(data.total_amount || 0); // Ensure positive for display
           const count = data.count || 1;
-          merchantDataArray.push({
-            merchant,
-            totalSpent,
-            avgTransaction: totalSpent / count,
-            count,
-            firstVisit: new Date().toISOString(), // We don't have this data in aggregated results
-            lastVisit: new Date().toISOString()
-          });
+
+          // Only include if there's actual spending (expenses only)
+          if (totalSpent > 0) {
+            merchantDataArray.push({
+              merchant,
+              totalSpent,
+              avgTransaction: totalSpent / count,
+              count,
+              firstVisit: data.first_visit || new Date().toISOString(),
+              lastVisit: data.last_visit || new Date().toISOString()
+            });
+          }
         });
+
+        // Sort merchants by total spent descending
+        merchantDataArray.sort((a, b) => b.totalSpent - a.totalSpent);
 
         // Create insights from pattern_insights
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,22 +224,93 @@ export default function AnalyticsPage() {
           severity: insight.severity || insight.priority || "medium"
         }));
 
+        // Calculate income category count
+        const incomeCategoryCount = Object.keys(incomeCategories).length;
+
+        // Generate monthly data from transactions
+        const monthlyMap = new Map<string, { income: number; expenses: number }>();
+        transactionsForAnalysis.forEach(tx => {
+          const monthKey = format(new Date(tx.date), 'MMM yyyy');
+          const existing = monthlyMap.get(monthKey) || { income: 0, expenses: 0 };
+          if (tx.amount > 0) {
+            existing.income += tx.amount;
+          } else {
+            existing.expenses += Math.abs(tx.amount);
+          }
+          monthlyMap.set(monthKey, existing);
+        });
+
+        const monthlyData = Array.from(monthlyMap.entries())
+          .map(([month, data]) => ({
+            month,
+            income: data.income,
+            expenses: data.expenses,
+            net: data.income - data.expenses
+          }))
+          .sort((a, b) => {
+            // Sort by date
+            const dateA = new Date(a.month);
+            const dateB = new Date(b.month);
+            return dateA.getTime() - dateB.getTime();
+          });
+
+        // Generate daily data from transactions
+        const dailyMap = new Map<string, number>();
+        transactionsForAnalysis.forEach(tx => {
+          if (tx.amount < 0) { // Only expenses
+            const dateKey = format(new Date(tx.date), 'yyyy-MM-dd');
+            dailyMap.set(dateKey, (dailyMap.get(dateKey) || 0) + Math.abs(tx.amount));
+          }
+        });
+
+        const dailyDataRaw = Array.from(dailyMap.entries())
+          .map(([date, amount]) => ({ date, amount }))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        // Calculate moving averages
+        const dailyData = dailyDataRaw.map((item, index) => {
+          const ma7 = index >= 6 ?
+            dailyDataRaw.slice(index - 6, index + 1).reduce((sum, d) => sum + d.amount, 0) / 7 :
+            item.amount;
+          const ma30 = index >= 29 ?
+            dailyDataRaw.slice(index - 29, index + 1).reduce((sum, d) => sum + d.amount, 0) / 30 :
+            item.amount;
+          return { ...item, ma7, ma30 };
+        });
+
+        // Generate weekly pattern from transactions
+        const weeklyMap = new Map<string, number>();
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        transactionsForAnalysis.forEach(tx => {
+          if (tx.amount < 0) { // Only expenses
+            const dayOfWeek = dayNames[new Date(tx.date).getDay()];
+            weeklyMap.set(dayOfWeek, (weeklyMap.get(dayOfWeek) || 0) + Math.abs(tx.amount));
+          }
+        });
+
+        const weeklyPattern = dayNames.map(day => ({
+          day,
+          amount: weeklyMap.get(day) || 0
+        }));
+
         const analyticsData: AnalyticsData = {
-          totalIncome: 0, // Not available in aggregated data
-          totalExpenses,
-          netCashflow: -totalExpenses,
-          transactionCount: result.transactions_analyzed,
-          avgExpense: totalExpenses / (result.transactions_analyzed || 1),
-          avgIncome: 0,
-          monthlyData: [], // Not available in current aggregation
+          totalIncome: totalIncome,
+          totalExpenses: totalExpenses,
+          netCashflow: totalIncome - totalExpenses,
+          transactionCount: totalTransactions,
+          avgExpense: totalTransactions > 0 ? totalExpenses / totalTransactions : 0,
+          avgIncome: incomeCategoryCount > 0 ? totalIncome / incomeCategoryCount : 0,
+          monthlyData: monthlyData,
           categoryData: categoryDataArray,
-          dailyData: [],
+          dailyData: dailyData,
           merchantData: merchantDataArray,
-          weeklyPattern: [],
+          weeklyPattern: weeklyPattern,
           recurringPayments: [],
           anomalies: [],
           insights
         };
+
+        console.log('Processed Analytics Data:', analyticsData);
 
         setAnalyticsData(analyticsData);
 
@@ -250,18 +336,202 @@ export default function AnalyticsPage() {
     }
   }, [auth.isAuthenticated, auth.user, loadAnalyticsData]);
 
-  // Re-load analytics when filters change
-  useEffect(() => {
-    if (auth.isAuthenticated && auth.user) {
-      // Debounce the API call to avoid too many requests
-      const timeoutId = setTimeout(() => {
-        loadAnalyticsData();
-      }, 500);
+  // Client-side filtering of analytics data
+  const filteredData = useMemo(() => {
+    if (!analyticsData) return null;
 
-      return () => clearTimeout(timeoutId);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange, amountRange, selectedCategories]);
+    // Filter transactions based on controls
+    const filtered = transactions.filter(tx => {
+      // Date filter
+      if (dateRange.start && dateRange.end) {
+        const txDate = new Date(tx.date);
+        const startDate = new Date(dateRange.start);
+        const endDate = new Date(dateRange.end);
+        if (txDate < startDate || txDate > endDate) return false;
+      }
+
+      // Amount filter - only apply if user has set values
+      const absAmount = Math.abs(tx.amount);
+      if (amountRange.min > 0 && absAmount < amountRange.min) return false;
+      if (amountRange.max > 0 && absAmount > amountRange.max) return false;
+
+      // Category filter
+      if (selectedCategories.length > 0 && !selectedCategories.includes(tx.category || '')) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (filtered.length === 0) return analyticsData; // No data after filtering
+
+    // Recalculate analytics from filtered transactions
+    const expenseTxs = filtered.filter(tx => tx.amount < 0);
+    const incomeTxs = filtered.filter(tx => tx.amount > 0);
+
+    const newTotalExpenses = expenseTxs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    const newTotalIncome = incomeTxs.reduce((sum, tx) => sum + tx.amount, 0);
+
+    // Category data
+    const categoryMap = new Map<string, { amount: number; count: number }>();
+    expenseTxs.forEach(tx => {
+      if (tx.category) {
+        const existing = categoryMap.get(tx.category) || { amount: 0, count: 0 };
+        existing.amount += Math.abs(tx.amount);
+        existing.count += 1;
+        categoryMap.set(tx.category, existing);
+      }
+    });
+
+    const newCategoryData = Array.from(categoryMap.entries())
+      .map(([category, data]) => ({
+        category,
+        amount: data.amount,
+        count: data.count,
+        percentage: newTotalExpenses > 0 ? (data.amount / newTotalExpenses) * 100 : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // Merchant data
+    const merchantMap = new Map<string, { totalSpent: number; count: number; firstVisit: Date; lastVisit: Date }>();
+    expenseTxs.forEach(tx => {
+      if (tx.merchant) {
+        const amount = Math.abs(tx.amount);
+        const txDate = new Date(tx.date);
+
+        const existing = merchantMap.get(tx.merchant);
+        if (existing) {
+          existing.totalSpent += amount;
+          existing.count += 1;
+          if (txDate < existing.firstVisit) existing.firstVisit = txDate;
+          if (txDate > existing.lastVisit) existing.lastVisit = txDate;
+        } else {
+          merchantMap.set(tx.merchant, {
+            totalSpent: amount,
+            count: 1,
+            firstVisit: txDate,
+            lastVisit: txDate
+          });
+        }
+      }
+    });
+
+    const newMerchantData = Array.from(merchantMap.entries())
+      .map(([merchant, data]) => ({
+        merchant,
+        totalSpent: data.totalSpent,
+        avgTransaction: data.totalSpent / data.count,
+        count: data.count,
+        firstVisit: data.firstVisit.toISOString(),
+        lastVisit: data.lastVisit.toISOString()
+      }))
+      .sort((a, b) => b.totalSpent - a.totalSpent);
+
+    // Monthly data
+    const monthlyMap = new Map<string, { income: number; expenses: number }>();
+    filtered.forEach(tx => {
+      const monthKey = format(new Date(tx.date), 'MMM yyyy');
+      const existing = monthlyMap.get(monthKey) || { income: 0, expenses: 0 };
+      if (tx.amount > 0) {
+        existing.income += tx.amount;
+      } else {
+        existing.expenses += Math.abs(tx.amount);
+      }
+      monthlyMap.set(monthKey, existing);
+    });
+
+    const newMonthlyData = Array.from(monthlyMap.entries())
+      .map(([month, data]) => ({
+        month,
+        income: data.income,
+        expenses: data.expenses,
+        net: data.income - data.expenses
+      }))
+      .sort((a, b) => new Date(a.month).getTime() - new Date(b.month).getTime());
+
+    // Daily data
+    const dailyMap = new Map<string, number>();
+    expenseTxs.forEach(tx => {
+      const dateKey = format(new Date(tx.date), 'yyyy-MM-dd');
+      dailyMap.set(dateKey, (dailyMap.get(dateKey) || 0) + Math.abs(tx.amount));
+    });
+
+    const dailyDataRaw = Array.from(dailyMap.entries())
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const newDailyData = dailyDataRaw.map((item, index) => {
+      const ma7 = index >= 6 ?
+        dailyDataRaw.slice(index - 6, index + 1).reduce((sum, d) => sum + d.amount, 0) / 7 :
+        item.amount;
+      const ma30 = index >= 29 ?
+        dailyDataRaw.slice(index - 29, index + 1).reduce((sum, d) => sum + d.amount, 0) / 30 :
+        item.amount;
+      return { ...item, ma7, ma30 };
+    });
+
+    // Weekly pattern
+    const weeklyMap = new Map<string, number>();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    expenseTxs.forEach(tx => {
+      const dayOfWeek = dayNames[new Date(tx.date).getDay()];
+      weeklyMap.set(dayOfWeek, (weeklyMap.get(dayOfWeek) || 0) + Math.abs(tx.amount));
+    });
+
+    const newWeeklyPattern = dayNames.map(day => ({
+      day,
+      amount: weeklyMap.get(day) || 0
+    }));
+
+    const incomeCategoryCount = incomeTxs.reduce((acc, tx) => {
+      if (tx.category && !acc.has(tx.category)) {
+        acc.add(tx.category);
+      }
+      return acc;
+    }, new Set()).size;
+
+    return {
+      ...analyticsData,
+      totalExpenses: newTotalExpenses,
+      totalIncome: newTotalIncome,
+      netCashflow: newTotalIncome - newTotalExpenses,
+      transactionCount: filtered.length,
+      avgExpense: filtered.length > 0 ? newTotalExpenses / filtered.length : 0,
+      avgIncome: incomeCategoryCount > 0 ? newTotalIncome / incomeCategoryCount : 0,
+      categoryData: newCategoryData,
+      merchantData: newMerchantData,
+      monthlyData: newMonthlyData,
+      dailyData: newDailyData,
+      weeklyPattern: newWeeklyPattern
+    };
+  }, [analyticsData, transactions, dateRange, amountRange, selectedCategories]);
+
+  // Use filtered data for display, fallback to original if no filters applied
+  const displayData = filteredData || analyticsData;
+
+  // Add safety check for displayData
+  if (!displayData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-lg p-12 border border-slate-200 text-center max-w-lg">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mx-auto mb-6 flex items-center justify-center">
+            <ChartBarIcon className="h-10 w-10 text-white" />
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">Loading Analytics...</h3>
+          <p className="text-gray-600 mb-6">
+            Please wait while we prepare your financial insights.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Reset filters function
+  const resetFilters = () => {
+    setDateRange({ start: '', end: '' });
+    setAmountRange({ min: 0, max: 0 });
+    setSelectedCategories([]);
+  };
 
   const formatCurrency = (amount: number) => {
     return `LKR ${Math.abs(amount).toLocaleString('en-US', {
@@ -323,14 +593,14 @@ export default function AnalyticsPage() {
       yPosition += 10;
 
       const summaryData = [
-        ['Total Income', formatCurrency(analyticsData.totalIncome)],
-        ['Total Expenses', formatCurrency(analyticsData.totalExpenses)],
-        ['Net Cash Flow', formatCurrency(analyticsData.netCashflow)],
-        ['Total Transactions', analyticsData.transactionCount.toString()],
-        ['Average Expense', formatCurrency(analyticsData.avgExpense)],
-        ['Average Income', formatCurrency(analyticsData.avgIncome)],
-        ['Expense Ratio', `${analyticsData.totalIncome > 0 ? ((analyticsData.totalExpenses / analyticsData.totalIncome) * 100).toFixed(1) : 0}%`],
-        ['Savings Rate', `${analyticsData.totalIncome > 0 ? ((analyticsData.netCashflow / analyticsData.totalIncome) * 100).toFixed(1) : 0}%`]
+        ['Total Income', formatCurrency(displayData.totalIncome)],
+        ['Total Expenses', formatCurrency(displayData.totalExpenses)],
+        ['Net Cash Flow', formatCurrency(displayData.netCashflow)],
+        ['Total Transactions', displayData.transactionCount.toString()],
+        ['Average Expense', formatCurrency(displayData.avgExpense)],
+        ['Average Income', formatCurrency(displayData.avgIncome)],
+        ['Expense Ratio', `${displayData.totalIncome > 0 ? ((displayData.totalExpenses / displayData.totalIncome) * 100).toFixed(1) : 0}%`],
+        ['Savings Rate', `${displayData.totalIncome > 0 ? ((displayData.netCashflow / displayData.totalIncome) * 100).toFixed(1) : 0}%`]
       ];
 
       autoTable(pdf, {
@@ -353,7 +623,7 @@ export default function AnalyticsPage() {
       pdf.text('Top Spending Categories', 20, yPosition);
       yPosition += 10;
 
-      const categoryTableData = analyticsData.categoryData
+      const categoryTableData = displayData.categoryData
         .slice(0, 5)
         .map(cat => [
           cat.category,
@@ -384,15 +654,15 @@ export default function AnalyticsPage() {
        yPosition += 20;
 
        // Weekly pattern analysis
-       const highestDay = analyticsData.weeklyPattern.reduce((prev, current) =>
+       const highestDay = displayData.weeklyPattern.reduce((prev, current) =>
          (prev.amount > current.amount) ? prev : current);
-       const lowestDay = analyticsData.weeklyPattern.reduce((prev, current) =>
+       const lowestDay = displayData.weeklyPattern.reduce((prev, current) =>
          (prev.amount < current.amount) ? prev : current);
 
-       const weekendSpending = analyticsData.weeklyPattern
+       const weekendSpending = displayData.weeklyPattern
          .filter(d => d.day === 'Saturday' || d.day === 'Sunday')
          .reduce((sum, d) => sum + d.amount, 0);
-       const weekdaySpending = analyticsData.weeklyPattern
+       const weekdaySpending = displayData.weeklyPattern
          .filter(d => !['Saturday', 'Sunday'].includes(d.day))
          .reduce((sum, d) => sum + d.amount, 0);
 
@@ -404,14 +674,14 @@ export default function AnalyticsPage() {
 
        const patternData = [
          ['Pattern Metric', 'Value'],
-         ['Total Transactions Analyzed', analyticsData.transactionCount.toString()],
+         ['Total Transactions Analyzed', displayData.transactionCount.toString()],
          ['Highest Spending Day', `${highestDay.day} (${formatCurrency(highestDay.amount)})`],
          ['Lowest Spending Day', `${lowestDay.day} (${formatCurrency(lowestDay.amount)})`],
-         ['Top Spending Category', analyticsData.categoryData[0]?.category || 'N/A'],
-         ['Top Category Amount', formatCurrency(analyticsData.categoryData[0]?.amount || 0)],
+         ['Top Spending Category', displayData.categoryData[0]?.category || 'N/A'],
+         ['Top Category Amount', formatCurrency(displayData.categoryData[0]?.amount || 0)],
          ['Weekend vs Weekday Ratio', `${weekdaySpending > 0 ? ((weekendSpending / weekdaySpending) * 100).toFixed(1) : 0}%`],
-         ['Average Daily Spending', formatCurrency(analyticsData.totalExpenses / 7)],
-         ['Most Active Day', `${highestDay.day} with ${Math.round(analyticsData.transactionCount / 7)} transactions`]
+         ['Average Daily Spending', formatCurrency(displayData.totalExpenses / 7)],
+         ['Most Active Day', `${highestDay.day} with ${Math.round(displayData.transactionCount / 7)} transactions`]
        ];
 
        autoTable(pdf, {
@@ -437,13 +707,13 @@ export default function AnalyticsPage() {
        pdf.text('Daily Spending Breakdown', 20, yPosition);
        yPosition += 10;
 
-       const dowData = analyticsData.weeklyPattern.map(day => {
-         const dayTransactions = Math.round(analyticsData.transactionCount / 7); // Simplified calculation
+       const dowData = displayData.weeklyPattern.map(day => {
+         const dayTransactions = Math.round(displayData.transactionCount / 7); // Simplified calculation
          const avgPerTransaction = day.amount / dayTransactions || 0;
          return [
            day.day,
            formatCurrency(day.amount),
-           `${((day.amount / analyticsData.totalExpenses) * 100).toFixed(1)}%`,
+           `${((day.amount / displayData.totalExpenses) * 100).toFixed(1)}%`,
            formatCurrency(avgPerTransaction)
          ];
        });
@@ -476,7 +746,7 @@ export default function AnalyticsPage() {
        pdf.text('Top Categories by Spending', 20, yPosition);
        yPosition += 10;
 
-       const topCategoriesData = analyticsData.categoryData.slice(0, 5).map((cat, index) => [
+       const topCategoriesData = displayData.categoryData.slice(0, 5).map((cat, index) => [
          (index + 1).toString(),
          cat.category,
          formatCurrency(cat.amount),
@@ -522,12 +792,12 @@ export default function AnalyticsPage() {
          behaviorInsights.push(['Weekday Spender', 'Most spending occurs during weekdays', 'Good weekend discipline']);
        }
 
-       const topCategoryPercentage = analyticsData.categoryData[0]?.percentage || 0;
+       const topCategoryPercentage = displayData.categoryData[0]?.percentage || 0;
        if (topCategoryPercentage > 40) {
-         behaviorInsights.push(['Category Concentration', `${topCategoryPercentage.toFixed(0)}% spent on ${analyticsData.categoryData[0]?.category}`, 'Consider diversifying expenses']);
+         behaviorInsights.push(['Category Concentration', `${topCategoryPercentage.toFixed(0)}% spent on ${displayData.categoryData[0]?.category}`, 'Consider diversifying expenses']);
        }
 
-       if (highestDay.amount > (analyticsData.totalExpenses / 7) * 2) {
+       if (highestDay.amount > (displayData.totalExpenses / 7) * 2) {
          behaviorInsights.push(['Spike Day Pattern', `${highestDay.day} shows unusually high spending`, 'Monitor this day for overspending']);
        }
 
@@ -554,7 +824,7 @@ export default function AnalyticsPage() {
       yPosition += 10;
 
       // Calculate trend metrics
-      const dailyAmounts = analyticsData.dailyData.map(d => d.amount);
+      const dailyAmounts = displayData.dailyData.map(d => d.amount);
       const trendDirection = dailyAmounts.length > 1 ?
         (dailyAmounts[dailyAmounts.length - 1] > dailyAmounts[0] ? 'Increasing' : 'Decreasing') : 'Stable';
       const avgDaily = dailyAmounts.reduce((sum, amt) => sum + amt, 0) / dailyAmounts.length;
@@ -566,10 +836,10 @@ export default function AnalyticsPage() {
         ['Overall Trend Direction', trendDirection],
         ['Average Daily Spending', formatCurrency(avgDaily)],
         ['Spending Volatility', `${volatility.toFixed(1)}%`],
-        ['Analysis Period (Days)', analyticsData.dailyData.length.toString()],
+        ['Analysis Period (Days)', displayData.dailyData.length.toString()],
         ['Highest Daily Spending', formatCurrency(Math.max(...dailyAmounts))],
         ['Lowest Daily Spending', formatCurrency(Math.min(...dailyAmounts))],
-        ['7-Day Moving Average (Latest)', formatCurrency(analyticsData.dailyData[analyticsData.dailyData.length - 1]?.ma7 || 0)]
+        ['7-Day Moving Average (Latest)', formatCurrency(displayData.dailyData[displayData.dailyData.length - 1]?.ma7 || 0)]
       ];
 
       autoTable(pdf, {
@@ -587,9 +857,9 @@ export default function AnalyticsPage() {
       pdf.text('Merchant Spending Analysis', 20, yPosition);
       yPosition += 10;
 
-      const topMerchant = analyticsData.merchantData[0];
-      const merchantCount = analyticsData.merchantData.length;
-      const avgMerchantSpending = analyticsData.merchantData.reduce((sum, m) => sum + m.totalSpent, 0) / merchantCount;
+      const topMerchant = displayData.merchantData[0];
+      const merchantCount = displayData.merchantData.length;
+      const avgMerchantSpending = displayData.merchantData.reduce((sum, m) => sum + m.totalSpent, 0) / merchantCount;
 
       const merchantSummaryData = [
         ['Merchant Metric', 'Value'],
@@ -620,7 +890,7 @@ export default function AnalyticsPage() {
       pdf.text('Top 10 Merchants Detail', 20, yPosition);
       yPosition += 10;
 
-      const topMerchantsData = analyticsData.merchantData
+      const topMerchantsData = displayData.merchantData
         .slice(0, 10)
         .map((merchant, index) => [
           (index + 1).toString(),
@@ -632,16 +902,16 @@ export default function AnalyticsPage() {
 
       autoTable(pdf, {
         startY: yPosition,
-        head: [['Rank', 'Merchant', 'Total Spent', 'Avg Transaction', 'Visit Count']],
+        head: [['Rank', 'Merchant', 'Total Spent', 'Avg Transaction', 'Visits']],
         body: topMerchantsData,
         theme: 'striped',
         headStyles: { fillColor: [231, 76, 60] },
         columnStyles: {
-          0: { cellWidth: 15 },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 35 },
-          3: { cellWidth: 35 },
-          4: { cellWidth: 25 }
+          0: { cellWidth: 12 },
+          1: { cellWidth: 45 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 30 },
+          4: { cellWidth: 18 }
         }
       });
 
@@ -653,13 +923,16 @@ export default function AnalyticsPage() {
       yPosition += 10;
 
       // Calculate forecast data
-      const recentDays = analyticsData.dailyData.slice(-30);
+      const recentDays = displayData.dailyData.slice(-30);
       const recentTrend = recentDays.reduce((sum, d) => sum + d.amount, 0) / recentDays.length;
-      const historicalAvg = analyticsData.dailyData.reduce((sum, d) => sum + d.amount, 0) / analyticsData.dailyData.length;
+      const historicalAvg = displayData.dailyData.reduce((sum, d) => sum + d.amount, 0) / displayData.dailyData.length;
       const trendChange = historicalAvg > 0 ? ((recentTrend - historicalAvg) / historicalAvg * 100) : 0;
 
       const forecast30Days = recentTrend * 30;
-      const confidence = Math.max(0.4, Math.min(0.95, analyticsData.dailyData.length / 60));
+      // Calculate confidence based on data points: 30+ days = 75%, 60+ days = 85%, 90+ days = 95%
+      const dataPoints = displayData.dailyData.length;
+      const baseConfidence = Math.min(0.95, 0.50 + (dataPoints / 90) * 0.45);
+      const confidence = Math.round(baseConfidence * 100) / 100; // Round to 2 decimals
 
       const predictiveData = [
         ['Predictive Metric', 'Value'],
@@ -669,7 +942,7 @@ export default function AnalyticsPage() {
         ['30-Day Forecast', formatCurrency(forecast30Days)],
         ['Predicted Monthly Change', `${trendChange > 0 ? '+' : ''}${trendChange.toFixed(1)}%`],
         ['Forecast Confidence', `${(confidence * 100).toFixed(0)}%`],
-        ['Data Points Used', `${analyticsData.dailyData.length} days`]
+        ['Data Points Used', `${displayData.dailyData.length} days`]
       ];
 
       autoTable(pdf, {
@@ -768,7 +1041,7 @@ export default function AnalyticsPage() {
                 onClick={() => {
                   // Reset filters
                   setSelectedCategories([]);
-                  setAmountRange({ min: 0, max: maxAmount });
+                  setAmountRange({ min: 0, max: 0 });
                   setDateRange({
                     start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
                     end: format(new Date(), 'yyyy-MM-dd')
@@ -787,27 +1060,34 @@ export default function AnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                Advanced Analytics
-              </h1>
-              <p className="text-slate-600 mt-2 text-lg">AI-Powered Financial Intelligence & Insights</p>
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-500 rounded-xl shadow-lg">
+                  <ChartBarIcon className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    Advanced Analytics
+                  </h1>
+                  <p className="text-slate-600 mt-1 text-lg">AI-Powered Financial Intelligence & Insights</p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="hidden md:flex space-x-3">
               <button
                 onClick={generatePDFReport}
-                className="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg transition-colors duration-200"
+                className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:shadow-lg transition-all font-medium flex items-center space-x-2"
               >
-                <DocumentArrowDownIcon className="w-4 h-4" />
-                <span className="text-sm font-medium">Export PDF</span>
+                <DocumentArrowDownIcon className="w-5 h-5" />
+                <span>Export PDF</span>
               </button>
-              <div className="hidden md:flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white px-4 py-2 rounded-full">
-                <SparklesIcon className="w-4 h-4" />
-                <span className="text-sm font-medium">AI Analytics</span>
+              <div className="px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl shadow-md flex items-center space-x-2">
+                <SparklesIcon className="w-5 h-5" />
+                <span className="font-medium">AI Analytics</span>
               </div>
             </div>
           </div>
@@ -815,10 +1095,19 @@ export default function AnalyticsPage() {
 
         {/* Controls */}
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <FunnelIcon className="h-6 w-6 mr-2 text-blue-600" />
-            Analytics Controls
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <FunnelIcon className="h-6 w-6 mr-2 text-blue-600" />
+              Analytics Controls
+            </h2>
+            <button
+              onClick={resetFilters}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-medium text-sm transition-all flex items-center space-x-2"
+            >
+              <XMarkIcon className="h-5 w-5" />
+              <span>Clear Filters</span>
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Date Range */}
@@ -829,13 +1118,13 @@ export default function AnalyticsPage() {
                   type="date"
                   value={dateRange.start}
                   onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                 />
                 <input
                   type="date"
                   value={dateRange.end}
                   onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                 />
               </div>
             </div>
@@ -846,18 +1135,18 @@ export default function AnalyticsPage() {
               <div className="space-y-2">
                 <input
                   type="number"
-                  placeholder="Min Amount"
-                  value={amountRange.min}
+                  placeholder="Min Amount (optional)"
+                  value={amountRange.min || ''}
                   onChange={(e) => setAmountRange(prev => ({ ...prev, min: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   step="10"
                 />
                 <input
                   type="number"
-                  placeholder="Max Amount"
-                  value={amountRange.max}
-                  onChange={(e) => setAmountRange(prev => ({ ...prev, max: parseFloat(e.target.value) || maxAmount }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  placeholder="Max Amount (optional)"
+                  value={amountRange.max || ''}
+                  onChange={(e) => setAmountRange(prev => ({ ...prev, max: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   step="10"
                 />
               </div>
@@ -866,27 +1155,25 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Analysis Type Tabs */}
-        <div className="mb-8">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
-              {ANALYSIS_TYPES.map((type) => {
-                const Icon = type.icon;
-                return (
-                  <button
-                    key={type.id}
-                    onClick={() => setSelectedAnalysis(type.id)}
-                    className={`${
-                      selectedAnalysis === type.id
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center`}
-                  >
-                    <Icon className="h-5 w-5 mr-2" />
-                    {type.label}
-                  </button>
-                );
-              })}
-            </nav>
+        <div className="bg-white rounded-2xl shadow-lg p-2 border border-slate-200">
+          <div className="flex items-center space-x-2 overflow-x-auto">
+            {ANALYSIS_TYPES.map((type) => {
+              const Icon = type.icon;
+              return (
+                <button
+                  key={type.id}
+                  onClick={() => setSelectedAnalysis(type.id)}
+                  className={`${
+                    selectedAnalysis === type.id
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-md'
+                      : 'text-gray-600 hover:bg-slate-100'
+                  } px-4 py-2.5 rounded-xl font-medium text-sm flex items-center space-x-2 whitespace-nowrap transition-all`}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{type.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -895,62 +1182,134 @@ export default function AnalyticsPage() {
           <div className="space-y-8">
             {/* Key Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-md border-2 border-slate-200 p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Total Expenses</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrencyCompact(analyticsData.totalExpenses)}</p>
-                    <p className="text-xs text-gray-500">{analyticsData.transactionCount} transactions</p>
+                    <p className="text-sm font-medium text-gray-600">Total Expenses</p>
+                    <p className="text-2xl font-bold text-red-600 mt-1">{formatCurrencyCompact(displayData.totalExpenses)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{displayData.transactionCount} transactions</p>
                   </div>
-                  <ArrowTrendingDownIcon className="h-8 w-8 text-red-500" />
+                  <div className="p-3 bg-gradient-to-br from-red-500 to-pink-500 rounded-xl">
+                    <ArrowTrendingDownIcon className="h-6 w-6 text-white" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-md border-2 border-slate-200 p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Total Income</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrencyCompact(analyticsData.totalIncome)}</p>
-                    <p className="text-xs text-gray-500">Revenue streams</p>
+                    <p className="text-sm font-medium text-gray-600">Total Income</p>
+                    <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrencyCompact(displayData.totalIncome)}</p>
+                    <p className="text-xs text-gray-500 mt-1">Revenue streams</p>
                   </div>
-                  <ArrowTrendingUpIcon className="h-8 w-8 text-green-500" />
+                  <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl">
+                    <ArrowTrendingUpIcon className="h-6 w-6 text-white" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-md border-2 border-slate-200 p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Net Cash Flow</p>
-                    <p className={`text-2xl font-bold ${analyticsData.netCashflow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatCurrencyCompact(analyticsData.netCashflow)}
+                    <p className="text-sm font-medium text-gray-600">Net Cash Flow</p>
+                    <p className={`text-2xl font-bold mt-1 ${displayData.netCashflow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrencyCompact(displayData.netCashflow)}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {analyticsData.totalIncome > 0 ?
-                        `${((analyticsData.netCashflow / analyticsData.totalIncome) * 100).toFixed(1)}%` :
+                    <p className="text-xs text-gray-500 mt-1">
+                      {displayData.totalIncome > 0 ?
+                        `${((displayData.netCashflow / displayData.totalIncome) * 100).toFixed(1)}%` :
                         '0%'
                       } savings rate
                     </p>
                   </div>
-                  <BanknotesIcon className="h-8 w-8 text-blue-500" />
+                  <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl">
+                    <BanknotesIcon className="h-6 w-6 text-white" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div>
-                  <p className="text-sm text-gray-600">Avg Expense</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrencyCompact(analyticsData.avgExpense)}</p>
-                  <p className="text-xs text-gray-500">Per transaction</p>
+              <div className="bg-white rounded-xl shadow-md border-2 border-slate-200 p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Avg Expense</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrencyCompact(displayData.avgExpense)}</p>
+                    <p className="text-xs text-gray-500 mt-1">Per transaction</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl">
+                    <ChartBarIcon className="h-6 w-6 text-white" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div>
-                  <p className="text-sm text-gray-600">Avg Income</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrencyCompact(analyticsData.avgIncome)}</p>
-                  <p className="text-xs text-gray-500">Per transaction</p>
+              <div className="bg-white rounded-xl shadow-md border-2 border-slate-200 p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Avg Income</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrencyCompact(displayData.avgIncome)}</p>
+                    <p className="text-xs text-gray-500 mt-1">Per transaction</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl">
+                    <ArrowTrendingUpIcon className="h-6 w-6 text-white" />
+                  </div>
                 </div>
               </div>
             </div>
+
+            {/* AI Insights Section */}
+            {displayData.insights && displayData.insights.length > 0 && (
+              <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-2xl shadow-lg border-2 border-purple-200 p-8">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="p-3 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl">
+                    <LightBulbIcon className="h-7 w-7 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                      AI-Powered Insights
+                    </h3>
+                    <p className="text-sm text-slate-600">Smart financial patterns detected by our AI</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {displayData.insights.map((insight, index) => {
+                    // Map severity to colors
+                    const severityColors = {
+                      high: 'from-red-500 to-pink-500',
+                      medium: 'from-orange-500 to-yellow-500',
+                      low: 'from-green-500 to-emerald-500'
+                    };
+
+                    const severityBadges = {
+                      high: 'bg-red-100 text-red-700 border-red-300',
+                      medium: 'bg-orange-100 text-orange-700 border-orange-300',
+                      low: 'bg-green-100 text-green-700 border-green-300'
+                    };
+
+                    const gradient = severityColors[insight.severity as keyof typeof severityColors] || severityColors.medium;
+                    const badgeStyle = severityBadges[insight.severity as keyof typeof severityBadges] || severityBadges.medium;
+
+                    return (
+                      <div key={index} className="bg-white rounded-xl shadow-md border-2 border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
+                        <div className={`h-2 bg-gradient-to-r ${gradient}`} />
+                        <div className="p-5">
+                          <div className="flex items-start justify-between mb-3">
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${badgeStyle}`}>
+                              {insight.type.replace('_', ' ').toUpperCase()}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${badgeStyle}`}>
+                              {insight.severity.toUpperCase()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-700 leading-relaxed">
+                            {insight.message}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
 
 
@@ -986,8 +1345,8 @@ export default function AnalyticsPage() {
                   <PieChart>
                     <Pie
                       data={[
-                        { name: 'Income', value: analyticsData.totalIncome, fill: '#10B981' },
-                        { name: 'Expenses', value: analyticsData.totalExpenses, fill: '#EF4444' }
+                        { name: 'Income', value: displayData.totalIncome, fill: '#10B981' },
+                        { name: 'Expenses', value: displayData.totalExpenses, fill: '#EF4444' }
                       ]}
                       cx="50%"
                       cy="50%"
@@ -1008,8 +1367,8 @@ export default function AnalyticsPage() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Income vs Expenses</h3>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={[
-                    { type: 'Income', amount: analyticsData.totalIncome },
-                    { type: 'Expenses', amount: analyticsData.totalExpenses }
+                    { type: 'Income', amount: displayData.totalIncome },
+                    { type: 'Expenses', amount: displayData.totalExpenses }
                   ]}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="type" />
@@ -1025,7 +1384,7 @@ export default function AnalyticsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Financial Flow</h3>
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={analyticsData.monthlyData}>
+                <BarChart data={displayData.monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1047,7 +1406,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Spending by Day of Week</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analyticsData.weeklyPattern}>
+                  <BarChart data={displayData.weeklyPattern}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1060,7 +1419,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Distribution by Category</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analyticsData.categoryData.slice(0, 8)} layout="horizontal">
+                  <BarChart data={displayData.categoryData.slice(0, 10)} layout="horizontal">
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickFormatter={formatCurrencyCompact} />
                     <YAxis dataKey="category" type="category" width={100} />
@@ -1078,7 +1437,7 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={analyticsData.categoryData.slice(0, 6)}
+                      data={displayData.categoryData.slice(0, 6)}
                       cx="50%"
                       cy="50%"
                       outerRadius={100}
@@ -1086,7 +1445,7 @@ export default function AnalyticsPage() {
                       dataKey="amount"
                       label={({ category, percentage }) => `${category}: ${percentage.toFixed(1)}%`}
                     >
-                      {analyticsData.categoryData.slice(0, 6).map((entry, index) => (
+                      {displayData.categoryData.slice(0, 6).map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -1098,7 +1457,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Categories</h3>
                 <div className="space-y-4">
-                  {analyticsData.categoryData.slice(0, 5).map((category, index) => (
+                  {displayData.categoryData.slice(0, 5).map((category, index) => (
                     <div key={category.category} className="flex items-center justify-between">
                       <div className="flex items-center">
                         <div
@@ -1125,7 +1484,7 @@ export default function AnalyticsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Spending Trends with Moving Averages</h3>
               <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={analyticsData.dailyData}>
+                <LineChart data={displayData.dailyData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} />
                   <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1146,7 +1505,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Pattern</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={analyticsData.monthlyData}>
+                  <LineChart data={displayData.monthlyData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1159,7 +1518,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Weekly Spending Pattern</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analyticsData.weeklyPattern}>
+                  <BarChart data={displayData.weeklyPattern}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1179,7 +1538,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Merchants by Spending</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analyticsData.merchantData} layout="horizontal">
+                  <BarChart data={displayData.merchantData.slice(0, 10)} layout="horizontal">
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickFormatter={formatCurrencyCompact} />
                     <YAxis dataKey="merchant" type="category" width={120} />
@@ -1192,7 +1551,7 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Merchant Analysis: Frequency vs Spending</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <ScatterChart data={analyticsData.merchantData}>
+                  <ScatterChart data={displayData.merchantData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="count" name="Transaction Count" />
                     <YAxis dataKey="totalSpent" name="Total Spent" tickFormatter={formatCurrencyCompact} />
@@ -1238,7 +1597,7 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {analyticsData.merchantData.map((merchant, index) => (
+                    {displayData.merchantData.map((merchant, index) => (
                       <tr key={merchant.merchant} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {merchant.merchant}
@@ -1275,22 +1634,29 @@ export default function AnalyticsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(analyticsData.dailyData.slice(-30).reduce((sum, d) => sum + d.amount, 0))}
+                    {formatCurrency(displayData.dailyData.slice(-30).reduce((sum, d) => sum + d.amount, 0))}
                   </div>
                   <div className="text-sm text-gray-600">Recent Monthly Spending</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {analyticsData.dailyData.length > 7 ?
-                      `${((analyticsData.dailyData.slice(-7).reduce((sum, d) => sum + d.amount, 0) /
-                          Math.max(1, analyticsData.dailyData.slice(-14, -7).reduce((sum, d) => sum + d.amount, 0)) - 1) * 100).toFixed(1)}%`
+                    {displayData.dailyData.length > 7 ?
+                      `${((displayData.dailyData.slice(-7).reduce((sum, d) => sum + d.amount, 0) /
+                          Math.max(1, displayData.dailyData.slice(-14, -7).reduce((sum, d) => sum + d.amount, 0)) - 1) * 100).toFixed(1)}%`
                       : '0%'}
                   </div>
                   <div className="text-sm text-gray-600">Weekly Change</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">
-                    {Math.min(95, Math.max(40, analyticsData.dailyData.length * 2))}%
+                    {(() => {
+                      // Calculate confidence based on data points (more data = higher confidence)
+                      // Use displayData to respect filters
+                      const dataPoints = displayData.dailyData.length;
+                      // 30+ days = 75%, 60+ days = 85%, 90+ days = 95%
+                      const baseConfidence = Math.min(95, 50 + (dataPoints / 90) * 45);
+                      return Math.round(baseConfidence);
+                    })()}%
                   </div>
                   <div className="text-sm text-gray-600">Data Confidence</div>
                 </div>
@@ -1298,10 +1664,10 @@ export default function AnalyticsPage() {
 
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={[
-                  ...analyticsData.dailyData.slice(-30),
+                  ...displayData.dailyData.slice(-30),
                   ...Array.from({ length: 30 }, (_, i) => ({
                     date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
-                    amount: analyticsData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
+                    amount: displayData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
                     ma7: 0,
                     ma30: 0,
                     predicted: true
@@ -1385,3 +1751,7 @@ export default function AnalyticsPage() {
     </div>
   );
 }
+
+
+
+
