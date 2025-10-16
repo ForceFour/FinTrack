@@ -1224,61 +1224,31 @@ class TransactionProcessingNodes:
                 elif state.get('final_transaction'):
                     transactions = [state['final_transaction']]
 
-            if transactions:
-                # Perform security validation using the process method
-                from ..agents.safety_guard_agent import SafetyGuardAgentInput
-                input_data = SafetyGuardAgentInput(
-                    classified_transactions=transactions,
-                    user_profile=state.get('user_profile', {})
-                )
-                security_result = safety_agent.process(input_data)
+            # Always use SafetyGuardAgent for both transactions and baseline security checks
+            # The agent handles new user recommendations internally
+            from ..agents.safety_guard_agent import SafetyGuardAgentInput
 
-                state['security_alerts'] = security_result.security_alerts
-                state['risk_assessment'] = {'risk_score': security_result.risk_score}
-                state['safety_confidence'] = 0.9  # Default confidence for safety validation
+            # Prepare user profile with new user information
+            user_profile = state.get('user_profile', {})
 
-                print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts")
-            else:
-                # Even without transactions, perform baseline security checks for new users
-                print(f"SAFETY GUARD: No transactions to validate - performing baseline security assessment")
+            # If no transactions, mark as new user to get default recommendations
+            if not transactions:
+                user_profile['is_new_user'] = True
+                user_profile['has_seen_security_recommendations'] = user_profile.get('has_seen_security_recommendations', False)
 
-                # Generate general security recommendations for new users
-                baseline_alerts = [
-                    {
-                        'alert_type': 'security_setup',
-                        'severity': 'info',
-                        'title': 'Enable Account Security Features',
-                        'description': 'Set up two-factor authentication and review account security settings.',
-                        'recommendation': 'Enable 2FA and use strong, unique passwords',
-                        'metadata': {
-                            'category': 'account_security',
-                            'priority': 'high',
-                            'action_items': ['Enable 2FA', 'Update password', 'Review login notifications']
-                        }
-                    },
-                    {
-                        'alert_type': 'fraud_awareness',
-                        'severity': 'info',
-                        'title': 'Monitor Your Accounts Regularly',
-                        'description': 'Check your bank and credit card statements regularly for unauthorized transactions.',
-                        'recommendation': 'Set up account alerts for transactions',
-                        'metadata': {
-                            'category': 'fraud_prevention',
-                            'priority': 'medium',
-                            'action_items': ['Enable transaction alerts', 'Review statements weekly']
-                        }
-                    }
-                ]
+            input_data = SafetyGuardAgentInput(
+                classified_transactions=transactions if transactions else [],
+                user_profile=user_profile
+            )
 
-                state['security_alerts'] = baseline_alerts
-                state['risk_assessment'] = {
-                    'risk_score': 0.1,  # Low baseline risk for new users
-                    'assessment_type': 'baseline_security_check',
-                    'recommendations': ['Enable account security features', 'Set up monitoring']
-                }
-                state['safety_confidence'] = 0.8  # High confidence in baseline security recommendations
+            security_result = safety_agent.process(input_data)
 
-                print(f"SAFETY GUARD: Generated {len(baseline_alerts)} baseline security recommendations")
+            state['security_alerts'] = [alert.dict() for alert in security_result.security_alerts]
+            state['flagged_transactions'] = [tx.dict() for tx in security_result.flagged_transactions] if security_result.flagged_transactions else []
+            state['risk_assessment'] = {'risk_score': security_result.risk_score}
+            state['safety_confidence'] = 0.9 if transactions else 0.8  # Lower confidence for new users
+
+            print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts (Risk Score: {security_result.risk_score:.2f})")
 
             # Add to processing history
             processing_entry = {

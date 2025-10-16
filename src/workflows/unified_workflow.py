@@ -435,6 +435,56 @@ class UnifiedTransactionWorkflow:
     # WORKFLOW EXECUTION METHODS
     # ==========================================
 
+    async def _load_user_profile(self, user_id: str) -> Dict[str, Any]:
+        """
+        Load user profile with spending limits from database
+        """
+        try:
+            from ..core.database_config import get_db_client
+
+            supabase = await get_db_client()
+
+            # Get user profile
+            result = supabase.table("user_profile").select("*").eq("user_id", user_id).execute()
+
+            if result.data and len(result.data) > 0:
+                profile = result.data[0]
+                return {
+                    'user_id': user_id,
+                    'spending_limits': profile.get('spending_limits', {}),
+                    'historical_amounts': profile.get('historical_amounts', []),
+                    'frequency_threshold': profile.get('frequency_threshold', 10),
+                    'category_frequency_threshold': profile.get('category_frequency_threshold', 15),
+                    'location_repetition_threshold': profile.get('location_repetition_threshold', 15),
+                    'is_new_user': False,
+                    'has_seen_security_recommendations': True
+                }
+            else:
+                # New user - return default profile
+                return {
+                    'user_id': user_id,
+                    'spending_limits': {},
+                    'historical_amounts': [],
+                    'frequency_threshold': 10,
+                    'category_frequency_threshold': 15,
+                    'location_repetition_threshold': 15,
+                    'is_new_user': True,
+                    'has_seen_security_recommendations': False
+                }
+
+        except Exception as e:
+            logger.warning(f"Failed to load user profile: {e}, using defaults")
+            return {
+                'user_id': user_id,
+                'spending_limits': {},
+                'historical_amounts': [],
+                'frequency_threshold': 10,
+                'category_frequency_threshold': 15,
+                'location_repetition_threshold': 15,
+                'is_new_user': True,
+                'has_seen_security_recommendations': False
+            }
+
     async def execute_workflow(self,
                              mode: WorkflowMode = WorkflowMode.FULL_PIPELINE,
                              user_input: str = None,
@@ -475,6 +525,9 @@ class UnifiedTransactionWorkflow:
             # Determine input type
             input_type = "structured" if raw_transactions else "unstructured"
 
+            # Load user profile with spending limits
+            user_profile = await self._load_user_profile(user_id)
+
             # Initialize state
             initial_state = TransactionProcessingState(
                 workflow_id=workflow_id,
@@ -489,7 +542,8 @@ class UnifiedTransactionWorkflow:
                 error_log=[],
                 processed_transactions=[],
                 started_at=start_time,
-                created_at=start_time
+                created_at=start_time,
+                user_profile=user_profile  # Add user profile with spending limits
             )
 
             # Add workflow start to history
