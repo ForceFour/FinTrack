@@ -1158,6 +1158,10 @@ class TransactionProcessingNodes:
 
             # If no suggestions were generated AND user is genuinely new, add default financial tips
             all_suggestions = result.suggestions
+            print(f"SUGGESTION: Agent returned {len(all_suggestions)} suggestions")
+            for sugg in all_suggestions[:3]:
+                print(f"  - {sugg.title} ({sugg.suggestion_type})")
+
             if not all_suggestions and is_first_time_user:
                 print(f"SUGGESTION: Adding default financial tips for new users")
                 default_suggestions = self._generate_default_financial_suggestions()
@@ -1171,6 +1175,12 @@ class TransactionProcessingNodes:
             state['budget_alerts'] = result.alerts
             state['savings_opportunities'] = result.savings_opportunities
             state['suggestion_confidence'] = 0.85 if not is_first_time_user else 0.7  # Lower confidence for new users
+
+            print(f"SUGGESTION: Storing in state:")
+            print(f"  - budget_recommendations: {len(state.get('budget_recommendations', []))} items")
+            print(f"  - spending_suggestions: {len(state.get('spending_suggestions', []))} items")
+            print(f"  - savings_opportunities: {len(state.get('savings_opportunities', []))} items")
+            print(f"  - suggestion_confidence: {state.get('suggestion_confidence')}")
 
             print(f"SUGGESTION: Generated {len(all_suggestions)} total suggestions ({len(state['budget_recommendations'])} budget, {len(state['spending_suggestions'])} spending)")
 
