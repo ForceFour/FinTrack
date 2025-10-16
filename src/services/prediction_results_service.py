@@ -93,12 +93,14 @@ class PredictionResultsService:
                 "pattern_confidence": workflow_state.get("pattern_confidence"),
 
                 # Suggestions and recommendations - serialize to handle Pydantic models
-                "budget_recommendations": self._serialize_list(workflow_state.get("budget_recommendations", [])) if workflow_state.get("budget_recommendations") else None,
-                "spending_suggestions": self._serialize_list(workflow_state.get("spending_suggestions", [])) if workflow_state.get("spending_suggestions") else None,
+                # Note: Don't use truthiness check for lists, check for None explicitly
+                "budget_recommendations": self._serialize_list(workflow_state.get("budget_recommendations", [])) if workflow_state.get("budget_recommendations") is not None else None,
+                "spending_suggestions": self._serialize_list(workflow_state.get("spending_suggestions", [])) if workflow_state.get("spending_suggestions") is not None else None,
                 "suggestion_confidence": workflow_state.get("suggestion_confidence"),
+                "savings_opportunities": self._serialize_list(workflow_state.get("savings_opportunities", [])) if workflow_state.get("savings_opportunities") is not None else None,
 
                 # Security and safety results - serialize to handle Pydantic models
-                "security_alerts": self._serialize_list(workflow_state.get("security_alerts", [])) if workflow_state.get("security_alerts") else None,
+                "security_alerts": self._serialize_list(workflow_state.get("security_alerts", [])) if workflow_state.get("security_alerts") is not None else None,
                 "risk_assessment": self._serialize_dict(workflow_state.get("risk_assessment", {})) if workflow_state.get("risk_assessment") else None,
                 "fraud_score": self._extract_fraud_score(workflow_state),
                 "anomaly_score": self._extract_anomaly_score(workflow_state),
@@ -106,7 +108,7 @@ class PredictionResultsService:
                 "requires_human_review": self._check_requires_review(workflow_state),
 
                 # Validation results - serialize to handle Pydantic models
-                "validation_errors": self._serialize_list(self._format_validation_errors(workflow_state)) if self._format_validation_errors(workflow_state) else None,
+                "validation_errors": self._serialize_list(self._format_validation_errors(workflow_state)) if self._format_validation_errors(workflow_state) is not None else None,
                 "data_quality_score": self._calculate_data_quality_score(workflow_state),
                 "is_valid": workflow_state.get("is_valid", True),
 

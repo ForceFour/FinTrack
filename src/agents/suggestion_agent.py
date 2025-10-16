@@ -1,11 +1,10 @@
 """
 Suggestion Agent - Agent 5
-Role: Generate actionable financial recommendations
+Role: Generate actionable financial recommendations based on pattern insights and user preferences
 """
 
 from typing import Dict, Any, List, Optional
-from langchain.tools import BaseTool
-from langchain.agents import AgentExecutor
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 from ..schemas.transaction_schemas import PatternInsight, Suggestion
@@ -23,8 +22,11 @@ class SuggestionAgentInput(BaseModel):
 class SuggestionAgentOutput(BaseModel):
     """Output schema for Suggestion Agent"""
     suggestions: List[Suggestion] = Field(description="Actionable financial recommendations")
+    budget_recommendations: List[Dict[str, Any]] = Field(description="Budget adjustment recommendations")
+    spending_suggestions: List[Dict[str, Any]] = Field(description="Spending reduction suggestions")
     alerts: List[Dict[str, Any]] = Field(description="Budget alerts and warnings")
     savings_opportunities: List[Dict[str, Any]] = Field(description="Identified savings opportunities")
+    confidence_score: float = Field(description="Confidence score for suggestions (0-1)")
 
 
 class SuggestionAgent:
@@ -32,12 +34,20 @@ class SuggestionAgent:
     Agent 5: Suggestion Agent
 
     Responsibilities:
-    - Generate actionable recommendations based on pattern analysis
+    - Generate actionable financial recommendations based on pattern analysis
     - Compare spending against budget thresholds
-    - Suggest areas for spending reduction
-    - Alert users about high recurring subscriptions
-    - Recommend budget adjustments
-    - Identify savings opportunities
+    - Suggest areas for spending reduction and optimization
+    - Alert users about high recurring subscriptions and anomalies
+    - Recommend budget threshold adjustments
+    - Identify savings opportunities and windfalls
+    - Handle new users (< 10 transactions) and existing users differently
+    - Produce Pydantic Suggestion objects for frontend consumption
+
+    Integration pattern:
+    - Used by suggestion_node in workflow pipeline
+    - Takes pattern insights from PatternAnalyzerAgent as input
+    - Outputs suggestions stored in prediction_results for frontend access
+    - Queries user profile for transaction count to determine user maturity
     """
 
     def __init__(self, config: Dict[str, Any] = None, transaction_service=None):
@@ -45,20 +55,27 @@ class SuggestionAgent:
         self.recommendation_engine = RecommendationEngine()
         self.transaction_service = transaction_service
 
-    async def _check_user_profile_from_db(self, user_id: str) -> Dict[str, Any]:
-        """Check user's actual transaction history from database"""
+    async def _check_user_profile_from_db(self, user_id: str, user_preferences: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Check user's actual transaction history from database or user_preferences"""
+        # First try to get from user_preferences if available (has transaction_count)
+        if user_preferences and user_preferences.get('transaction_count') is not None:
+            transaction_count = user_preferences.get('transaction_count', 0)
+            is_new_user = transaction_count < 10  # < 10 transactions = new user
+            return {
+                "is_new_user": is_new_user,
+                "transaction_count": transaction_count,
+                "spending_profile": user_preferences
+            }
+
+        # Otherwise try database if transaction_service is available
         if not self.transaction_service:
-            # Fallback to default behavior if no transaction service available
+            # No database access and no transaction_count in preferences
             return {"is_new_user": True, "transaction_count": 0, "spending_profile": {}}
 
         try:
             spending_profile = await self.transaction_service.get_user_spending_profile(user_id)
             transaction_count = spending_profile.get("total_transactions", 0)
-
-            # User is considered "new" if they have fewer than 10 transactions
-            # This gives us enough data to provide meaningful personalized suggestions
             is_new_user = transaction_count < 10
-
             return {
                 "is_new_user": is_new_user,
                 "transaction_count": transaction_count,
@@ -235,8 +252,8 @@ class SuggestionAgent:
 
     async def process(self, input_data: SuggestionAgentInput) -> SuggestionAgentOutput:
         """Main processing method for the Suggestion Agent"""
-        # Check user profile from database for accurate transaction history
-        user_profile = await self._check_user_profile_from_db(input_data.user_id)
+        # Check user profile from database or user_preferences
+        user_profile = await self._check_user_profile_from_db(input_data.user_id, input_data.user_preferences)
 
         # Check if this is a new user scenario based on actual database transaction count
         # Look for actual spending patterns, not just generic insights
@@ -260,7 +277,10 @@ class SuggestionAgent:
             return SuggestionAgentOutput(
                 suggestions=[],
                 alerts=[],
-                savings_opportunities=[]
+                savings_opportunities=[],
+                budget_recommendations=[],
+                spending_suggestions=[],
+                confidence_score=0.0
             )
 
         # Existing user - generate personalized suggestions based on their profile and patterns
@@ -283,7 +303,10 @@ class SuggestionAgent:
                     'priority': 'medium',
                     'category': 'personalized'
                 }],
-                savings_opportunities=savings_opps
+                savings_opportunities=savings_opps,
+                budget_recommendations=[],
+                spending_suggestions=[],
+                confidence_score=0.75
             )
 
         budget_alerts = self.generate_budget_alerts(
@@ -339,8 +362,21 @@ class SuggestionAgent:
         # Prioritize all suggestions
         prioritized_suggestions = self.prioritize_suggestions(all_suggestions)
 
+        # Calculate confidence score
+        confidence_score = 0.85 if meaningful_patterns else 0.75
+
         return SuggestionAgentOutput(
             suggestions=prioritized_suggestions,
+            budget_recommendations=[{
+                'title': s.title,
+                'description': s.description,
+                'category': s.category,
+                'priority': s.priority,
+                'potential_savings': s.potential_savings,
+                'metadata': s.metadata
+            } for s in budget_suggestions],
+            spending_suggestions=[s.dict() for s in spending_suggestions],
             alerts=budget_alerts + subscription_alerts,
-            savings_opportunities=savings_opportunities
+            savings_opportunities=savings_opportunities,
+            confidence_score=confidence_score
         )
