@@ -199,17 +199,20 @@ export default function Sidebar() {
 
         <div className="px-4 py-6 border-t border-slate-700 bg-slate-800/50">
           {auth.user && (
-            <div className="flex items-center px-4 py-3 mb-4 bg-slate-700/50 rounded-lg backdrop-blur-sm">
-              <UserCircleIcon className="w-8 h-8 mr-3 text-blue-400" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">
-                  {auth.user.full_name}
-                </p>
-                <p className="text-xs text-slate-400 truncate">
-                  {auth.user.email}
-                </p>
+            <Link href="/settings">
+              <div className="flex items-center px-4 py-3 mb-4 bg-slate-700/50 rounded-lg backdrop-blur-sm hover:bg-slate-700 transition-colors cursor-pointer group">
+                <UserCircleIcon className="w-8 h-8 mr-3 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate group-hover:text-blue-100 transition-colors">
+                    {auth.user.full_name}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate group-hover:text-slate-300 transition-colors">
+                    {auth.user.email}
+                  </p>
+                </div>
+                <CogIcon className="w-5 h-5 text-slate-400 group-hover:text-blue-400 transition-colors" />
               </div>
-            </div>
+            </Link>
           )}
           <button
             onClick={logout}

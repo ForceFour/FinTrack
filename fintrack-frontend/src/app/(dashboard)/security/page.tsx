@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "@/app/providers";
-import { PredictionResultsService } from "@/lib/services/prediction-results.service";
 import {
   ShieldCheckIcon,
   ExclamationTriangleIcon,
@@ -16,14 +15,19 @@ import {
 
 interface SecurityAlert {
   id: string;
-  type: "fraud" | "unusual" | "location" | "pattern";
-  severity: "high" | "medium" | "low";
+  alert_type: "amount_anomaly" | "frequency_anomaly" | "location_anomaly" | "time_anomaly" | "limit_exceeded" | "security_setup" | "fraud_awareness";
+  severity: "high" | "medium" | "low" | "info";
   title: string;
   description: string;
   timestamp: string;
   amount?: number;
   merchant?: string;
   location?: string;
+  risk_score?: number;
+  recommended_action?: string;
+  transaction_id?: string;
+  workflow_id?: string;
+  detected_at?: string;
 }
 
 interface SecurityMetrics {
@@ -40,6 +44,7 @@ export default function SecurityPage() {
   const [metrics, setMetrics] = useState<SecurityMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
+  const [currencySymbol, setCurrencySymbol] = useState("LKR");
   const { auth } = useApp();
 
   useEffect(() => {
@@ -49,8 +54,23 @@ export default function SecurityPage() {
       setLoading(true);
 
       try {
-        // Load security data from backend API (READ-ONLY, no pipeline trigger)
+        // Load currency preference
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const settingsResponse = await fetch(`${API_BASE}/api/user-settings/${auth.user.id}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+
+        if (settingsResponse.ok) {
+          const settingsData = await settingsResponse.json();
+          if (settingsData.preferences?.currency_symbol) {
+            setCurrencySymbol(settingsData.preferences.currency_symbol);
+          }
+        }
+
+        // Load security data from backend API (READ-ONLY, no pipeline trigger)
         const response = await fetch(`${API_BASE}/api/prediction-results/user/${auth.user.id}/security`, {
           method: 'GET',
           headers: {
@@ -77,15 +97,18 @@ export default function SecurityPage() {
           }
 
           // Convert backend alerts to frontend format
-          const securityAlerts: SecurityAlert[] = data.security_alerts.map((alert: any, index: number) => ({
+          const securityAlerts: SecurityAlert[] = data.security_alerts.map((alert: SecurityAlert, index: number) => ({
             id: alert.workflow_id ? `alert-${alert.workflow_id}-${index}` : `alert-${index}`,
-            type: alert.alert_type || "unusual",
+            alert_type: alert.alert_type || "frequency_anomaly",
             severity: alert.severity || "medium",
             title: alert.title || "Security Alert",
             description: alert.description || "",
             timestamp: alert.detected_at || alert.timestamp || new Date().toISOString(),
             merchant: alert.merchant || undefined,
             amount: alert.amount || undefined,
+            risk_score: alert.risk_score || 0.5,
+            recommended_action: alert.recommended_action || "Review this alert and take appropriate action.",
+            transaction_id: alert.transaction_id || undefined,
           }));
 
           // Generate security metrics based on real data
@@ -148,11 +171,14 @@ export default function SecurityPage() {
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case "fraud": return <ShieldExclamationIcon className="w-5 h-5" />;
-      case "unusual": return <ExclamationTriangleIcon className="w-5 h-5" />;
-      case "location": return <MapPinIcon className="w-5 h-5" />;
-      case "pattern": return <ClockIcon className="w-5 h-5" />;
-      default: return <EyeIcon className="w-5 h-5" />;
+      case "amount_anomaly": return <BanknotesIcon className="w-5 h-5" />;
+      case "frequency_anomaly": return <ClockIcon className="w-5 h-5" />;
+      case "location_anomaly": return <MapPinIcon className="w-5 h-5" />;
+      case "time_anomaly": return <ClockIcon className="w-5 h-5" />;
+      case "limit_exceeded": return <ExclamationTriangleIcon className="w-5 h-5" />;
+      case "security_setup": return <ShieldCheckIcon className="w-5 h-5" />;
+      case "fraud_awareness": return <EyeIcon className="w-5 h-5" />;
+      default: return <ShieldExclamationIcon className="w-5 h-5" />;
     }
   };
 
@@ -277,21 +303,31 @@ export default function SecurityPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0 mt-1">
-                      {getTypeIcon(alert.type)}
+                      {getTypeIcon(alert.alert_type)}
                     </div>
                     <div className="flex-1">
                       <h4 className="font-semibold text-slate-800">{alert.title}</h4>
                       <p className="text-sm text-slate-600 mt-1">{alert.description}</p>
+                      {alert.recommended_action && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-xs text-blue-800">
+                            <strong>Recommended:</strong> {alert.recommended_action}
+                          </p>
+                        </div>
+                      )}
                       <div className="flex items-center space-x-4 mt-2 text-xs text-slate-500">
                         <span>{formatTimestamp(alert.timestamp)}</span>
                         {alert.amount && (
-                          <span>Amount: LKR {alert.amount.toLocaleString()}</span>
+                          <span>Amount: {currencySymbol} {alert.amount.toLocaleString()}</span>
                         )}
                         {alert.merchant && (
                           <span>Merchant: {alert.merchant}</span>
                         )}
                         {alert.location && (
                           <span>Location: {alert.location}</span>
+                        )}
+                        {alert.risk_score && (
+                          <span>Risk: {(alert.risk_score * 10).toFixed(1)}/10</span>
                         )}
                       </div>
                     </div>
@@ -387,7 +423,7 @@ export default function SecurityPage() {
               {selectedAlert.amount && (
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <span className="text-sm font-medium text-gray-700">Amount: </span>
-                  <span className="text-sm text-gray-900">LKR {selectedAlert.amount.toLocaleString()}</span>
+                  <span className="text-sm text-gray-900">{currencySymbol} {selectedAlert.amount.toLocaleString()}</span>
                 </div>
               )}
 
