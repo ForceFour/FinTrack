@@ -1050,8 +1050,9 @@ class TransactionProcessingNodes:
             state['current_stage'] = ProcessingStage.SUGGESTION
 
             # Initialize TransactionService for database access
+            # Use SERVICE_ROLE key to bypass RLS for backend operations
             supabase_url = os.getenv("SUPABASE_URL")
-            supabase_key = os.getenv("SUPABASE_ANON_KEY")
+            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # Changed from ANON_KEY to SERVICE_ROLE_KEY
             if supabase_url and supabase_key:
                 supabase_client = create_client(supabase_url, supabase_key)
                 transaction_service = TransactionService(supabase_client)
@@ -1063,14 +1064,6 @@ class TransactionProcessingNodes:
             # Get pattern insights and prepare input
             pattern_insights_data = state.get('pattern_insights', {})
             transactions = state.get('processed_transactions', [])
-            # Check if user is first time based on transaction count in preferences
-            user_preferences_check = state.get('user_preferences', {})
-            if not user_preferences_check:
-                conversation_context = state.get('conversation_context', {})
-                user_preferences_check = conversation_context.get('user_preferences', {})
-
-            user_transaction_count = user_preferences_check.get('transaction_count', 0)
-            is_first_time_user = user_transaction_count < 5
 
             # Convert pattern insights to PatternInsight objects
             pattern_insights = []
@@ -1113,22 +1106,16 @@ class TransactionProcessingNodes:
                 conversation_context = state.get('conversation_context', {})
                 user_preferences = conversation_context.get('user_preferences', {})
 
-
-
-            # Use existing transaction count from user preferences (historical data)
-            # If not provided, fall back to current workflow transactions
-            if 'transaction_count' not in user_preferences:
-                total_transactions = len(state.get('processed_transactions', []))
-                if total_transactions == 0:
-                    # Check other transaction sources
-                    total_transactions += len(state.get('preprocessed_transactions', []))
-                    if state.get('final_transaction'):
-                        total_transactions += 1
-
-                user_preferences['transaction_count'] = total_transactions
-
             # Get user_id from state
             user_id = state.get('user_id', 'default_user')
+
+            # Prepare user preferences for the agent
+            # The agent will query the database for accurate transaction count
+            # We don't set transaction_count here to avoid confusion
+            if 'transaction_count' in user_preferences:
+                # Remove batch-specific count - let agent query database for accurate total
+                print(f"SUGGESTION NODE: Removing batch transaction_count, agent will query database")
+                user_preferences.pop('transaction_count', None)
 
             # Create input for suggestion agent
             input_data = SuggestionAgentInput(
@@ -1156,21 +1143,24 @@ class TransactionProcessingNodes:
                 # No event loop exists, create one
                 result = asyncio.run(suggestion_agent.process(input_data))
 
-            # If no suggestions were generated AND user is genuinely new, add default financial tips
+            # Get all personalized suggestions from agent
             all_suggestions = result.suggestions
-            if not all_suggestions and is_first_time_user:
-                print(f"SUGGESTION: Adding default financial tips for new users")
-                default_suggestions = self._generate_default_financial_suggestions()
-                # Convert default suggestions to Suggestion objects
-                from ..schemas.transaction_schemas import Suggestion as SuggestionSchema
-                for default_sugg in default_suggestions:
-                    all_suggestions.append(SuggestionSchema(**default_sugg))
+            print(f"SUGGESTION: Agent returned {len(all_suggestions)} personalized suggestions")
+            for sugg in all_suggestions[:3]:
+                print(f"  - {sugg.title} ({sugg.suggestion_type})")
 
+            # Store suggestions in appropriate state fields
             state['budget_recommendations'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' in suggestion.title.lower() or suggestion.suggestion_type in ['budget_adjustment', 'budget_planning']]
             state['spending_suggestions'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' not in suggestion.title.lower() and suggestion.suggestion_type not in ['budget_adjustment', 'budget_planning']]
             state['budget_alerts'] = result.alerts
             state['savings_opportunities'] = result.savings_opportunities
-            state['suggestion_confidence'] = 0.85 if not is_first_time_user else 0.7  # Lower confidence for new users
+            state['suggestion_confidence'] = result.confidence_score
+
+            print(f"SUGGESTION: Storing in state:")
+            print(f"  - budget_recommendations: {len(state.get('budget_recommendations', []))} items")
+            print(f"  - spending_suggestions: {len(state.get('spending_suggestions', []))} items")
+            print(f"  - savings_opportunities: {len(state.get('savings_opportunities', []))} items")
+            print(f"  - suggestion_confidence: {state.get('suggestion_confidence')}")
 
             print(f"SUGGESTION: Generated {len(all_suggestions)} total suggestions ({len(state['budget_recommendations'])} budget, {len(state['spending_suggestions'])} spending)")
 
@@ -1224,61 +1214,31 @@ class TransactionProcessingNodes:
                 elif state.get('final_transaction'):
                     transactions = [state['final_transaction']]
 
-            if transactions:
-                # Perform security validation using the process method
-                from ..agents.safety_guard_agent import SafetyGuardAgentInput
-                input_data = SafetyGuardAgentInput(
-                    classified_transactions=transactions,
-                    user_profile=state.get('user_profile', {})
-                )
-                security_result = safety_agent.process(input_data)
+            # Always use SafetyGuardAgent for both transactions and baseline security checks
+            # The agent handles new user recommendations internally
+            from ..agents.safety_guard_agent import SafetyGuardAgentInput
 
-                state['security_alerts'] = security_result.security_alerts
-                state['risk_assessment'] = {'risk_score': security_result.risk_score}
-                state['safety_confidence'] = 0.9  # Default confidence for safety validation
+            # Prepare user profile with new user information
+            user_profile = state.get('user_profile', {})
 
-                print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts")
-            else:
-                # Even without transactions, perform baseline security checks for new users
-                print(f"SAFETY GUARD: No transactions to validate - performing baseline security assessment")
+            # If no transactions, mark as new user to get default recommendations
+            if not transactions:
+                user_profile['is_new_user'] = True
+                user_profile['has_seen_security_recommendations'] = user_profile.get('has_seen_security_recommendations', False)
 
-                # Generate general security recommendations for new users
-                baseline_alerts = [
-                    {
-                        'alert_type': 'security_setup',
-                        'severity': 'info',
-                        'title': 'Enable Account Security Features',
-                        'description': 'Set up two-factor authentication and review account security settings.',
-                        'recommendation': 'Enable 2FA and use strong, unique passwords',
-                        'metadata': {
-                            'category': 'account_security',
-                            'priority': 'high',
-                            'action_items': ['Enable 2FA', 'Update password', 'Review login notifications']
-                        }
-                    },
-                    {
-                        'alert_type': 'fraud_awareness',
-                        'severity': 'info',
-                        'title': 'Monitor Your Accounts Regularly',
-                        'description': 'Check your bank and credit card statements regularly for unauthorized transactions.',
-                        'recommendation': 'Set up account alerts for transactions',
-                        'metadata': {
-                            'category': 'fraud_prevention',
-                            'priority': 'medium',
-                            'action_items': ['Enable transaction alerts', 'Review statements weekly']
-                        }
-                    }
-                ]
+            input_data = SafetyGuardAgentInput(
+                classified_transactions=transactions if transactions else [],
+                user_profile=user_profile
+            )
 
-                state['security_alerts'] = baseline_alerts
-                state['risk_assessment'] = {
-                    'risk_score': 0.1,  # Low baseline risk for new users
-                    'assessment_type': 'baseline_security_check',
-                    'recommendations': ['Enable account security features', 'Set up monitoring']
-                }
-                state['safety_confidence'] = 0.8  # High confidence in baseline security recommendations
+            security_result = safety_agent.process(input_data)
 
-                print(f"SAFETY GUARD: Generated {len(baseline_alerts)} baseline security recommendations")
+            state['security_alerts'] = [alert.dict() for alert in security_result.security_alerts]
+            state['flagged_transactions'] = [tx.dict() for tx in security_result.flagged_transactions] if security_result.flagged_transactions else []
+            state['risk_assessment'] = {'risk_score': security_result.risk_score}
+            state['safety_confidence'] = 0.9 if transactions else 0.8  # Lower confidence for new users
+
+            print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts (Risk Score: {security_result.risk_score:.2f})")
 
             # Add to processing history
             processing_entry = {
