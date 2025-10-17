@@ -137,6 +137,7 @@ class Suggestion(BaseModel):
     potential_savings: Optional[float] = Field(None, description="Potential savings amount")
     category: Optional[str] = Field(None, description="Related category")
     action_required: bool = Field(False, description="Whether user action is required")
+    implementation_difficulty: Optional[str] = Field("medium", description="Implementation difficulty (easy, medium, hard)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional suggestion metadata")
 
 

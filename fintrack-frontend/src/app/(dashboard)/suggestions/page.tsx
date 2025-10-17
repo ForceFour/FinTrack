@@ -52,11 +52,35 @@ interface BudgetRecommendation {
   confidence_score: number;
 }
 
+interface SpendingSuggestion {
+  title: string;
+  description: string;
+  potential_savings: number;
+  potential_monthly_savings?: number;
+  category?: string;
+  priority?: string;
+  implementation_difficulty?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface SavingsOpportunity {
+  title: string;
+  description: string;
+  potential_savings: number;
+  potential_monthly_savings?: number;
+  actionable_tips?: string[];
+  category?: string;
+  priority?: string;
+  metadata?: Record<string, unknown>;
+}
+
 
 
 export default function SuggestionsPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [budgetRecommendations, setBudgetRecommendations] = useState<BudgetRecommendation | null>(null);
+  const [spendingSuggestions, setSpendingSuggestions] = useState<SpendingSuggestion[]>([]);
+  const [savingsOpportunities, setSavingsOpportunities] = useState<SavingsOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
@@ -87,14 +111,6 @@ export default function SuggestionsPage() {
       if (response.ok) {
         const data = await response.json();
 
-        // Check if we have suggestions
-        if (data.total_count === 0) {
-          setSuggestions([]);
-          setError("No suggestions available. Please upload some transactions to generate personalized suggestions.");
-          setLoading(false);
-          return;
-        }
-
         // Convert backend suggestions to frontend format
         const allSuggestions: Suggestion[] = [];
 
@@ -121,21 +137,42 @@ export default function SuggestionsPage() {
 
         setSuggestions(allSuggestions);
 
+        // Set spending suggestions if available
+        if (data.spending_suggestions && data.spending_suggestions.length > 0) {
+          setSpendingSuggestions(data.spending_suggestions);
+        }
+
+        // Set savings opportunities if available
+        if (data.savings_opportunities && data.savings_opportunities.length > 0) {
+          setSavingsOpportunities(data.savings_opportunities);
+        }
+
         // Set budget recommendations if available
         if (data.budget_recommendations && data.budget_recommendations.length > 0) {
-          // You can process budget recommendations here if needed
           console.log('Budget recommendations available:', data.budget_recommendations.length);
         }
 
+        // Clear any previous errors if we successfully loaded data
+        if (allSuggestions.length > 0) {
+          setError("");
+        } else {
+          // No suggestions but response was OK - show helpful message
+          setError("No suggestions available yet. Upload transactions to get personalized recommendations!");
+        }
+
+      } else if (response.status === 404) {
+        // No prediction results found for this user
+        setSuggestions([]);
+        setError("No suggestions available yet. Upload some transactions to get started!");
       } else {
-        // No suggestions available from backend
+        // Other error responses
         setSuggestions([]);
         setError("Unable to load suggestions. Please try again later.");
       }
     } catch (err) {
       console.warn('Failed to load suggestions:', err);
       setSuggestions([]);
-      setError("Failed to load suggestions. Please check your connection and try again.");
+      setError("Failed to load suggestions. Please check your connection and try uploading transactions.");
     }
 
     setLoading(false);
@@ -273,6 +310,18 @@ export default function SuggestionsPage() {
     0
   );
 
+  const totalSpendingSavings = spendingSuggestions.reduce(
+    (sum, s) => sum + (s.potential_monthly_savings || s.potential_savings || 0),
+    0
+  );
+
+  const totalSavingsOpportunities = savingsOpportunities.reduce(
+    (sum, s) => sum + (s.potential_monthly_savings || s.potential_savings || 0),
+    0
+  );
+
+  const combinedTotalSavings = totalPotentialSavings + totalSpendingSavings + totalSavingsOpportunities;
+
   const activeSuggestionsCount = suggestions.filter(
     (s) => s.status === "active"
   ).length;
@@ -280,6 +329,24 @@ export default function SuggestionsPage() {
   const implementedCount = suggestions.filter(
     (s) => s.status === "implemented"
   ).length;
+
+  const totalOpportunities = spendingSuggestions.length + savingsOpportunities.length;
+
+  // Filter suggestions based on selected filter
+  const filteredSuggestions = suggestions.filter((suggestion) => {
+    if (selectedFilter === "all") return true;
+    return suggestion.type === selectedFilter;
+  });
+
+  // Filter spending suggestions based on selected filter
+  const filteredSpendingSuggestions = selectedFilter === "all" || selectedFilter === "spending"
+    ? spendingSuggestions
+    : [];
+
+  // Filter savings opportunities based on selected filter
+  const filteredSavingsOpportunities = selectedFilter === "all" || selectedFilter === "savings"
+    ? savingsOpportunities
+    : [];
 
   if (loading) {
     return (
@@ -362,10 +429,10 @@ export default function SuggestionsPage() {
           />
           <StatCard
             title="Potential Savings"
-            value={`$${totalPotentialSavings.toFixed(2)}`}
+            value={`$${combinedTotalSavings.toFixed(2)}`}
             icon={<BanknotesIcon className="w-6 h-6" />}
             gradient="from-green-500 to-emerald-500"
-            description="Monthly savings"
+            description="Monthly savings potential"
           />
           <StatCard
             title="Implemented"
@@ -375,11 +442,11 @@ export default function SuggestionsPage() {
             description="Actions taken"
           />
           <StatCard
-            title="Savings Rate"
-            value="0"
+            title="Opportunities"
+            value={totalOpportunities.toString()}
             icon={<ArrowTrendingUpIcon className="w-6 h-6" />}
             gradient="from-orange-500 to-red-500"
-            description="Opportunities found"
+            description="Spending & savings tips"
           />
         </div>
 
@@ -392,9 +459,9 @@ export default function SuggestionsPage() {
               onClick={() => setSelectedFilter("all")}
             />
             <FilterTab
-              label="Budget"
-              active={selectedFilter === "budget"}
-              onClick={() => setSelectedFilter("budget")}
+              label="Spending"
+              active={selectedFilter === "spending"}
+              onClick={() => setSelectedFilter("spending")}
             />
             <FilterTab
               label="Savings"
@@ -402,14 +469,14 @@ export default function SuggestionsPage() {
               onClick={() => setSelectedFilter("savings")}
             />
             <FilterTab
-              label="Spending"
-              active={selectedFilter === "spending"}
-              onClick={() => setSelectedFilter("spending")}
+              label="Budget"
+              active={selectedFilter === "budget"}
+              onClick={() => setSelectedFilter("budget")}
             />
             <FilterTab
               label="Goals"
-              active={selectedFilter === "goals"}
-              onClick={() => setSelectedFilter("goals")}
+              active={selectedFilter === "goal"}
+              onClick={() => setSelectedFilter("goal")}
             />
           </div>
         </div>
@@ -418,18 +485,43 @@ export default function SuggestionsPage() {
 
         {/* Main Suggestions Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {suggestions.length === 0 ? (
+          {filteredSuggestions.length === 0 ? (
             <div className="col-span-2 bg-white rounded-2xl shadow-lg p-12 border border-slate-200 text-center">
-              <LightBulbIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-600 mb-2">
-                No suggestions available
-              </h3>
-              <p className="text-gray-500">
-                Start adding transactions to get personalized recommendations
-              </p>
+              <div className="max-w-md mx-auto">
+                <div className="bg-gradient-to-br from-purple-100 to-pink-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <LightBulbIcon className="w-12 h-12 text-purple-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                  Get Started with AI Suggestions
+                </h3>
+                <p className="text-gray-600 mb-6 leading-relaxed">
+                  Upload your transactions to unlock personalized financial recommendations.
+                  Our AI analyzes your spending patterns to provide actionable insights.
+                </p>
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6">
+                  <div className="flex items-start space-x-3">
+                    <SparklesIcon className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-blue-900 mb-1">What you&apos;ll get:</p>
+                      <ul className="text-sm text-blue-800 space-y-1">
+                        <li>• Budget optimization tips</li>
+                        <li>• Spending reduction opportunities</li>
+                        <li>• Personalized savings strategies</li>
+                        <li>• Smart financial goals</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => window.location.href = '/upload'}
+                  className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
+                >
+                  Upload Transactions Now
+                </button>
+              </div>
             </div>
           ) : (
-            suggestions.map((suggestion, idx) => (
+            filteredSuggestions.map((suggestion, idx) => (
               <SuggestionCard
                 key={suggestion.id || idx}
                 suggestion={suggestion}
@@ -442,6 +534,89 @@ export default function SuggestionsPage() {
             ))
           )}
         </div>
+
+        {/* Spending Suggestions Section */}
+        {filteredSpendingSuggestions.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+            <div className="flex items-center mb-6">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl shadow-lg mr-4">
+                <ShoppingBagIcon className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Spending Suggestions</h2>
+                <p className="text-slate-600">Personalized recommendations to optimize your spending</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredSpendingSuggestions.map((suggestion, idx) => (
+                <div key={idx} className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-6 border-2 border-blue-200">
+                  <h3 className="text-lg font-bold text-blue-900 mb-2">{suggestion.title}</h3>
+                  <p className="text-sm text-blue-800 mb-4">{suggestion.description}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="bg-white rounded-lg px-4 py-2 border border-blue-300">
+                      <div className="text-xs text-blue-600 font-medium">Potential Savings</div>
+                      <div className="text-xl font-bold text-blue-700">
+                        {suggestion.potential_monthly_savings && suggestion.potential_monthly_savings > 0
+                          ? `$${suggestion.potential_monthly_savings.toFixed(2)}/mo`
+                          : suggestion.potential_savings && suggestion.potential_savings > 0
+                          ? `$${suggestion.potential_savings.toFixed(2)}`
+                          : 'Variable'}
+                      </div>
+                    </div>
+                    {suggestion.category && (
+                      <span className="px-3 py-1 bg-blue-200 text-blue-800 rounded-full text-xs font-semibold">
+                        {suggestion.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Savings Opportunities Section */}
+        {filteredSavingsOpportunities.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+            <div className="flex items-center mb-6">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl shadow-lg mr-4">
+                <BanknotesIcon className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Savings Opportunities</h2>
+                <p className="text-slate-600">Actionable ways to save more money</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredSavingsOpportunities.map((opportunity, idx) => (
+                <div key={idx} className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-200">
+                  <h3 className="text-lg font-bold text-green-900 mb-2">{opportunity.title}</h3>
+                  <p className="text-sm text-green-800 mb-4">{opportunity.description}</p>
+                  <div className="bg-white rounded-lg px-4 py-3 border border-green-300 mb-4">
+                    <div className="text-xs text-green-600 font-medium mb-1">Monthly Savings Potential</div>
+                    <div className="text-2xl font-bold text-green-700">
+                      {opportunity.potential_monthly_savings && opportunity.potential_monthly_savings > 0
+                        ? `$${opportunity.potential_monthly_savings.toFixed(2)}`
+                        : opportunity.potential_savings && opportunity.potential_savings > 0
+                        ? `$${opportunity.potential_savings.toFixed(2)}`
+                        : 'Variable'}
+                    </div>
+                  </div>
+                  {opportunity.actionable_tips && opportunity.actionable_tips.length > 0 && (
+                    <div className="bg-green-100 rounded-lg p-3">
+                      <div className="text-xs font-semibold text-green-900 mb-2">💡 Action Tips:</div>
+                      <ul className="text-xs text-green-800 space-y-1">
+                        {opportunity.actionable_tips.map((tip, tipIdx) => (
+                          <li key={tipIdx}>• {tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
 
 
@@ -707,16 +882,17 @@ function SuggestionCard({
 
         {/* Metadata */}
         <div className="grid grid-cols-2 gap-4 mb-4">
-          {suggestion.potential_savings && suggestion.potential_savings > 0 && (
-            <div className="bg-green-50 rounded-lg p-3">
-              <div className="text-xs text-green-600 font-medium mb-1">
-                Potential Savings
-              </div>
-              <div className="text-2xl font-bold text-green-600">
-                ${suggestion.potential_savings.toFixed(2)}
-              </div>
+          {/* Potential savings - all suggestions are personalized */}
+          <div className="bg-green-50 rounded-lg p-3">
+            <div className="text-xs font-medium mb-1 text-green-600">
+              Potential Savings
             </div>
-          )}
+            <div className="text-2xl font-bold text-green-600">
+              {suggestion.potential_savings && suggestion.potential_savings > 0
+                ? `$${suggestion.potential_savings.toFixed(2)}`
+                : 'Variable'}
+            </div>
+          </div>
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="text-xs text-slate-600 font-medium mb-1">
               Difficulty

@@ -23,6 +23,7 @@ from src.routes.suggestions import router as suggestions_router
 from src.routes.workflow import router as workflow_router
 from src.api.analytics import router as ai_analytics_router
 from src.api.prediction_results import router as prediction_results_router
+from src.api.user_settings import router as user_settings_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +57,12 @@ app.include_router(ai_analytics_router, prefix="/api")
 
 # Include prediction results router (read-only access to processed results)
 app.include_router(prediction_results_router, prefix="/api")
+
+# Include user settings router (spending limits and preferences)
+app.include_router(user_settings_router, prefix="/api")
+
+# Include user settings router
+app.include_router(user_settings_router, prefix="/api")
 
 # Health check endpoint
 @app.get("/api/v1/health")
