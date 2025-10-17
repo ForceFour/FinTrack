@@ -13,7 +13,6 @@ from enum import Enum
 
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.tracers.langchain import LangChainTracer
 from langsmith import Client
 
@@ -28,7 +27,7 @@ class UnifiedTransactionWorkflow:
     Unified LangGraph Workflow Manager for Complete Transaction Processing
 
     Features:
-    - 7 specialized AI agents with intelligent routing
+    - 6 specialized AI agents with intelligent routing
     - Multiple execution modes with optimization
     - Real-time processing with WebSocket support
     - Comprehensive error handling and recovery
@@ -54,7 +53,7 @@ class UnifiedTransactionWorkflow:
                     api_key=self.config.langsmith_api_key,
                     api_url=self.config.langsmith_endpoint
                 )
-                logger.info("🎯 LangSmith client initialized for workflow tracing")
+                logger.info("LangSmith client initialized for workflow tracing")
             except Exception as e:
                 logger.warning(f"LangSmith client initialization failed: {e}")
                 self.config.enable_tracing = False
@@ -91,13 +90,13 @@ class UnifiedTransactionWorkflow:
         # Background task queue
         self.background_tasks = {}
 
-        logger.info("🚀 UnifiedTransactionWorkflow initialized successfully")
-        logger.info(f"🔧 Configuration: {len(self.workflows)} modes, tracing={'enabled' if self.config.enable_tracing else 'disabled'}")
+        logger.info("UnifiedTransactionWorkflow initialized successfully")
+        logger.info(f"Configuration: {len(self.workflows)} modes, tracing={'enabled' if self.config.enable_tracing else 'disabled'}")
 
     def _initialize_checkpointer(self):
         """Initialize the appropriate checkpointer based on configuration"""
         # Temporarily disable checkpointer to avoid version compatibility issues
-        logger.info("💾 Using memory-only checkpointer for better compatibility")
+        logger.info("Using memory-only checkpointer for better compatibility")
         return MemorySaver()
 
     def _build_all_workflows(self) -> Dict[str, StateGraph]:
@@ -120,7 +119,7 @@ class UnifiedTransactionWorkflow:
             # Background processing workflow
             workflows[WorkflowMode.BACKGROUND_PROCESSING.value] = self._build_background_processing()
 
-            logger.info(f"✅ Built {len(workflows)} workflow modes successfully")
+            logger.info(f"Built {len(workflows)} workflow modes successfully")
 
         except Exception as e:
             logger.error(f"❌ Failed to build workflows: {e}")
@@ -129,7 +128,7 @@ class UnifiedTransactionWorkflow:
         return workflows
 
     def _build_full_pipeline(self) -> StateGraph:
-        """Build the complete 7-agent pipeline workflow with conditional routing"""
+        """Build the complete 10-agent pipeline workflow with conditional routing"""
         workflow = StateGraph(TransactionProcessingState)
 
         # Add all workflow nodes
@@ -138,6 +137,9 @@ class UnifiedTransactionWorkflow:
         workflow.add_node("🚀 Ingestion", self.nodes.ingestion_node)
         workflow.add_node("🏷️ NER Extraction", self.nodes.ner_extraction_node)
         workflow.add_node("📊 Classification", self.nodes.classification_node)
+        workflow.add_node("📈 Pattern Analysis", self.nodes.pattern_analyzer_node)
+        workflow.add_node("💡 Suggestion", self.nodes.suggestion_node)
+        workflow.add_node("🛡️ Safety Guard", self.nodes.safety_guard_node)
         workflow.add_node("✅ Validation", self.nodes.validation_node)
         workflow.add_node("🎯 Finalization", self.nodes.finalization_node)
 
@@ -165,7 +167,10 @@ class UnifiedTransactionWorkflow:
 
         # Continue with full processing
         workflow.add_edge("🏷️ NER Extraction", "📊 Classification")
-        workflow.add_edge("📊 Classification", "✅ Validation")
+        workflow.add_edge("📊 Classification", "📈 Pattern Analysis")
+        workflow.add_edge("📈 Pattern Analysis", "💡 Suggestion")
+        workflow.add_edge("💡 Suggestion", "🛡️ Safety Guard")
+        workflow.add_edge("🛡️ Safety Guard", "✅ Validation")
         workflow.add_edge("✅ Validation", "🎯 Finalization")
         workflow.add_edge("🎯 Finalization", END)
 
@@ -250,7 +255,7 @@ class UnifiedTransactionWorkflow:
 
     def _routing_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Intelligent routing node to determine processing path"""
-        logger.info("🔀 ROUTER: Determining optimal processing path")
+        logger.info("ROUTER: Determining optimal processing path")
 
         try:
             # Check ingestion results
@@ -258,22 +263,25 @@ class UnifiedTransactionWorkflow:
             ingestion_confidence = state.get("ingestion_confidence", 0.0)
             errors = state.get("error_log", [])
 
-            # Routing logic
-            if errors:
-                logger.warning(f"Errors detected: {len(errors)}, routing to error handling")
+            # Updated routing logic - Always continue to advanced processing unless critical errors
+            if errors and any(error.get("severity") == "critical" for error in errors):
+                logger.warning(f"Critical errors detected: {len(errors)}, routing to error handling")
                 state["route_decision"] = "error"
-                state["skip_reason"] = "errors_detected"
-            elif not preprocessed_txns:
-                logger.warning("No transactions processed, skipping to validation")
+                state["skip_reason"] = "critical_errors_detected"
+            elif not preprocessed_txns and not state.get("user_input"):
+                logger.warning("No transactions and no user input, skipping to validation")
                 state["route_decision"] = "skip_to_validation"
-                state["skip_reason"] = "no_transactions"
-            elif ingestion_confidence < self.config.confidence_threshold:
-                logger.warning(f"Low confidence ({ingestion_confidence:.2f}), skipping advanced processing")
-                state["route_decision"] = "skip_to_validation"
-                state["skip_reason"] = "low_confidence"
+                state["skip_reason"] = "no_data_to_process"
             else:
-                logger.info(f"Processing {len(preprocessed_txns)} transactions with {ingestion_confidence:.2f} confidence")
+                # Always continue to advanced processing - Pattern Analysis, Suggestions, Safety Guard should run
+                # even for first-time users or low confidence scenarios
+                logger.info(f"Continuing to advanced processing with {len(preprocessed_txns)} transactions and {ingestion_confidence:.2f} confidence")
                 state["route_decision"] = "continue"
+
+                # Add note about first-time user scenario
+                if not preprocessed_txns or len(preprocessed_txns) == 1:
+                    state["first_time_user_scenario"] = True
+                    logger.info("ROUTER: First-time user scenario detected - will provide default suggestions")
 
             # Add routing history
             state["processing_history"].append({
@@ -282,7 +290,8 @@ class UnifiedTransactionWorkflow:
                 "decision": state["route_decision"],
                 "reason": state.get("skip_reason", "normal_processing"),
                 "transactions_count": len(preprocessed_txns),
-                "confidence": ingestion_confidence
+                "confidence": ingestion_confidence,
+                "first_time_user": state.get("first_time_user_scenario", False)
             })
 
         except Exception as e:
@@ -307,13 +316,13 @@ class UnifiedTransactionWorkflow:
         state["async_task_id"] = f"bg_task_{uuid.uuid4().hex[:8]}"
         state["processing_mode"] = "background"
 
-        logger.info(f"🔧 BACKGROUND INIT: Started async task {state['async_task_id']}")
+        logger.info(f"BACKGROUND INIT: Started async task {state['async_task_id']}")
 
         return self.nodes.initialize_workflow_node(state)
 
     def _background_ingestion_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Background ingestion processing"""
-        logger.info("🚀 BACKGROUND INGESTION: Processing in background mode")
+        logger.info("BACKGROUND INGESTION: Processing in background mode")
 
         # Run NL processing and ingestion
         state = self.nodes.nl_processing_node(state)
@@ -328,7 +337,7 @@ class UnifiedTransactionWorkflow:
 
     def _background_processing_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """Background processing combining multiple agents"""
-        logger.info("🔍 BACKGROUND PROCESSING: Running combined agent processing")
+        logger.info("BACKGROUND PROCESSING: Running combined agent processing")
 
         # Run NER extraction and classification
         state = self.nodes.ner_extraction_node(state)
@@ -351,6 +360,76 @@ class UnifiedTransactionWorkflow:
             result_state["workflow_summary"]["notification_ready"] = True
 
         return result_state
+
+    def _calculate_overall_confidence(self, final_state: Dict[str, Any]) -> float:
+        """
+        Calculate overall workflow confidence based on individual stage confidences
+
+        Args:
+            final_state: The final workflow state containing confidence data
+
+        Returns:
+            Overall confidence score between 0.0 and 1.0
+        """
+        confidence_scores = []
+
+        # Extract confidence from various stages
+        ingestion_confidence = final_state.get("ingestion_confidence", 0.0)
+        if ingestion_confidence > 0:
+            confidence_scores.append(ingestion_confidence)
+
+        # NL processing confidence
+        nl_confidence = final_state.get("nl_confidence", 0.0)
+        if nl_confidence > 0:
+            confidence_scores.append(nl_confidence)
+
+        # Classification confidence
+        category_confidence = final_state.get("category_confidence", 0.0)
+        if category_confidence > 0:
+            confidence_scores.append(category_confidence)
+
+        # Pattern analysis confidence (based on insights found)
+        pattern_insights = final_state.get("pattern_insights", [])
+        if pattern_insights:
+            pattern_confidence = min(0.85, 0.6 + (len(pattern_insights) * 0.05))  # Cap at 0.85
+            confidence_scores.append(pattern_confidence)
+
+        # Suggestion confidence (based on suggestions generated)
+        budget_recommendations = final_state.get("budget_recommendations", [])
+        spending_suggestions = final_state.get("spending_suggestions", [])
+        if budget_recommendations or spending_suggestions:
+            suggestion_confidence = 0.75  # Good confidence if suggestions were generated
+            confidence_scores.append(suggestion_confidence)
+
+        # Safety guard confidence (based on risk assessment)
+        security_alerts = final_state.get("security_alerts", [])
+        risk_assessment = final_state.get("risk_assessment", {})
+        if security_alerts or risk_assessment:
+            safety_confidence = 0.8  # High confidence if safety analysis was performed
+            confidence_scores.append(safety_confidence)
+
+        # If no confidence scores available, check for successful processing
+        if not confidence_scores:
+            processed_transactions = final_state.get("processed_transactions", [])
+            if processed_transactions:
+                confidence_scores.append(0.5)  # Minimum confidence for successful processing
+
+        # Calculate weighted average confidence
+        if confidence_scores:
+            # Weight more recent/complex stages higher
+            weights = [1.0] * len(confidence_scores)  # Equal weights for now
+            if len(confidence_scores) > 1:
+                # Give slightly higher weight to advanced agents (pattern, suggestion, safety)
+                for i in range(max(0, len(confidence_scores) - 3), len(confidence_scores)):
+                    weights[i] = 1.2
+
+            weighted_sum = sum(score * weight for score, weight in zip(confidence_scores, weights))
+            total_weights = sum(weights)
+            overall_confidence = weighted_sum / total_weights
+        else:
+            overall_confidence = 0.0
+
+        return min(1.0, max(0.0, overall_confidence))  # Ensure between 0-1
 
     # ==========================================
     # WORKFLOW EXECUTION METHODS
@@ -381,7 +460,7 @@ class UnifiedTransactionWorkflow:
         workflow_id = f"workflow_{uuid.uuid4().hex[:8]}"
         start_time = datetime.now()
 
-        logger.info(f"🚀 Starting workflow {workflow_id} in {mode.value} mode")
+        logger.info(f"Starting workflow {workflow_id} in {mode.value} mode")
 
         try:
             # Update mode usage statistics
@@ -393,6 +472,9 @@ class UnifiedTransactionWorkflow:
 
             workflow_graph = self.workflows[mode.value]
 
+            # Determine input type
+            input_type = "structured" if raw_transactions else "unstructured"
+
             # Initialize state
             initial_state = TransactionProcessingState(
                 workflow_id=workflow_id,
@@ -400,6 +482,7 @@ class UnifiedTransactionWorkflow:
                 user_id=user_id,
                 conversation_context=conversation_context or {},
                 raw_transactions=raw_transactions or [],
+                input_type=input_type,  # Add input_type to state
                 current_stage=ProcessingStage.INITIAL,
                 processing_history=[],
                 confidence_scores=[],
@@ -415,7 +498,7 @@ class UnifiedTransactionWorkflow:
                 "timestamp": start_time.isoformat(),
                 "mode": mode.value,
                 "workflow_id": workflow_id,
-                "input_type": "structured" if raw_transactions else "unstructured",
+                "input_type": input_type,
                 "user_id": user_id
             })
 
@@ -432,10 +515,10 @@ class UnifiedTransactionWorkflow:
             # Add tracing if enabled
             if self.config.enable_tracing and self.langsmith_client:
                 workflow_config["callbacks"] = [LangChainTracer(project_name=self.config.langsmith_project)]
-                logger.info(f"🔍 LangSmith tracing enabled for workflow {workflow_id}")
+                logger.info(f"LangSmith tracing enabled for workflow {workflow_id}")
 
             # Execute workflow with timeout
-            logger.info(f"⚡ Executing {mode.value} workflow with timeout {self.config.timeout_seconds}s...")
+            logger.info(f"Executing {mode.value} workflow with timeout {self.config.timeout_seconds}s...")
 
             try:
                 final_state = await asyncio.wait_for(
@@ -464,7 +547,10 @@ class UnifiedTransactionWorkflow:
             # Update statistics
             self._update_workflow_stats(workflow_id, execution_time, True)
 
-            logger.info(f"✅ Workflow {workflow_id} completed successfully in {execution_time:.2f}s")
+            # Calculate overall confidence from all stages
+            overall_confidence = self._calculate_overall_confidence(final_state)
+
+            logger.info(f"Workflow {workflow_id} completed successfully in {execution_time:.2f}s with {overall_confidence:.2f} confidence")
 
             return {
                 "workflow_id": workflow_id,
@@ -475,6 +561,7 @@ class UnifiedTransactionWorkflow:
                 "stages_completed": len(final_state.get("processing_history", [])),
                 "transactions_processed": len(final_state.get("processed_transactions", [])),
                 "confidence_scores": final_state.get("confidence_scores", []),
+                "overall_confidence": overall_confidence,
                 "user_id": user_id
             }
 

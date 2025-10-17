@@ -1,21 +1,20 @@
 """
 Authentication Service - User authentication and JWT management
-Complete implementation with database integration
+Complete implementation with Supabase database integration
 """
 
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from supabase import Client
 import jwt
 import os
 from passlib.context import CryptContext
 
 from ..models.user import User, UserCreate, UserResponse
-from ..db.models.user import UserORM
-from ..core.database_config import get_db_session
+from ..core.database_config import get_db_client
+from ..db.operations import UserCRUD
 
 # Configuration from environment
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
@@ -28,9 +27,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 class AuthService:
-    """Complete authentication service with database integration"""
+    """Complete authentication service with Supabase integration"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Client):
         self.db = db
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
@@ -75,42 +74,20 @@ class AuthService:
         except jwt.JWTError:
             return None
 
-    async def get_user_by_email(self, email: str) -> Optional[UserORM]:
-        """Get user by email from database"""
-        try:
-            result = await self.db.execute(
-                select(UserORM).where(UserORM.email == email)
-            )
-            return result.scalar_one_or_none()
-        except Exception:
-            return None
+    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email from database using Supabase"""
+        return await UserCRUD.get_user_by_email(self.db, email)
 
-    async def get_user_by_username(self, username: str) -> Optional[UserORM]:
-        """Get user by username from database"""
-        try:
-            result = await self.db.execute(
-                select(UserORM).where(UserORM.username == username)
-            )
-            user = result.scalar_one_or_none()
-            if user:
-                # Ensure all attributes are loaded
-                await self.db.refresh(user)
-            return user
-        except Exception:
-            return None
+    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user by username from database using Supabase"""
+        return await UserCRUD.get_user_by_username(self.db, username)
 
-    async def get_user_by_id(self, user_id: str) -> Optional[UserORM]:
-        """Get user by ID from database"""
-        try:
-            result = await self.db.execute(
-                select(UserORM).where(UserORM.id == user_id)
-            )
-            return result.scalar_one_or_none()
-        except Exception:
-            return None
+    async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user by user_id from database using Supabase"""
+        return await UserCRUD.get_user_by_id(self.db, user_id)
 
-    async def create_user(self, user_data: UserCreate) -> UserORM:
-        """Create new user in database"""
+    async def create_user(self, user_data: UserCreate) -> Dict[str, Any]:
+        """Create new user in database using Supabase"""
         # Check if user already exists
         existing_user = await self.get_user_by_email(user_data.email)
         if existing_user:
@@ -126,43 +103,37 @@ class AuthService:
                 detail="Username already taken"
             )
 
-        # Create new user
+        # Create new user with hashed password
         hashed_password = self.get_password_hash(user_data.password)
+        
+        user_dict = {
+            "username": user_data.username,
+            "email": user_data.email,
+            "full_name": user_data.full_name,
+            "hashed_password": hashed_password,
+            "is_active": True,
+            "is_verified": False
+        }
+        
+        return await UserCRUD.create_user(self.db, user_dict)
 
-        db_user = UserORM(
-            username=user_data.username,
-            email=user_data.email,
-            full_name=user_data.full_name,
-            hashed_password=hashed_password,
-            is_active=True,
-            is_verified=False
-        )
-
-        self.db.add(db_user)
-        await self.db.commit()
-        await self.db.refresh(db_user)
-
-        return db_user
-
-    async def authenticate_user(self, username: str, password: str) -> Optional[UserORM]:
+    async def authenticate_user(self, username: str, password: str) -> Optional[Dict[str, Any]]:
         """Authenticate user credentials"""
         user = await self.get_user_by_username(username)
         if not user:
             return None
-        if not self.verify_password(password, user.hashed_password):
+        if not self.verify_password(password, user["hashed_password"]):
             return None
-        if not user.is_active:
+        if not user.get("is_active", True):
             return None
         return user
 
     async def update_last_login(self, user_id: str):
         """Update last login timestamp"""
         try:
-            user = await self.get_user_by_id(user_id)
-            if user:
-                user.last_login = datetime.utcnow()
-                await self.db.commit()
-                await self.db.refresh(user)
+            response = self.db.table("profiles").update({
+                "last_login": datetime.utcnow().isoformat()
+            }).eq("id", user_id).execute()
         except Exception as e:
             # Log error but don't fail the login
             print(f"Failed to update last login: {e}")
@@ -187,8 +158,8 @@ class AuthService:
 # Dependency for getting current user
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db_session)
-) -> UserORM:
+    db: Client = Depends(get_db_client)
+) -> User:
     """Get current authenticated user"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -206,17 +177,17 @@ async def get_current_user(
     if user_id is None:
         raise credentials_exception
 
-    user = await auth_service.get_user_by_id(user_id)
-    if user is None:
+    user_dict = await auth_service.get_user_by_id(user_id)
+    if user_dict is None:
         raise credentials_exception
 
-    return user
+    return User(**user_dict)
 
 # Optional dependency for getting current user (returns None if not authenticated)
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncSession = Depends(get_db_session)
-) -> Optional[UserORM]:
+    db: Client = Depends(get_db_client)
+) -> Optional[User]:
     """Get current authenticated user or None if not authenticated"""
     if not credentials:
         return None
@@ -231,7 +202,10 @@ async def get_current_user_optional(
         if user_id is None:
             return None
 
-        user = await auth_service.get_user_by_id(user_id)
-        return user
+        user_dict = await auth_service.get_user_by_id(user_id)
+        if user_dict is None:
+            return None
+            
+        return User(**user_dict)
     except Exception:
         return None

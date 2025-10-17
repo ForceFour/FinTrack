@@ -4,71 +4,183 @@ Handles transaction processing with UnifiedWorkflow AND database storage
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import pandas as pd
+from supabase import Client
 from ..models.transaction import Transaction, TransactionCreate, TransactionResponse
 from ..db.operations import TransactionCRUD
+
 
 class TransactionService:
     """Enhanced transaction service with database persistence"""
 
-    def __init__(self, db):
-        self.db = db
+    def __init__(self, client: Client):
+        self.client = client
+
+    def _map_db_to_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Map database enum values to Pydantic response values"""
+        mapped = data.copy()
+
+        # Map transaction_type
+        if mapped.get('transaction_type') == 'debit':
+            mapped['transaction_type'] = 'expense'
+        elif mapped.get('transaction_type') == 'credit':
+            mapped['transaction_type'] = 'income'
+
+        # Map status
+        if mapped.get('status') == 'completed':
+            mapped['status'] = 'processed'
+
+        # Convert date string to date object if needed
+        if isinstance(mapped.get('date'), str):
+            from datetime import datetime
+            try:
+                # Try parsing as ISO format
+                mapped['date'] = datetime.fromisoformat(mapped['date'].replace('Z', '+00:00')).date()
+            except:
+                # If parsing fails, keep as string
+                pass
+
+        return mapped
 
     async def process_uploaded_transactions(self, df: pd.DataFrame, user_id: str) -> Dict[str, int]:
         """Process uploaded transaction file through the unified workflow pipeline AND save to database"""
-        from ..agents.ingestion_agent import EnhancedIngestionAgent, IngestionAgentInput
+        from ..agents.ingestion_agent import IngestionAgent, IngestionAgentInput
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
         try:
-            # Initialize enhanced ingestion agent
-            ingestion_agent = EnhancedIngestionAgent()
+            # Filter out duplicates before processing
+            df_filtered, duplicates_found = await self._filter_duplicates_from_df(df, user_id)
+
+            # If no transactions left after filtering, return early
+            if df_filtered.empty:
+                return {
+                    "total": len(df),
+                    "processed": 0,
+                    "saved_to_db": 0,
+                    "skipped": duplicates_found,
+                    "errors": 0
+                }
+
+            # Initialize enhanced ingestion agent for initial preprocessing
+            ingestion_agent = IngestionAgent()
 
             # Process through enhanced ingestion agent first
             input_data = IngestionAgentInput(
                 input_type="structured",
-                dataframe=df
+                dataframe=df_filtered
             )
             ingestion_result = ingestion_agent.process(input_data)
 
-            if ingestion_result.status == "success" and ingestion_result.preprocessed_transactions:
-                # Convert processed transactions to database records
-                saved_count = 0
-                for transaction_data in ingestion_result.preprocessed_transactions:
-                    try:
-                        # Prepare data for database insertion
-                        db_data = {
-                            "user_id": user_id,
-                            "amount": transaction_data.get("amount", 0.0),
-                            "description": transaction_data.get("description", ""),
-                            "date": transaction_data.get("date", datetime.now()),
-                            "merchant": transaction_data.get("merchant"),
-                            "category": transaction_data.get("category"),
-                            "subcategory": transaction_data.get("subcategory"),
-                            "transaction_type": transaction_data.get("transaction_type", "debit"),
-                            "status": "completed",
-                            "processed_by_agent": "ingestion_agent",
-                            "processing_version": "1.0"
-                        }
-                        
-                        # Save to database
-                        await TransactionCRUD.create_transaction(self.db, db_data)
-                        saved_count += 1
-                        
-                    except Exception as e:
-                        print(f"⚠️ Failed to save transaction: {e}")
-                        continue
+            if ingestion_result.metadata.get("status") == "completed" and ingestion_result.preprocessed_transactions:
+                # Convert to raw transaction format for unified workflow
+                raw_transactions = []
+                for transaction in ingestion_result.preprocessed_transactions:
+                    raw_transactions.append({
+                        "date": transaction.date.isoformat(),
+                        "amount": transaction.amount,
+                        "description": transaction.description_cleaned,
+                        "transaction_type": transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type),
+                        "payment_method": transaction.payment_method.value if hasattr(transaction.payment_method, 'value') else str(transaction.payment_method),
+                        "category": transaction.metadata.get('original_category', ''),
+                        "merchant": transaction.metadata.get('original_merchant', ''),
+                    })
 
-                print(f"✅ Saved {saved_count} transactions to database")
-                return {
-                    "total": len(df),
-                    "processed": len(ingestion_result.preprocessed_transactions),
-                    "saved_to_db": saved_count,
-                    "skipped": len(df) - len(ingestion_result.preprocessed_transactions),
-                    "errors": len(ingestion_result.errors)
-                }
+                # Now run the full unified workflow for merchant/category classification
+                workflow = UnifiedTransactionWorkflow()
+                workflow_result = await workflow.execute_workflow(
+                    mode=WorkflowMode.FULL_PIPELINE,
+                    raw_transactions=raw_transactions,
+                    user_id=user_id
+                )
+
+                if 'result' in workflow_result:
+                    processed_txns = workflow_result['result'].get('processed_transactions', [])
+
+                if workflow_result.get("status") == "success" and workflow_result.get("result", {}).get("processed_transactions"):
+                    # Now save the fully processed transactions to database
+                    saved_count = 0
+                    for transaction_data in workflow_result["result"]["processed_transactions"]:
+                        try:
+                            # Check if this transaction is a duplicate
+                            is_duplicate = await self._is_duplicate_transaction(transaction_data, user_id)
+                            print(f"Checking duplicate for processed transaction: {transaction_data.description_cleaned}, amount: {transaction_data.amount}, duplicate: {is_duplicate}")
+                            if is_duplicate:
+                                continue  # Skip duplicates
+
+                            # Prepare data for database insertion with merchant and category
+                            db_data = {
+                                "user_id": user_id,
+                                "amount": transaction_data.amount,
+                                "description": transaction_data.description_cleaned,
+                                "date": transaction_data.date.isoformat() if hasattr(transaction_data.date, 'isoformat') else str(transaction_data.date),
+                                "merchant": getattr(transaction_data, 'merchant_name', None) or getattr(transaction_data, 'merchant', None),
+                                "category": transaction_data.predicted_category.value if hasattr(transaction_data.predicted_category, 'value') else str(getattr(transaction_data, 'predicted_category', getattr(transaction_data, 'category', 'miscellaneous'))),
+                                "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
+                                "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
+                                "status": "completed"
+                            }
+
+                            print(f"Saving processed transaction: {db_data}")
+                            # Save to database
+                            await TransactionCRUD.create_transaction(self.client, db_data)
+                            saved_count += 1
+
+                        except Exception as e:
+                            print(f"Error saving processed transaction: {e}")
+                            continue
+
+                    print(f"Saved {saved_count} processed transactions to database")
+
+                    total_processed = len(workflow_result["result"]["processed_transactions"])
+                    return {
+                        "total": len(df),
+                        "processed": total_processed,
+                        "saved_to_db": saved_count,
+                        "skipped": duplicates_found,
+                        "errors": 0
+                    }
+                else:
+                    print("Going to fallback path")
+                    # Fallback: try to save preprocessed transactions
+                    saved_count = 0
+                    for transaction_data in ingestion_result.preprocessed_transactions:
+                        try:
+                            # Check if this transaction is a duplicate before saving
+                            is_duplicate = await self._is_duplicate_transaction(transaction_data, user_id)
+                            if is_duplicate:
+                                continue  # Skip duplicates
+
+                            # Prepare data for database insertion
+                            db_data = {
+                                "user_id": user_id,
+                                "amount": transaction_data.amount,
+                                "description": transaction_data.description_cleaned,
+                                "date": transaction_data.date.isoformat() if hasattr(transaction_data.date, 'isoformat') else str(transaction_data.date),
+                                "merchant": getattr(transaction_data, 'merchant_name', None),
+                                "category": getattr(transaction_data, 'category', 'miscellaneous'),
+                                "transaction_type": transaction_data.transaction_type.value if hasattr(transaction_data.transaction_type, 'value') else str(transaction_data.transaction_type),
+                                "payment_method": transaction_data.payment_method.value if hasattr(transaction_data.payment_method, 'value') else str(transaction_data.payment_method),
+                                "status": "completed"
+                            }
+
+                            # Save to database
+                            await TransactionCRUD.create_transaction(self.client, db_data)
+                            saved_count += 1
+
+                        except Exception as e:
+                            continue
+
+                    total_processed = len(ingestion_result.preprocessed_transactions)
+                    return {
+                        "total": len(df),
+                        "processed": total_processed,
+                        "saved_to_db": saved_count,
+                        "skipped": duplicates_found,
+                        "errors": 1 if workflow_result.get("status") != "success" else 0
+                    }
             else:
-                print(f"❌ Preprocessing failed: {ingestion_result.error}")
+                error_msg = ingestion_result.metadata.get("error", "Unknown error")
                 return {
                     "total": len(df),
                     "processed": 0,
@@ -76,9 +188,8 @@ class TransactionService:
                     "skipped": len(df),
                     "errors": 1
                 }
-                
+
         except Exception as e:
-            print(f"❌ Upload processing failed: {e}")
             return {
                 "total": len(df),
                 "processed": 0,
@@ -87,75 +198,239 @@ class TransactionService:
                 "errors": 1
             }
 
-    async def create_transaction(self, transaction_data: Dict[str, Any]) -> TransactionResponse:
+    async def _check_for_duplicates(self, df: pd.DataFrame, user_id: str) -> int:
+        """Check for duplicate transactions in the uploaded data and against existing database"""
+        duplicates = 0
+        seen_in_upload = set()
+
+        # First check for duplicates within the uploaded data itself
+        for _, row in df.iterrows():
+            # Create a unique key based on date, amount, and description
+            key = (
+                str(row.get('date', '')),
+                float(row.get('amount', 0)),
+                str(row.get('description', '')).strip().lower()
+            )
+
+            if key in seen_in_upload:
+                duplicates += 1
+            else:
+                seen_in_upload.add(key)
+
+        # Also check against existing database transactions
+        # This is a preliminary check - the full check happens during individual processing
+        try:
+            existing = self.client.table("transactions").select("date,amount,description").eq("user_id", user_id).execute()
+            existing_keys = set()
+
+            for tx in existing.data or []:
+                key = (
+                    str(tx.get('date', '')),
+                    float(tx.get('amount', 0)),
+                    str(tx.get('description', '')).strip().lower()
+                )
+                existing_keys.add(key)
+
+            # Check uploaded data against existing database
+            for _, row in df.iterrows():
+                key = (
+                    str(row.get('date', '')),
+                    float(row.get('amount', 0)),
+                    str(row.get('description', '')).strip().lower()
+                )
+                if key in existing_keys:
+                    duplicates += 1
+
+        except Exception as e:
+            pass
+
+        return duplicates
+
+    async def _filter_duplicates_from_df(self, df: pd.DataFrame, user_id: str) -> tuple[pd.DataFrame, int]:
+        """Filter out duplicate transactions from dataframe before processing"""
+        try:
+            # Get existing transactions for comparison
+            existing = self.client.table("transactions").select("date,amount,description").eq("user_id", user_id).execute()
+            existing_keys = set()
+
+            for tx in existing.data or []:
+                # Normalize date to YYYY-MM-DD format
+                date_str = str(tx.get('date', '')).split('T')[0].split(' ')[0]
+                key = (
+                    date_str,
+                    float(tx.get('amount', 0)),
+                    str(tx.get('description', '')).strip().lower()
+                )
+                existing_keys.add(key)
+
+            # Filter dataframe to remove duplicates
+            filtered_rows = []
+            duplicates_found = 0
+            seen_in_upload = set()
+
+            for _, row in df.iterrows():
+                # Normalize date to YYYY-MM-DD format
+                date_str = str(row.get('date', '')).split('T')[0].split(' ')[0]
+                key = (
+                    date_str,
+                    float(row.get('amount', 0)),
+                    str(row.get('description', '')).strip().lower()
+                )
+
+                # Check for duplicates within the uploaded data itself
+                if key in seen_in_upload:
+                    duplicates_found += 1
+                    continue
+
+                # Check against existing database transactions
+                if key in existing_keys:
+                    duplicates_found += 1
+                    continue
+
+                # Not a duplicate, keep it
+                seen_in_upload.add(key)
+                filtered_rows.append(row)
+
+            # Create filtered dataframe
+            if filtered_rows:
+                df_filtered = pd.DataFrame(filtered_rows)
+            else:
+                df_filtered = pd.DataFrame(columns=df.columns)
+
+            return df_filtered, duplicates_found
+
+        except Exception as e:
+            # Return original dataframe if filtering fails
+            return df, 0
+
+    async def _is_duplicate_transaction(self, transaction_data, user_id: str) -> bool:
+        """Check if a transaction already exists in the database"""
+        try:
+            # Query for existing transactions with similar characteristics
+            existing = self.client.table("transactions").select("*").eq("user_id", user_id).execute()
+
+            # Normalize the new transaction data - handle both dict and object
+            if isinstance(transaction_data, dict):
+                new_amount = transaction_data.get('amount', 0)
+                new_date_str = transaction_data.get('date')
+                if new_date_str and isinstance(new_date_str, str) and 'T' in new_date_str:
+                    new_date_str = new_date_str.split('T')[0]
+                new_desc = transaction_data.get('description_cleaned', transaction_data.get('description', '')).strip().lower()
+                new_merchant = (transaction_data.get('merchant_name') or transaction_data.get('merchant', '')).strip().lower()
+            else:
+                # Handle object attributes
+                new_amount = transaction_data.amount
+                new_date_str = transaction_data.date.date().isoformat() if hasattr(transaction_data.date, 'date') else str(transaction_data.date).split(' ')[0]
+                new_desc = transaction_data.description_cleaned.strip().lower()
+                new_merchant = (getattr(transaction_data, 'merchant_name', '') or getattr(transaction_data, 'merchant', '')).strip().lower()
+
+            for existing_tx in existing.data or []:
+                # Check multiple criteria for duplicates:
+                # 1. Exact amount match
+                amount_match = abs(existing_tx['amount'] - new_amount) < 0.01
+
+                # 2. Date match (normalize to YYYY-MM-DD format)
+                existing_date_str = str(existing_tx['date']).split('T')[0].split(' ')[0]
+                date_match = existing_date_str == new_date_str
+
+                # 3. Description similarity (case-insensitive, strip whitespace)
+                existing_desc = existing_tx['description'].strip().lower()
+                desc_match = existing_desc == new_desc
+
+                # 4. Merchant match (if available)
+                existing_merchant = existing_tx.get('merchant', '').strip().lower()
+                merchant_match = existing_merchant == new_merchant and existing_merchant != ''
+
+                # Check for duplicates
+                if amount_match and date_match:
+                    if desc_match:
+                        return True
+                    if merchant_match:
+                        return True
+                    # For high-value transactions, be more strict
+                    if abs(new_amount) > 1000:
+                        return True
+
+            return False
+        except Exception as e:
+            # In case of error, don't block the transaction
+            return False
+
+    async def create_transaction(self, transaction_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a single transaction and save to database"""
         try:
             # Create transaction in database
-            db_transaction = await TransactionCRUD.create_transaction(self.db, transaction_data)
-            
-            # Convert to response format
-            return TransactionResponse(**db_transaction.to_dict())
-            
+            db_transaction = await TransactionCRUD.create_transaction(self.client, transaction_data)
+
+            # Return the raw database response instead of trying to map to TransactionResponse
+            # to avoid Pydantic validation issues
+            return db_transaction
+
         except Exception as e:
             raise ValueError(f"Failed to create transaction: {str(e)}")
 
     async def get_transaction(self, transaction_id: str, user_id: str) -> Optional[TransactionResponse]:
         """Get a specific transaction from database"""
-        db_transaction = await TransactionCRUD.get_transaction(self.db, transaction_id, user_id)
-        
+        db_transaction = await TransactionCRUD.get_transaction(self.client, transaction_id, user_id)
+
         if db_transaction:
-            return TransactionResponse(**db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction)
+            return TransactionResponse(**response_data)
         return None
 
     async def get_transactions(self, filters: Dict[str, Any]) -> Tuple[List[TransactionResponse], int]:
         """Get transactions from database with filtering and pagination"""
-        db_transactions, total = await TransactionCRUD.get_transactions(self.db, filters)
-        
-        transactions = [TransactionResponse(**t.to_dict()) for t in db_transactions]
+        db_transactions, total = await TransactionCRUD.get_transactions(self.client, filters)
+
+        transactions = []
+        for t in db_transactions:
+            response_data = self._map_db_to_response(t)
+            transactions.append(TransactionResponse(**response_data))
         return transactions, total
 
     async def update_transaction(self, transaction_id: str, update_data: Dict[str, Any]) -> Optional[TransactionResponse]:
         """Update a transaction in database"""
-        db_transaction = await TransactionCRUD.update_transaction(self.db, transaction_id, update_data)
-        
+        db_transaction = await TransactionCRUD.update_transaction(self.client, transaction_id, update_data)
+
         if db_transaction:
-            return TransactionResponse(**db_transaction.to_dict())
+            response_data = self._map_db_to_response(db_transaction)
+            return TransactionResponse(**response_data)
         return None
 
     async def delete_transaction(self, transaction_id: str) -> bool:
         """Delete a transaction from database"""
-        return await TransactionCRUD.delete_transaction(self.db, transaction_id)
+        return await TransactionCRUD.delete_transaction(self.client, transaction_id)
 
     async def batch_create_transactions(self, transactions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Create multiple transactions in database"""
-        return await TransactionCRUD.batch_create_transactions(self.db, transactions_data)
+        return await TransactionCRUD.batch_create_transactions(self.client, transactions_data)
 
     async def verify_transaction_ownership(self, transaction_ids: List[str], user_id: str) -> List:
         """Verify transaction ownership"""
-        return await TransactionCRUD.verify_transaction_ownership(self.db, transaction_ids, user_id)
+        return await TransactionCRUD.verify_transaction_ownership(self.client, transaction_ids, user_id)
 
     async def batch_update_transactions(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Batch update transactions"""
         updated = 0
         failed = 0
         errors = []
-        
+
         for update in updates:
             try:
                 transaction_id = update["id"]
                 update_data = update["data"]
-                
+
                 result = await self.update_transaction(transaction_id, update_data)
                 if result:
                     updated += 1
                 else:
                     failed += 1
                     errors.append(f"Transaction {transaction_id} not found")
-                    
+
             except Exception as e:
                 failed += 1
                 errors.append(f"Transaction {update.get('id', 'unknown')}: {str(e)}")
-        
+
         return {
             "updated": updated,
             "failed": failed,
@@ -167,7 +442,7 @@ class TransactionService:
         deleted = 0
         failed = 0
         errors = []
-        
+
         for transaction_id in transaction_ids:
             try:
                 success = await self.delete_transaction(transaction_id)
@@ -176,11 +451,11 @@ class TransactionService:
                 else:
                     failed += 1
                     errors.append(f"Transaction {transaction_id} not found")
-                    
+
             except Exception as e:
                 failed += 1
                 errors.append(f"Transaction {transaction_id}: {str(e)}")
-        
+
         return {
             "deleted": deleted,
             "failed": failed,
@@ -189,7 +464,58 @@ class TransactionService:
 
     async def get_transaction_summary(self, user_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
         """Get transaction summary from database"""
-        return await TransactionCRUD.get_transaction_summary(self.db, user_id, start_date, end_date)
+        return await TransactionCRUD.get_transaction_summary(self.client, user_id, start_date, end_date)
+
+    async def get_user_transaction_count(self, user_id: str) -> int:
+        """Get total number of transactions for a user (all time, not just recent)"""
+        try:
+            # Query database directly for accurate count
+            result = self.db.table("transactions").select("id", count="exact").eq("user_id", user_id).execute()
+            total_count = result.count if hasattr(result, 'count') else len(result.data or [])
+            print(f"Transaction count for user {user_id}: {total_count}")
+            return total_count
+        except Exception as e:
+            print(f"Error getting transaction count for user {user_id}: {e}")
+            return 0
+
+    async def get_user_spending_profile(self, user_id: str) -> Dict[str, Any]:
+        """Get comprehensive spending profile for a user to inform suggestions"""
+        try:
+            # Get recent transaction summary (last 3 months)
+            from datetime import datetime, timedelta
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=90)
+
+            summary = await self.get_transaction_summary(user_id, start_date, end_date)
+            transaction_count = await self.get_user_transaction_count(user_id)
+
+            # Get recent transactions to analyze spending patterns
+            filters = {
+                "user_id": user_id,
+                "limit": 50,  # Last 50 transactions for pattern analysis
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat()
+            }
+            recent_transactions, _ = await self.get_transactions(filters)
+
+            return {
+                "total_transactions": transaction_count,
+                "recent_summary": summary,
+                "recent_transactions": [t.dict() for t in recent_transactions],
+                "analysis_period": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "days": 90
+                }
+            }
+        except Exception as e:
+            print(f"Error getting spending profile for user {user_id}: {e}")
+            return {
+                "total_transactions": 0,
+                "recent_summary": {},
+                "recent_transactions": [],
+                "analysis_period": None
+            }
 
     async def process_natural_language_transaction(
         self,

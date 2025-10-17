@@ -1,0 +1,10 @@
+date,amount,category,merchant,payment_method,recurring_flag,offer_discount,description
+7/7/2025,8712.77,Miscellaneous,Unknown Merchant,Bank Transfer,No,No,Purchased miscellaneous from Unknown Merchant
+9/4/2023,3675.63,Donations & Charity,Rotary Club LK,Card,Yes,No,Purchased donations & charity from Rotary Club LK
+3/24/2023,12913.67,"Fitness & Wellness (Gym, Spa)",Santani Spa,"Mobile Wallet (eZ Cash, FriMi)",No,No,"Purchased fitness & wellness (gym, spa) from Santani Spa"
+5/28/2023,2591.27,Donations & Charity,Sarvodaya,"Mobile Wallet (eZ Cash, FriMi)",No,No,Purchased donations & charity from Sarvodaya
+9/27/2024,16567.87,"Household (Furniture, Appliances)",Arpico Furniture,Cash,Yes,No,"Purchased household (furniture, appliances) from Arpico Furniture"
+12/15/2022,18110.03,"Shopping (Clothes, Electronics)",Abans,"Mobile Wallet (eZ Cash, FriMi)",Yes,No,"Purchased shopping (clothes, electronics) from Abans"
+10/6/2024,69021.19,Travel & Accommodation,SriLankan Airlines,"Mobile Wallet (eZ Cash, FriMi)",Yes,No,Purchased travel & accommodation from SriLankan Airlines
+9/7/2023,2859.22,"Beauty & Personal Care (Salons, Cosmetics)",Ramani Fernando Salon,Bank Transfer,No,No,"Purchased beauty & personal care (salons, cosmetics) from Ramani Fernando Salon"
+7/13/2024,171272.26,Business Expenses,Hayleys,Bank Transfer,Yes,No,Purchased business expenses from Hayleys

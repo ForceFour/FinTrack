@@ -15,7 +15,7 @@ from ..schemas.transaction_schemas import RawTransaction
 logger = logging.getLogger(__name__)
 
 # Initialize router
-workflow_router = APIRouter(prefix="/api/workflow", tags=["workflow"])
+workflow_router = APIRouter(prefix="/workflow", tags=["workflow"])
 
 class TransactionWorkflowRequest(BaseModel):
     """Request model for transaction workflow"""
@@ -46,10 +46,10 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
     """
     try:
         logger.info(f"🚀 Starting unified workflow for mode: {request.mode}")
-        
+
         # Get workflow instance
         workflow = get_workflow_instance()
-        
+
         # Validate mode
         try:
             mode = WorkflowMode(request.mode)
@@ -58,7 +58,7 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
                 status_code=400,
                 detail=f"Invalid mode '{request.mode}'. Available: {[m.value for m in WorkflowMode]}"
             )
-        
+
         # Execute unified workflow
         result = await workflow.execute_workflow(
             mode=mode,
@@ -68,7 +68,7 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
             conversation_context=request.conversation_context,
             custom_config=request.custom_config
         )
-        
+
         # Build response
         response = TransactionWorkflowResponse(
             workflow_id=result["workflow_id"],
@@ -82,11 +82,11 @@ async def process_transaction_workflow(request: TransactionWorkflowRequest):
             confidence_scores=result.get("confidence_scores", []),
             user_id=result["user_id"]
         )
-        
+
         logger.info(f"✅ Unified workflow completed: {response.workflow_id} in {response.execution_time:.2f}s")
-        
+
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -101,12 +101,12 @@ async def get_workflow_status(workflow_id: str):
     try:
         workflow = get_workflow_instance()
         status = workflow.get_workflow_status(workflow_id)
-        
+
         if status.get("status") == "not_found":
             raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found")
-        
+
         return status
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -121,12 +121,12 @@ async def get_background_task_status(task_id: str):
     try:
         workflow = get_workflow_instance()
         status = workflow.get_background_task_status(task_id)
-        
+
         if status.get("status") == "not_found":
             raise HTTPException(status_code=404, detail=f"Background task {task_id} not found")
-        
+
         return status
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -141,7 +141,7 @@ async def visualize_unified_workflow():
     try:
         workflow = get_workflow_instance()
         config = get_workflow_config()
-        
+
         return {
             "workflow_architecture": {
                 "name": "Unified Transaction Processing Workflow",
@@ -156,7 +156,7 @@ async def visualize_unified_workflow():
                     },
                     {
                         "name": "Natural Language Processor",
-                        "step": "nl_processing_node", 
+                        "step": "nl_processing_node",
                         "description": "Process natural language input with Groq LLM",
                         "inputs": ["user_input", "conversation_context"],
                         "outputs": ["extracted_transaction", "nl_confidence", "language_insights"]
@@ -169,7 +169,7 @@ async def visualize_unified_workflow():
                         "outputs": ["preprocessed_transactions", "ingestion_metadata", "data_quality_scores"]
                     },
                     {
-                        "name": "NER Extraction Agent", 
+                        "name": "NER Extraction Agent",
                         "step": "ner_extraction_node",
                         "description": "Named Entity Recognition for merchant and location extraction",
                         "inputs": ["preprocessed_transactions"],
@@ -202,7 +202,7 @@ async def visualize_unified_workflow():
                     "description": "Conditional routing based on confidence and errors",
                     "conditions": [
                         "errors_detected -> skip to finalization",
-                        "no_transactions -> skip to validation", 
+                        "no_transactions -> skip to validation",
                         "low_confidence -> skip advanced processing",
                         "normal -> continue full pipeline"
                     ]
@@ -217,7 +217,7 @@ async def visualize_unified_workflow():
                     "use_cases": ["Complete transaction analysis", "Full feature extraction", "Production processing"]
                 },
                 {
-                    "mode": "quick_classification", 
+                    "mode": "quick_classification",
                     "description": "Fast classification without advanced processing",
                     "agents_used": 5,
                     "features": ["Core processing", "Fast execution", "Essential categorization"],
@@ -225,7 +225,7 @@ async def visualize_unified_workflow():
                 },
                 {
                     "mode": "ingestion_only",
-                    "description": "Data preprocessing and cleaning only", 
+                    "description": "Data preprocessing and cleaning only",
                     "agents_used": 3,
                     "features": ["Data cleaning", "Preprocessing", "Validation", "Quality scoring"],
                     "use_cases": ["Data import", "Batch preprocessing", "Quality assessment"]
@@ -248,7 +248,7 @@ async def visualize_unified_workflow():
             "features": {
                 "langgraph_integration": "✅ Complete StateGraph orchestration",
                 "langsmith_tracing": f"✅ Enabled: {config.enable_tracing}",
-                "conditional_routing": "✅ Intelligent agent flow with confidence-based routing", 
+                "conditional_routing": "✅ Intelligent agent flow with confidence-based routing",
                 "error_handling": "✅ Comprehensive error management and recovery",
                 "background_processing": f"✅ Async support: {config.enable_background_processing}",
                 "multi_mode_execution": "✅ 5 different processing modes",
@@ -266,7 +266,7 @@ async def visualize_unified_workflow():
             },
             "system_status": workflow.get_all_workflows_status()
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to visualize workflow: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to visualize workflow: {str(e)}")
@@ -281,17 +281,17 @@ async def bulk_process_transactions(
     """
     try:
         workflow = get_workflow_instance()
-        
+
         # Process all transactions
         results = []
         total_execution_time = 0
-        
+
         for transaction in transactions:
             try:
                 mode = WorkflowMode(transaction.mode)
             except ValueError:
                 mode = WorkflowMode.FULL_PIPELINE
-                
+
             result = await workflow.execute_workflow(
                 mode=mode,
                 user_input=transaction.user_input,
@@ -302,12 +302,12 @@ async def bulk_process_transactions(
             )
             results.append(result)
             total_execution_time += result["execution_time"]
-        
+
         # Summary statistics
         total_processed = len(results)
         successful = sum(1 for r in results if r["status"] == "success")
         failed = total_processed - successful
-        
+
         return {
             "total_processed": total_processed,
             "successful": successful,
@@ -318,7 +318,7 @@ async def bulk_process_transactions(
                 {
                     "workflow_id": r["workflow_id"],
                     "status": r["status"],
-                    "mode": r["mode"], 
+                    "mode": r["mode"],
                     "execution_time": r["execution_time"],
                     "stages_completed": r.get("stages_completed", 0),
                     "transactions_processed": r.get("transactions_processed", 0),
@@ -328,7 +328,7 @@ async def bulk_process_transactions(
                 for r in results
             ]
         }
-        
+
     except Exception as e:
         logger.error(f"Bulk processing failed: {e}")
         raise HTTPException(status_code=500, detail=f"Bulk processing failed: {str(e)}")
@@ -340,13 +340,13 @@ async def start_background_workflow(request: TransactionWorkflowRequest):
     """
     try:
         workflow = get_workflow_instance()
-        
+
         task_id = await workflow.execute_background_workflow(
             user_input=request.user_input,
             raw_transactions=request.raw_transactions,
             user_id=request.user_id
         )
-        
+
         return {
             "status": "background_started",
             "task_id": task_id,
@@ -355,7 +355,7 @@ async def start_background_workflow(request: TransactionWorkflowRequest):
             "user_id": request.user_id,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Background workflow failed: {e}")
         raise HTTPException(status_code=500, detail=f"Background workflow failed: {str(e)}")
@@ -373,7 +373,7 @@ async def get_workflow_statistics():
             "agent_performance": workflow.get_agent_performance_stats(),
             "metrics": workflow.export_workflow_metrics()
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to get statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
@@ -386,14 +386,14 @@ async def cleanup_old_workflows(hours: int = 24):
     try:
         workflow = get_workflow_instance()
         cleaned_count = workflow.cleanup_completed_workflows(older_than_hours=hours)
-        
+
         return {
             "status": "success",
             "cleaned_workflows": cleaned_count,
             "older_than_hours": hours,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Cleanup failed: {e}")
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
@@ -407,14 +407,14 @@ async def unified_workflow_health_check():
     try:
         workflow = get_workflow_instance()
         config = get_workflow_config()
-        
+
         # Test with simple input
         test_result = await workflow.execute_workflow(
             mode=WorkflowMode.QUICK_CLASSIFICATION,
             user_input="Test transaction $1.00",
             user_id="health_check"
         )
-        
+
         return {
             "status": "healthy",
             "workflow_initialized": True,
@@ -437,7 +437,7 @@ async def unified_workflow_health_check():
                 "unified_workflow": "✅ Complete 7-Agent Pipeline",
                 "intelligent_routing": "✅ Confidence-Based Flow Control",
                 "multi_mode_processing": "✅ 5 Execution Modes",
-                "langgraph_orchestration": "✅ StateGraph Implementation", 
+                "langgraph_orchestration": "✅ StateGraph Implementation",
                 "langsmith_tracing": f"✅ {'Enabled' if config.enable_tracing else 'Disabled'}",
                 "background_processing": f"✅ {'Enabled' if config.enable_background_processing else 'Disabled'}",
                 "error_handling": "✅ Comprehensive Recovery",
@@ -446,7 +446,7 @@ async def unified_workflow_health_check():
                 "parallel_processing": f"✅ {'Enabled' if config.enable_parallel_processing else 'Disabled'}"
             }
         }
-        
+
     except Exception as e:
         logger.error(f"Unified workflow health check failed: {e}")
         return {
