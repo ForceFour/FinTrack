@@ -86,12 +86,23 @@ class TransactionService:
                         "merchant": transaction.metadata.get('original_merchant', ''),
                     })
 
+                # Get current transaction count BEFORE running workflow
+                # This ensures suggestion agent knows if user has existing transactions
+                current_transaction_count = await self.get_user_transaction_count(user_id)
+                user_preferences = {
+                    'transaction_count': current_transaction_count,
+                    'has_existing_data': current_transaction_count > 0
+                }
+
                 # Now run the full unified workflow for merchant/category classification
                 workflow = UnifiedTransactionWorkflow()
                 workflow_result = await workflow.execute_workflow(
                     mode=WorkflowMode.FULL_PIPELINE,
                     raw_transactions=raw_transactions,
-                    user_id=user_id
+                    user_id=user_id,
+                    conversation_context={
+                        'user_preferences': user_preferences
+                    }
                 )
 
                 if 'result' in workflow_result:
@@ -470,7 +481,7 @@ class TransactionService:
         """Get total number of transactions for a user (all time, not just recent)"""
         try:
             # Query database directly for accurate count
-            result = self.db.table("transactions").select("id", count="exact").eq("user_id", user_id).execute()
+            result = self.client.table("transactions").select("id", count="exact").eq("user_id", user_id).execute()
             total_count = result.count if hasattr(result, 'count') else len(result.data or [])
             print(f"Transaction count for user {user_id}: {total_count}")
             return total_count
