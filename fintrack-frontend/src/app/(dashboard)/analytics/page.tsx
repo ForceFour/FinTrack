@@ -105,8 +105,55 @@ export default function AnalyticsPage() {
         if (response.error) {
           setError(response.error);
         } else {
-          setTransactions(response.data || []);
-          setAnalyticsData(null);
+          const txs = response.data || [];
+          setTransactions(txs);
+          
+          // Generate analytics data from transactions for fallback
+          const expenseTxs = txs.filter(tx => tx.amount < 0);
+          const incomeTxs = txs.filter(tx => tx.amount > 0);
+
+          const totalExpenses = expenseTxs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+          const totalIncome = incomeTxs.reduce((sum, tx) => sum + tx.amount, 0);
+
+          // Generate category data
+          const categoryMap = new Map<string, { amount: number; count: number }>();
+          expenseTxs.forEach(tx => {
+            if (tx.category) {
+              const existing = categoryMap.get(tx.category) || { amount: 0, count: 0 };
+              existing.amount += Math.abs(tx.amount);
+              existing.count += 1;
+              categoryMap.set(tx.category, existing);
+            }
+          });
+
+          const categoryData = Array.from(categoryMap.entries())
+            .map(([category, data]) => ({
+              category,
+              amount: data.amount,
+              count: data.count,
+              percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0
+            }))
+            .sort((a, b) => b.amount - a.amount);
+
+          console.log('Fallback generated categoryData:', categoryData);
+
+          // Set basic analytics data structure
+          setAnalyticsData({
+            totalIncome,
+            totalExpenses,
+            netCashflow: totalIncome - totalExpenses,
+            transactionCount: txs.length,
+            avgExpense: expenseTxs.length > 0 ? totalExpenses / expenseTxs.length : 0,
+            avgIncome: incomeTxs.length > 0 ? totalIncome / incomeTxs.length : 0,
+            monthlyData: [],
+            categoryData,
+            dailyData: [],
+            merchantData: [],
+            weeklyPattern: [],
+            recurringPayments: [],
+            anomalies: [],
+            insights: []
+          });
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load analytics data');
@@ -176,18 +223,24 @@ export default function AnalyticsPage() {
         // Process expense categories
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Object.entries(categories).forEach(([category, data]: [string, any]) => {
-          const amount = data.total_amount || 0;
-          categoryDataArray.push({
-            category,
-            amount,
-            count: data.count || 0,
-            percentage: 0 // Will calculate after we have total
-          });
+          const amount = Math.abs(data.total_amount || 0); // Ensure positive for display
+          if (amount > 0) { // Only add categories with actual expenses
+            categoryDataArray.push({
+              category,
+              amount,
+              count: data.count || 0,
+              percentage: 0 // Will calculate after we have total
+            });
+          }
         });
+
+        console.log('Raw categories data:', categories);
+        console.log('Processed categoryDataArray:', categoryDataArray);
+        console.log('Total expenses for percentage calc:', totalExpenses);
 
         // Calculate percentages
         categoryDataArray.forEach(item => {
-          item.percentage = totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0;
+          item.percentage = totalExpenses > 0 ? (item.amount / Math.abs(totalExpenses)) * 100 : 0;
         });
 
         // Sort by amount descending
@@ -195,22 +248,43 @@ export default function AnalyticsPage() {
 
         // Process merchant data - ONLY EXPENSES (negative amounts)
         const merchantDataArray: { merchant: string; totalSpent: number; avgTransaction: number; count: number; firstVisit: string; lastVisit: string }[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        Object.entries(merchants).forEach(([merchant, data]: [string, any]) => {
-          const totalSpent = Math.abs(data.total_amount || 0); // Ensure positive for display
-          const count = data.count || 1;
+        
+        // Filter transactions to get only expenses and calculate merchant data from actual transactions
+        const expenseTransactions = transactionsForAnalysis.filter(tx => tx.amount < 0);
+        const merchantMapFromTx = new Map<string, { totalSpent: number; count: number; firstVisit: Date; lastVisit: Date }>();
+        
+        expenseTransactions.forEach(tx => {
+          if (tx.merchant) {
+            const amount = Math.abs(tx.amount);
+            const txDate = new Date(tx.date);
 
-          // Only include if there's actual spending (expenses only)
-          if (totalSpent > 0) {
-            merchantDataArray.push({
-              merchant,
-              totalSpent,
-              avgTransaction: totalSpent / count,
-              count,
-              firstVisit: data.first_visit || new Date().toISOString(),
-              lastVisit: data.last_visit || new Date().toISOString()
-            });
+            const existing = merchantMapFromTx.get(tx.merchant);
+            if (existing) {
+              existing.totalSpent += amount;
+              existing.count += 1;
+              if (txDate < existing.firstVisit) existing.firstVisit = txDate;
+              if (txDate > existing.lastVisit) existing.lastVisit = txDate;
+            } else {
+              merchantMapFromTx.set(tx.merchant, {
+                totalSpent: amount,
+                count: 1,
+                firstVisit: txDate,
+                lastVisit: txDate
+              });
+            }
           }
+        });
+
+        // Convert to array format
+        Array.from(merchantMapFromTx.entries()).forEach(([merchant, data]) => {
+          merchantDataArray.push({
+            merchant,
+            totalSpent: data.totalSpent,
+            avgTransaction: data.totalSpent / data.count,
+            count: data.count,
+            firstVisit: data.firstVisit.toISOString(),
+            lastVisit: data.lastVisit.toISOString()
+          });
         });
 
         // Sort merchants by total spent descending
@@ -545,7 +619,9 @@ export default function AnalyticsPage() {
     if (abs >= 1e9) return `LKR ${(abs/1e9).toFixed(1)}B`;
     if (abs >= 1e6) return `LKR ${(abs/1e6).toFixed(1)}M`;
     if (abs >= 1e3) return `LKR ${(abs/1e3).toFixed(1)}K`;
-    return `LKR ${abs.toFixed(0)}`;
+    if (abs >= 100) return `LKR ${abs.toFixed(0)}`;
+    if (abs >= 1) return `LKR ${abs.toFixed(2)}`;
+    return `LKR ${abs.toFixed(2)}`;
   };
 
   // Helper to get lastAutoTable.finalY safely
@@ -647,12 +723,6 @@ export default function AnalyticsPage() {
        pdf.text('Spending Pattern Analysis', 20, yPosition);
        yPosition += 15;
 
-       // Add report description
-       pdf.setFontSize(12);
-       pdf.setTextColor(100);
-       pdf.text('This report analyzes your spending patterns across different days, categories, and behavioral trends.', 20, yPosition);
-       yPosition += 20;
-
        // Weekly pattern analysis
        const highestDay = displayData.weeklyPattern.reduce((prev, current) =>
          (prev.amount > current.amount) ? prev : current);
@@ -673,7 +743,6 @@ export default function AnalyticsPage() {
        yPosition += 10;
 
        const patternData = [
-         ['Pattern Metric', 'Value'],
          ['Total Transactions Analyzed', displayData.transactionCount.toString()],
          ['Highest Spending Day', `${highestDay.day} (${formatCurrency(highestDay.amount)})`],
          ['Lowest Spending Day', `${lowestDay.day} (${formatCurrency(lowestDay.amount)})`],
@@ -832,7 +901,6 @@ export default function AnalyticsPage() {
         Math.sqrt(dailyAmounts.reduce((sum, amt) => sum + Math.pow(amt - avgDaily, 2), 0) / dailyAmounts.length) / avgDaily * 100 : 0;
 
       const trendsData = [
-        ['Trend Metric', 'Value'],
         ['Overall Trend Direction', trendDirection],
         ['Average Daily Spending', formatCurrency(avgDaily)],
         ['Spending Volatility', `${volatility.toFixed(1)}%`],
@@ -862,7 +930,6 @@ export default function AnalyticsPage() {
       const avgMerchantSpending = displayData.merchantData.reduce((sum, m) => sum + m.totalSpent, 0) / merchantCount;
 
       const merchantSummaryData = [
-        ['Merchant Metric', 'Value'],
         ['Total Unique Merchants', merchantCount.toString()],
         ['Top Spending Merchant', topMerchant?.merchant || 'N/A'],
         ['Top Merchant Amount', formatCurrency(topMerchant?.totalSpent || 0)],
@@ -935,7 +1002,6 @@ export default function AnalyticsPage() {
       const confidence = Math.round(baseConfidence * 100) / 100; // Round to 2 decimals
 
       const predictiveData = [
-        ['Predictive Metric', 'Value'],
         ['Historical Daily Average', formatCurrency(historicalAvg)],
         ['Recent Trend (30 days)', `${formatCurrency(recentTrend)}/day`],
         ['Trend Direction', trendChange > 0 ? 'Increasing' : trendChange < 0 ? 'Decreasing' : 'Stable'],
@@ -1419,10 +1485,17 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Distribution by Category</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.categoryData.slice(0, 10)} layout="horizontal">
+                  <BarChart data={displayData.categoryData.slice(0, 8)}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickFormatter={formatCurrencyCompact} />
-                    <YAxis dataKey="category" type="category" width={100} />
+                    <XAxis 
+                      dataKey="category" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      interval={0}
+                      tick={{ fontSize: 14 }}
+                    />
+                    <YAxis tickFormatter={formatCurrencyCompact} />
                     <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
                     <Bar dataKey="amount" fill="#8B5CF6" />
                   </BarChart>
@@ -1538,10 +1611,17 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Merchants by Spending</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.merchantData.slice(0, 10)} layout="horizontal">
+                  <BarChart data={displayData.merchantData.slice(0, 8)}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickFormatter={formatCurrencyCompact} />
-                    <YAxis dataKey="merchant" type="category" width={120} />
+                    <XAxis 
+                      dataKey="merchant" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      interval={0}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tickFormatter={formatCurrencyCompact} />
                     <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Total Spent']} />
                     <Bar dataKey="totalSpent" fill="#EF4444" />
                   </BarChart>
@@ -1550,20 +1630,89 @@ export default function AnalyticsPage() {
 
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Merchant Analysis: Frequency vs Spending</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <ScatterChart data={displayData.merchantData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="count" name="Transaction Count" />
-                    <YAxis dataKey="totalSpent" name="Total Spent" tickFormatter={formatCurrencyCompact} />
-                    <Tooltip
-                      formatter={(value, name) => {
-                        const displayValue = name === 'totalSpent' ? formatCurrency(Number(value)) : value;
-                        const displayName = name === 'totalSpent' ? 'Total Spent' : 'Transaction Count';
-                        return [displayValue, displayName];
+                <ResponsiveContainer width="100%" height={400}>
+                  <ScatterChart 
+                    data={displayData.merchantData}
+                    margin={{ top: 20, right: 80, bottom: 60, left: 50 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis 
+                      dataKey="count" 
+                      name="Transaction Count"
+                      type="number"
+                      domain={['dataMin - 1', 'dataMax + 1']}
+                      tickCount={10}
+                      allowDecimals={false}
+                      label={{ 
+                        value: 'Number of Transactions', 
+                        position: 'insideBottom', 
+                        offset: -10,
+                        style: { textAnchor: 'middle' }
                       }}
-                      labelFormatter={(label) => `Merchant: ${label}`}
                     />
-                    <Scatter dataKey="totalSpent" fill="#3B82F6" />
+                    <YAxis 
+                      dataKey="totalSpent" 
+                      name="Total Spent" 
+                      type="number"
+                      tickFormatter={formatCurrencyCompact}
+                      label={{ 
+                        value: 'Total Amount Spent', 
+                        angle: -90, 
+                        position: 'insideLeft',
+                        offset: 1000,
+                        style: { textAnchor: 'middle' }
+                      }}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
+                              <div className="font-semibold text-gray-900 mb-2">
+                                {data.merchant}
+                              </div>
+                              <div className="space-y-1 text-sm">
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-gray-600">Transactions:</span>
+                                  <span className="font-medium">{data.count}</span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-gray-600">Total Spent:</span>
+                                  <span className="font-medium">{formatCurrency(data.totalSpent)}</span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-gray-600">Avg per Transaction:</span>
+                                  <span className="font-medium">{formatCurrency(data.avgTransaction)}</span>
+                                </div>
+                                {data.firstVisit && (
+                                  <div className="flex justify-between gap-4">
+                                    <span className="text-gray-600">First Visit:</span>
+                                    <span className="font-medium">{new Date(data.firstVisit).toLocaleDateString()}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    {displayData.merchantData.map((merchant, index) => (
+                      <Scatter 
+                        key={merchant.merchant}
+                        data={[{
+                          count: merchant.count,
+                          totalSpent: merchant.totalSpent,
+                          merchant: merchant.merchant,
+                          avgTransaction: merchant.avgTransaction,
+                          firstVisit: merchant.firstVisit
+                        }]}
+                        fill={COLORS[index % COLORS.length]} 
+                        shape="circle"
+                        r={7}
+                      />
+                    ))}
                   </ScatterChart>
                 </ResponsiveContainer>
               </div>
@@ -1664,7 +1813,14 @@ export default function AnalyticsPage() {
 
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={[
-                  ...displayData.dailyData.slice(-30),
+                  // Only show last 30 days of actual data (from 30 days ago to today)
+                  ...displayData.dailyData.filter(d => {
+                    const dataDate = new Date(d.date);
+                    const thirtyDaysAgo = subDays(new Date(), 30);
+                    const today = new Date();
+                    return dataDate >= thirtyDaysAgo && dataDate <= today;
+                  }),
+                  // Future predictions (next 30 days)
                   ...Array.from({ length: 30 }, (_, i) => ({
                     date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
                     amount: displayData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
