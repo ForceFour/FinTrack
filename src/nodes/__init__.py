@@ -2,15 +2,18 @@
 LangGraph Node Definitions for Transaction Processing Pipeline
 """
 import logging
+import os
 from typing import Dict, Any, List
 from datetime import datetime
 import uuid
+import re
 
 logger = logging.getLogger(__name__)
 
 # Import states first
 try:
     from ..states import TransactionProcessingState, ProcessingStage
+    from ..schemas.transaction_schemas import TransactionCategory, TransactionType, PaymentMethod
     logger.info("States imported successfully")
 except Exception as e:
     logger.error(f"Failed to import states: {e}")
@@ -89,7 +92,7 @@ class TransactionProcessingNodes:
                 self.nl_processor = None
                 logger.warning("NL Processor not available")
 
-            logger.info("🔧 Transaction Processing Nodes initialized")
+            logger.info("Transaction Processing Nodes initialized")
         except Exception as e:
             logger.warning(f"Some agents failed to initialize: {e}")
             # Continue with limited functionality for testing
@@ -331,59 +334,159 @@ class TransactionProcessingNodes:
 
     def ingestion_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
-        Enhanced Ingestion processing - simplified and reliable
+        Enhanced Ingestion processing - handles both raw transactions and NL extraction
         """
         print(f"INGESTION: Starting transaction ingestion and preprocessing")
 
         try:
             state['current_stage'] = ProcessingStage.INGESTION
 
-            # Get the extracted transaction from NL processing
-            extracted_transaction = state.get('extracted_transaction', {})
-            user_input = state.get('user_input', '')
+            # Check if raw transactions are provided (structured input)
+            raw_transactions = state.get('raw_transactions', [])
+            if raw_transactions and len(raw_transactions) > 0:
+                print(f"INGESTION: Processing {len(raw_transactions)} raw transactions")
 
-            if not extracted_transaction and not user_input:
-                raise ValueError("No transaction data available for ingestion")
+                # Process raw transactions directly
+                preprocessed_txns = []
+                for raw_txn in raw_transactions:
+                    # Extract merchant from description if not provided in merchant column
+                    merchant_name = raw_txn.get('merchant', '').strip()
+                    if not merchant_name or merchant_name.lower() in ['unknown', 'unknown merchant']:
+                        # Try to extract from description
+                        description = raw_txn.get('description', '')
+                        if ' from ' in description.lower():
+                            # Extract merchant from "Purchased ... from [Merchant]" pattern
+                            parts = description.lower().split(' from ')
+                            if len(parts) > 1:
+                                merchant_name = parts[1].strip()
+                                # Clean up common endings
+                                merchant_name = merchant_name.split(' (')[0].strip()  # Remove parentheses
+                        elif ' at ' in description.lower():
+                            # Extract merchant from "at [Merchant]" pattern
+                            parts = description.lower().split(' at ')
+                            if len(parts) > 1:
+                                merchant_name = parts[1].strip()
+                        else:
+                            # Fallback to first meaningful word
+                            words = description.split()
+                            if words:
+                                merchant_name = words[0].strip()
 
-            # Create a properly formatted transaction from the extracted data
-            if extracted_transaction:
-                # Convert amount to float if it's a string
-                raw_amount = extracted_transaction.get('amount', 0.0)
-                if isinstance(raw_amount, str):
-                    # Remove currency symbols and convert to float
-                    try:
-                        clean_amount = float(raw_amount.replace('$', '').replace(',', ''))
-                    except (ValueError, AttributeError):
-                        clean_amount = 0.0
-                else:
-                    clean_amount = float(raw_amount) if raw_amount else 0.0
+                    # Extract category from description if not provided in category column
+                    category = raw_txn.get('category', '').strip()
+                    if not category or category.lower() in ['miscellaneous', 'unknown']:
+                        # Try to extract from description
+                        description = raw_txn.get('description', '')
+                        if 'purchased ' in description.lower():
+                            # Extract category from "Purchased [category] from ..." pattern
+                            purchased_part = description.lower().split('purchased ')[1].split(' from ')[0].strip()
+                            category = purchased_part
+                            # Map to standard categories
+                            category_mapping = {
+                                'donations & charity': 'donations_charity',
+                                'fitness & wellness (gym, spa)': 'fitness_wellness',
+                                'household (furniture, appliances)': 'household',
+                                'shopping (clothes, electronics)': 'shopping',
+                                'travel & accommodation': 'travel_accommodation',
+                                'beauty & personal care (salons, cosmetics)': 'beauty_personal_care',
+                                'business expenses': 'business_expenses'
+                            }
+                            category = category_mapping.get(category.lower(), category.lower().replace(' ', '_'))
 
-                # Use the data from NL processing
-                preprocessed_txn = {
-                    'id': f"txn_{uuid.uuid4().hex[:8]}",
-                    'amount': clean_amount,
-                    'merchant_name': extracted_transaction.get('merchant_name', 'Unknown'),
-                    'description': extracted_transaction.get('description', user_input[:100]),
-                    'date': extracted_transaction.get('date') or datetime.now().isoformat(),
-                    'category': extracted_transaction.get('category', 'miscellaneous'),
-                    'payment_method': extracted_transaction.get('payment_method', 'unknown'),
-                    'has_discount': False,
-                    'metadata': {
-                        'processed_by': 'enhanced_ingestion',
-                        'source': 'nl_extraction',
-                        'confidence': state.get('nl_confidence', 0.0),
-                        'extraction_method': state.get('extraction_method', 'unknown')
+                    # Convert raw transaction dict to preprocessed format
+                    amount_value = raw_txn.get('amount', '0')
+                    if isinstance(amount_value, str):
+                        amount_value = amount_value.replace('$', '').replace(',', '')
+
+                    amount_float = float(amount_value)
+
+                    # Determine transaction type based on amount sign
+                    # Positive = income, Negative = expense
+                    if raw_txn.get('transaction_type'):
+                        # Use explicitly provided transaction type if available
+                        transaction_type = raw_txn.get('transaction_type')
+                    else:
+                        # Determine from amount: positive = income, negative/zero = expense
+                        transaction_type = 'income' if amount_float > 0 else 'expense'
+
+                    # Store NEGATIVE amounts for expenses (database convention)
+                    # If amount is already negative (expense), keep it
+                    # If amount is positive and it's an expense (rare), make it negative
+                    # If amount is positive and it's income, keep it positive
+                    if transaction_type == 'expense' and amount_float > 0:
+                        amount_float = -amount_float
+                    elif transaction_type == 'income' and amount_float < 0:
+                        # If marked as income but amount is negative, fix it
+                        amount_float = abs(amount_float)
+
+                    preprocessed_txn = {
+                        'id': raw_txn.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+                        'amount': amount_float,
+                        'merchant_name': merchant_name,
+                        'description': raw_txn.get('description', ''),
+                        'date': raw_txn.get('date', datetime.now().isoformat()),
+                        'category': category,
+                        'payment_method': raw_txn.get('payment_method', 'unknown'),
+                        'transaction_type': transaction_type,
+                        'has_discount': False,
+                        'metadata': {
+                            'processed_by': 'raw_transaction_ingestion',
+                            'source': 'structured_input',
+                            'confidence': 0.9,  # High confidence for structured input
+                            'extraction_method': 'direct'
+                        }
                     }
-                }
+                    preprocessed_txns.append(preprocessed_txn)
+
+                ingestion_confidence = 0.9  # High confidence for structured data
+
             else:
-                # Fallback to basic extraction from user input
-                preprocessed_txn = self._normalize_transaction_data({}, user_input)
+                # Fall back to NL processing extraction
+                extracted_transaction = state.get('extracted_transaction', {})
+                user_input = state.get('user_input', '')
 
-            # Store the preprocessed transaction
-            preprocessed_txns = [preprocessed_txn]
+                if not extracted_transaction and not user_input:
+                    raise ValueError("No transaction data available for ingestion")
 
-            # Calculate confidence based on data completeness
-            ingestion_confidence = self._calculate_ingestion_confidence(preprocessed_txn)
+                # Create a properly formatted transaction from the extracted data
+                if extracted_transaction:
+                    # Convert amount to float if it's a string
+                    raw_amount = extracted_transaction.get('amount', 0.0)
+                    if isinstance(raw_amount, str):
+                        # Remove currency symbols and convert to float
+                        try:
+                            clean_amount = float(raw_amount.replace('$', '').replace(',', ''))
+                        except (ValueError, AttributeError):
+                            clean_amount = 0.0
+                    else:
+                        clean_amount = float(raw_amount) if raw_amount else 0.0
+
+                    # Use the data from NL processing
+                    preprocessed_txn = {
+                        'id': f"txn_{uuid.uuid4().hex[:8]}",
+                        'amount': clean_amount,
+                        'merchant_name': extracted_transaction.get('merchant_name', 'Unknown'),
+                        'description': extracted_transaction.get('description', user_input[:100]),
+                        'date': extracted_transaction.get('date') or datetime.now().isoformat(),
+                        'category': extracted_transaction.get('category', 'miscellaneous'),
+                        'payment_method': extracted_transaction.get('payment_method', 'unknown'),
+                        'has_discount': False,
+                        'metadata': {
+                            'processed_by': 'enhanced_ingestion',
+                            'source': 'nl_extraction',
+                            'confidence': state.get('nl_confidence', 0.0),
+                            'extraction_method': state.get('extraction_method', 'unknown')
+                        }
+                    }
+                else:
+                    # Fallback to basic extraction from user input
+                    preprocessed_txn = self._normalize_transaction_data({}, user_input)
+
+                # Store the preprocessed transaction
+                preprocessed_txns = [preprocessed_txn]
+
+                # Calculate confidence based on data completeness
+                ingestion_confidence = self._calculate_ingestion_confidence(preprocessed_txn)
 
             # Calculate data quality scores
             quality_scores = self._calculate_data_quality(preprocessed_txns)
@@ -391,9 +494,11 @@ class TransactionProcessingNodes:
             # Store comprehensive ingestion results
             state['preprocessed_transactions'] = preprocessed_txns
             state['ingestion_metadata'] = {
-                'processor': 'enhanced_ingestion_simplified',
+                'processor': 'enhanced_ingestion_with_raw_support',
                 'confidence': ingestion_confidence,
-                'processing_timestamp': datetime.now().isoformat()
+                'processing_timestamp': datetime.now().isoformat(),
+                'input_type': 'structured' if raw_transactions else 'unstructured',
+                'transactions_count': len(preprocessed_txns)
             }
             state['ingestion_confidence'] = ingestion_confidence
             state['data_quality_scores'] = quality_scores
@@ -415,21 +520,29 @@ class TransactionProcessingNodes:
                     'transactions_processed': len(preprocessed_txns),
                     'ingestion_confidence': ingestion_confidence,
                     'quality_scores': quality_scores,
-                    'processor': 'enhanced_ingestion_simplified'
+                    'processor': 'enhanced_ingestion_with_raw_support'
                 }
             }
             state['processing_history'].append(processing_entry)
 
             # Display results
-            txn = preprocessed_txns[0]
-            print(f"   Processed Transaction:")
-            print(f"      • ID: {txn['id']}")
-            print(f"      • Amount: ${txn['amount']}")
-            print(f"      • Merchant: {txn['merchant_name']}")
-            print(f"      • Category: {txn['category']}")
-            print(f"      • Date: {txn['date'][:10]}")
+            if len(preprocessed_txns) == 1:
+                txn = preprocessed_txns[0]
+                print(f"   Processed Transaction:")
+                print(f"      • ID: {txn['id']}")
+                print(f"      • Amount: ${txn['amount']}")
+                print(f"      • Merchant: {txn['merchant_name']}")
+                print(f"      • Category: {txn['category']}")
+                print(f"      • Date: {txn['date'][:10]}")
+            else:
+                print(f"   Processed {len(preprocessed_txns)} transactions:")
+                for i, txn in enumerate(preprocessed_txns[:3], 1):  # Show first 3
+                    merchant = txn['merchant_name'][:20] if len(txn['merchant_name']) > 20 else txn['merchant_name']
+                    print(f"      {i}. {merchant}: ${txn['amount']} ({txn['date'][:10]})")
+                if len(preprocessed_txns) > 3:
+                    print(f"      ... and {len(preprocessed_txns) - 3} more")
 
-            print(f"INGESTION: Successfully processed 1 transaction with {ingestion_confidence:.2f} confidence")
+            print(f"INGESTION: Successfully processed {len(preprocessed_txns)} transaction{'s' if len(preprocessed_txns) != 1 else ''} with {ingestion_confidence:.2f} confidence")
 
         except Exception as e:
             error_info = {
@@ -443,7 +556,7 @@ class TransactionProcessingNodes:
                 state['error_log'] = []
             state['error_log'].append(error_info)
             state['current_stage'] = ProcessingStage.ERROR
-            logger.error(f"❌ Ingestion failed: {e}")
+            logger.error(f"Ingestion failed: {e}")
 
         return state
 
@@ -599,19 +712,51 @@ class TransactionProcessingNodes:
 
     def classification_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
-        Transaction classification node
+        Transaction classification node using the ClassifierAgent
         """
-        print(f"CLASSIFICATION: Starting transaction classification")
+        print(f"CLASSIFICATION: Starting transaction classification with ClassifierAgent")
 
         try:
             state['current_stage'] = ProcessingStage.CLASSIFICATION
+            # Initialize errors list if not present
+            if 'errors' not in state:
+                state['errors'] = []
+            # Initialize processing_history if not present
+            if 'processing_history' not in state:
+                state['processing_history'] = []
 
-            # Use the category from NL processing or default
-            extracted_transaction = state.get('extracted_transaction', {})
-            predicted_category = extracted_transaction.get('category', 'miscellaneous')
+            # Get preprocessed transactions to classify
+            preprocessed_txns = state.get('preprocessed_transactions', [])
+            if preprocessed_txns:
+                # Import ClassifierAgent
+                try:
+                    from ..agents.classifier_agent import ClassifierAgent, ClassifierAgentInput
+                    classifier_agent = ClassifierAgent()
+                except Exception as e:
+                    logger.error(f"Failed to import ClassifierAgent: {e}")
+                    # Fallback to simple classification
+                    return self._fallback_classification(state)
 
-            state['predicted_category'] = predicted_category
-            state['category_confidence'] = 0.8 if predicted_category != 'miscellaneous' else 0.3
+                # Convert preprocessed transactions to MerchantTransaction objects
+                merchant_transactions = self._convert_to_merchant_transactions(preprocessed_txns)
+
+                # Use ClassifierAgent for comprehensive classification
+                input_data = ClassifierAgentInput(merchant_transactions=merchant_transactions)
+                result = classifier_agent.process(input_data)
+
+                # Store the classified transactions
+                state['processed_transactions'] = result.classified_transactions
+                state['predicted_category'] = 'multiple_categories'  # For backward compatibility
+                state['category_confidence'] = sum(result.confidence_scores) / len(result.confidence_scores) if result.confidence_scores else 0.8
+
+                print(f"CLASSIFICATION: ClassifierAgent processed {len(result.classified_transactions)} transactions")
+            else:
+                # Fallback to single transaction classification
+                extracted_transaction = state.get('extracted_transaction', {})
+                predicted_category = extracted_transaction.get('category', 'miscellaneous')
+
+                state['predicted_category'] = predicted_category
+                state['category_confidence'] = 0.8 if predicted_category != 'miscellaneous' else 0.3
 
             # Add to processing history
             processing_entry = {
@@ -619,13 +764,14 @@ class TransactionProcessingNodes:
                 'timestamp': datetime.now().isoformat(),
                 'action': 'classification_completed',
                 'data': {
-                    'predicted_category': state['predicted_category'],
-                    'confidence': state['category_confidence']
+                    'predicted_category': state.get('predicted_category', 'unknown'),
+                    'confidence': state.get('category_confidence', 0.0),
+                    'transactions_classified': len(state.get('processed_transactions', []))
                 }
             }
             state['processing_history'].append(processing_entry)
 
-            print(f"CLASSIFICATION: Classified as '{state['predicted_category']}' with {state['category_confidence']:.2f} confidence")
+            print(f"CLASSIFICATION: Completed with {state.get('category_confidence', 0):.2f} average confidence")
 
         except Exception as e:
             error_info = {
@@ -635,7 +781,107 @@ class TransactionProcessingNodes:
                 'error_type': type(e).__name__
             }
             state['errors'].append(error_info)
-            logger.error(f"❌ Classification failed: {e}")
+            logger.error(f"Classification failed: {e}")
+            # Fallback to simple classification
+            return self._fallback_classification(state)
+
+        return state
+
+    def _convert_to_merchant_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
+        """
+        Convert preprocessed transaction dicts to MerchantTransaction objects for ClassifierAgent
+        """
+        from ..schemas.transaction_schemas import MerchantTransaction, TransactionType, PaymentMethod
+
+        merchant_transactions = []
+        for txn_dict in preprocessed_txns:
+            try:
+                # Parse date
+                date_str = txn_dict.get('date', datetime.now().isoformat())
+                if isinstance(date_str, str):
+                    try:
+                        parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        parsed_date = datetime.now()
+                else:
+                    parsed_date = date_str if isinstance(date_str, datetime) else datetime.now()
+
+                # Handle payment method
+                payment_method_str = txn_dict.get('payment_method', 'cash')
+                try:
+                    payment_method = PaymentMethod(payment_method_str)
+                except ValueError:
+                    payment_method = PaymentMethod.CASH
+
+                # Handle transaction type
+                transaction_type_str = txn_dict.get('transaction_type', 'expense')
+                try:
+                    transaction_type = TransactionType(transaction_type_str)
+                except ValueError:
+                    transaction_type = TransactionType.EXPENSE
+
+                # Create MerchantTransaction
+                merchant_txn = MerchantTransaction(
+                    id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+                    date=parsed_date,
+                    year=parsed_date.year,
+                    month=parsed_date.month,
+                    day=parsed_date.day,
+                    day_of_week=parsed_date.weekday(),
+                    amount=float(txn_dict.get('amount', 0.0)),
+                    transaction_type=transaction_type,
+                    payment_method=payment_method,
+                    description_cleaned=txn_dict.get('description', ''),
+                    merchant_name=txn_dict.get('merchant_name'),
+                    merchant_standardized=txn_dict.get('merchant_name'),
+                    merchant_category=txn_dict.get('category'),
+                    is_merchant_known=bool(txn_dict.get('merchant_name')),
+                    has_discount=txn_dict.get('has_discount', False),
+                    metadata=txn_dict.get('metadata', {})
+                )
+                merchant_transactions.append(merchant_txn)
+            except Exception as e:
+                logger.warning(f"Failed to convert transaction {txn_dict.get('id')}: {e}")
+                continue
+
+        return merchant_transactions
+
+    def _fallback_classification(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Fallback classification using simple keyword-based approach
+        """
+        print("CLASSIFICATION: Using fallback classification method")
+
+        preprocessed_txns = state.get('preprocessed_transactions', [])
+        if preprocessed_txns:
+            classified_transactions = []
+            for txn in preprocessed_txns:
+                description = txn.get('description', '').lower()
+                merchant = txn.get('merchant_name', '').lower()
+                existing_category = txn.get('category', '').lower()
+
+                if existing_category and existing_category not in ['miscellaneous', 'unknown', '']:
+                    category_mapping = {
+                        'donations & charity': 'RELIGIOUS_DONATIONS',
+                        'fitness & wellness (gym, spa)': 'HEALTHCARE',
+                        'household (furniture, appliances)': 'SHOPPING',
+                        'shopping (clothes, electronics)': 'SHOPPING',
+                        'travel & accommodation': 'TRAVEL',
+                        'beauty & personal care (salons, cosmetics)': 'HEALTHCARE',
+                        'business expenses': 'MISCELLANEOUS',
+                        'miscellaneous': 'MISCELLANEOUS'
+                    }
+                    category = category_mapping.get(existing_category, 'MISCELLANEOUS')
+                    confidence = 0.95
+                else:
+                    category, confidence = self._classify_transaction(description, merchant)
+
+                classified_txn = self._convert_single_transaction_to_classified_object(txn, category, confidence)
+                classified_transactions.append(classified_txn)
+
+            state['processed_transactions'] = classified_transactions
+            state['predicted_category'] = 'multiple_categories'
+            state['category_confidence'] = 0.8
 
         return state
 
@@ -693,6 +939,371 @@ class TransactionProcessingNodes:
 
         return state
 
+    def pattern_analyzer_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Pattern analysis node - analyzes spending patterns and trends
+        """
+        print(f"PATTERN ANALYSIS: Starting pattern analysis")
+
+        try:
+            from ..agents.pattern_analyzer_agent import PatternAnalyzerAgent
+
+            state['current_stage'] = ProcessingStage.PATTERN_ANALYSIS
+            pattern_agent = PatternAnalyzerAgent()
+
+            # Get processed transactions for analysis
+            transactions = state.get('processed_transactions', [])
+            print(f"PATTERN ANALYSIS: DEBUG - processed_transactions: {len(transactions)} items")
+            if not transactions:
+                # Try preprocessed transactions and convert them
+                preprocessed = state.get('preprocessed_transactions', [])
+                print(f"PATTERN ANALYSIS: DEBUG - preprocessed_transactions: {len(preprocessed)} items")
+                if preprocessed:
+                    transactions = self._convert_to_classified_transactions(preprocessed)
+                    print(f"PATTERN ANALYSIS: DEBUG - converted transactions: {len(transactions)} items")
+                elif state.get('final_transaction'):
+                    transactions = [state['final_transaction']]
+                    print(f"PATTERN ANALYSIS: DEBUG - using final_transaction: {len(transactions)} items")
+
+            print(f"PATTERN ANALYSIS: DEBUG - final transactions for analysis: {len(transactions)} items")
+            if transactions:
+                print(f"PATTERN ANALYSIS: DEBUG - first transaction: {transactions[0] if transactions else 'None'}")
+
+            if transactions:
+                # Analyze patterns using the process method
+                pattern_result = pattern_agent.process(transactions)
+
+                print(f"PATTERN ANALYSIS: DEBUG - pattern_result keys: {list(pattern_result.keys())}")
+                print(f"PATTERN ANALYSIS: DEBUG - pattern_insights count: {len(pattern_result.get('pattern_insights', []))}")
+                if pattern_result.get('pattern_insights'):
+                    print(f"PATTERN ANALYSIS: DEBUG - first insight: {pattern_result['pattern_insights'][0]}")
+
+                state['spending_patterns'] = pattern_result.get('spending_trends', {})
+                state['pattern_insights'] = pattern_result.get('pattern_insights', [])
+                state['pattern_confidence'] = 0.85  # Default confidence for pattern analysis
+
+                print(f"PATTERN ANALYSIS: Found {len(state['pattern_insights'])} pattern insights")
+            else:
+                # For first-time users or no transactions, create baseline pattern structure
+                print(f"PATTERN ANALYSIS: No transactions to analyze - creating baseline for new user")
+
+                state['spending_patterns'] = {
+                    'transaction_count': 0,
+                    'analysis_type': 'new_user_baseline',
+                    'message': 'Insufficient transaction history for pattern analysis. Start tracking transactions to unlock insights!'
+                }
+
+                # Create default insights for new users
+                state['pattern_insights'] = [
+                    {
+                        'insight_type': 'new_user_guidance',
+                        'description': 'Welcome! Track your transactions to unlock spending pattern analysis.',
+                        'severity': 'info',
+                        'category': 'onboarding',
+                        'transactions_involved': [],
+                        'metadata': {
+                            'guidance': 'Add more transactions to see spending trends and patterns',
+                            'next_steps': ['Record daily expenses', 'Categorize transactions accurately', 'Review monthly summaries']
+                        }
+                    }
+                ]
+
+                state['pattern_confidence'] = 0.3  # Lower confidence for new users
+                print(f"PATTERN ANALYSIS: Created baseline analysis for new user")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'pattern_analysis',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'pattern_analysis_completed',
+                'data': {
+                    'patterns_found': len(state.get('spending_patterns', {})),
+                    'confidence': state.get('pattern_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'pattern_analysis',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Pattern analysis failed: {e}")
+
+        return state
+
+    def suggestion_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Suggestion node - generates budget recommendations and spending advice
+        """
+        print(f"SUGGESTION: Starting suggestion generation")
+
+        try:
+            from ..agents.suggestion_agent import SuggestionAgent, SuggestionAgentInput
+            from ..schemas.transaction_schemas import PatternInsight
+            from ..services.transaction_service import TransactionService
+            from supabase import create_client
+
+            state['current_stage'] = ProcessingStage.SUGGESTION
+
+            # Initialize TransactionService for database access
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_ANON_KEY")
+            if supabase_url and supabase_key:
+                supabase_client = create_client(supabase_url, supabase_key)
+                transaction_service = TransactionService(supabase_client)
+            else:
+                transaction_service = None
+
+            suggestion_agent = SuggestionAgent(transaction_service=transaction_service)
+
+            # Get pattern insights and prepare input
+            pattern_insights_data = state.get('pattern_insights', {})
+            transactions = state.get('processed_transactions', [])
+            # Check if user is first time based on transaction count in preferences
+            user_preferences_check = state.get('user_preferences', {})
+            if not user_preferences_check:
+                conversation_context = state.get('conversation_context', {})
+                user_preferences_check = conversation_context.get('user_preferences', {})
+
+            user_transaction_count = user_preferences_check.get('transaction_count', 0)
+            is_first_time_user = user_transaction_count < 5
+
+            # Convert pattern insights to PatternInsight objects
+            pattern_insights = []
+            if pattern_insights_data:
+                if isinstance(pattern_insights_data, list):
+                    # Already a list of insights
+                    for insight in pattern_insights_data:
+                        if isinstance(insight, dict):
+                            pattern_insights.append(PatternInsight(**insight))
+                elif isinstance(pattern_insights_data, dict):
+                    # Convert dict format to PatternInsight objects
+                    for key, value in pattern_insights_data.items():
+                        if isinstance(value, dict):
+                            pattern_insights.append(PatternInsight(
+                                insight_type=key,
+                                description=f"Pattern analysis for {key}",
+                                severity="medium",
+                                transactions_involved=[],
+                                metadata=value
+                            ))
+
+            # No default insights for new users - they should upload transactions first
+            # Pattern insights will be generated from actual transaction data
+
+            # Default budget thresholds if not provided
+            budget_thresholds = state.get('budget_thresholds', {
+                'groceries': 300,
+                'dining': 200,
+                'entertainment': 150,
+                'shopping': 250,
+                'transportation': 100,
+                'utilities': 200,
+                'healthcare': 150,
+                'savings': 300
+            })
+
+            # Get user preferences from conversation context or state
+            user_preferences = state.get('user_preferences', {})
+            if not user_preferences:
+                conversation_context = state.get('conversation_context', {})
+                user_preferences = conversation_context.get('user_preferences', {})
+
+
+
+            # Use existing transaction count from user preferences (historical data)
+            # If not provided, fall back to current workflow transactions
+            if 'transaction_count' not in user_preferences:
+                total_transactions = len(state.get('processed_transactions', []))
+                if total_transactions == 0:
+                    # Check other transaction sources
+                    total_transactions += len(state.get('preprocessed_transactions', []))
+                    if state.get('final_transaction'):
+                        total_transactions += 1
+
+                user_preferences['transaction_count'] = total_transactions
+
+            # Get user_id from state
+            user_id = state.get('user_id', 'default_user')
+
+            # Create input for suggestion agent
+            input_data = SuggestionAgentInput(
+                pattern_insights=pattern_insights,
+                budget_thresholds=budget_thresholds,
+                user_preferences=user_preferences,
+                user_id=user_id
+            )
+
+            # Generate suggestions (now async)
+            import asyncio
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, create a task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, suggestion_agent.process(input_data))
+                        result = future.result()
+                else:
+                    # No running loop, safe to use run_until_complete
+                    result = loop.run_until_complete(suggestion_agent.process(input_data))
+            except RuntimeError:
+                # No event loop exists, create one
+                result = asyncio.run(suggestion_agent.process(input_data))
+
+            # If no suggestions were generated AND user is genuinely new, add default financial tips
+            all_suggestions = result.suggestions
+            if not all_suggestions and is_first_time_user:
+                print(f"SUGGESTION: Adding default financial tips for new users")
+                default_suggestions = self._generate_default_financial_suggestions()
+                # Convert default suggestions to Suggestion objects
+                from ..schemas.transaction_schemas import Suggestion as SuggestionSchema
+                for default_sugg in default_suggestions:
+                    all_suggestions.append(SuggestionSchema(**default_sugg))
+
+            state['budget_recommendations'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' in suggestion.title.lower() or suggestion.suggestion_type in ['budget_adjustment', 'budget_planning']]
+            state['spending_suggestions'] = [suggestion.dict() for suggestion in all_suggestions if 'budget' not in suggestion.title.lower() and suggestion.suggestion_type not in ['budget_adjustment', 'budget_planning']]
+            state['budget_alerts'] = result.alerts
+            state['savings_opportunities'] = result.savings_opportunities
+            state['suggestion_confidence'] = 0.85 if not is_first_time_user else 0.7  # Lower confidence for new users
+
+            print(f"SUGGESTION: Generated {len(all_suggestions)} total suggestions ({len(state['budget_recommendations'])} budget, {len(state['spending_suggestions'])} spending)")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'suggestion',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'suggestion_generation_completed',
+                'data': {
+                    'total_suggestions': len(result.suggestions),
+                    'budget_recommendations': len(state.get('budget_recommendations', [])),
+                    'spending_suggestions': len(state.get('spending_suggestions', [])),
+                    'alerts': len(result.alerts),
+                    'savings_opportunities': len(result.savings_opportunities),
+                    'confidence': state.get('suggestion_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'suggestion',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Suggestion generation failed: {e}")
+
+        return state
+
+    def safety_guard_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
+        """
+        Safety guard node - performs anomaly detection and security validation
+        """
+        print(f"SAFETY GUARD: Starting security validation")
+
+        try:
+            from ..agents.safety_guard_agent import SafetyGuardAgent
+
+            state['current_stage'] = ProcessingStage.SAFETY_GUARD
+            safety_agent = SafetyGuardAgent()
+
+            # Get transactions for security analysis
+            transactions = state.get('processed_transactions', [])
+            if not transactions:
+                # Try preprocessed transactions and convert them
+                preprocessed = state.get('preprocessed_transactions', [])
+                if preprocessed:
+                    transactions = self._convert_to_classified_transactions(preprocessed)
+                elif state.get('final_transaction'):
+                    transactions = [state['final_transaction']]
+
+            if transactions:
+                # Perform security validation using the process method
+                from ..agents.safety_guard_agent import SafetyGuardAgentInput
+                input_data = SafetyGuardAgentInput(
+                    classified_transactions=transactions,
+                    user_profile=state.get('user_profile', {})
+                )
+                security_result = safety_agent.process(input_data)
+
+                state['security_alerts'] = security_result.security_alerts
+                state['risk_assessment'] = {'risk_score': security_result.risk_score}
+                state['safety_confidence'] = 0.9  # Default confidence for safety validation
+
+                print(f"SAFETY GUARD: Found {len(state['security_alerts'])} security alerts")
+            else:
+                # Even without transactions, perform baseline security checks for new users
+                print(f"SAFETY GUARD: No transactions to validate - performing baseline security assessment")
+
+                # Generate general security recommendations for new users
+                baseline_alerts = [
+                    {
+                        'alert_type': 'security_setup',
+                        'severity': 'info',
+                        'title': 'Enable Account Security Features',
+                        'description': 'Set up two-factor authentication and review account security settings.',
+                        'recommendation': 'Enable 2FA and use strong, unique passwords',
+                        'metadata': {
+                            'category': 'account_security',
+                            'priority': 'high',
+                            'action_items': ['Enable 2FA', 'Update password', 'Review login notifications']
+                        }
+                    },
+                    {
+                        'alert_type': 'fraud_awareness',
+                        'severity': 'info',
+                        'title': 'Monitor Your Accounts Regularly',
+                        'description': 'Check your bank and credit card statements regularly for unauthorized transactions.',
+                        'recommendation': 'Set up account alerts for transactions',
+                        'metadata': {
+                            'category': 'fraud_prevention',
+                            'priority': 'medium',
+                            'action_items': ['Enable transaction alerts', 'Review statements weekly']
+                        }
+                    }
+                ]
+
+                state['security_alerts'] = baseline_alerts
+                state['risk_assessment'] = {
+                    'risk_score': 0.1,  # Low baseline risk for new users
+                    'assessment_type': 'baseline_security_check',
+                    'recommendations': ['Enable account security features', 'Set up monitoring']
+                }
+                state['safety_confidence'] = 0.8  # High confidence in baseline security recommendations
+
+                print(f"SAFETY GUARD: Generated {len(baseline_alerts)} baseline security recommendations")
+
+            # Add to processing history
+            processing_entry = {
+                'stage': 'safety_guard',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'security_validation_completed',
+                'data': {
+                    'alerts_found': len(state.get('security_alerts', [])),
+                    'confidence': state.get('safety_confidence', 0.0)
+                }
+            }
+            state['processing_history'].append(processing_entry)
+
+        except Exception as e:
+            error_info = {
+                'stage': 'safety_guard',
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            state['errors'].append(error_info)
+            logger.error(f"Security validation failed: {e}")
+
+        return state
+
     def finalization_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
         Final node to complete the workflow
@@ -740,7 +1351,44 @@ class TransactionProcessingNodes:
             }
             state['processing_history'].append(processing_entry)
 
-            print(f"🎉 FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {state.get('confidence_score', 0):.2f} confidence")
+            # Save prediction results to database
+            try:
+                from ..services.prediction_results_service import get_prediction_results_service
+
+                prediction_service = get_prediction_results_service()
+                workflow_mode = getattr(state.get('workflow_mode'), 'value', state.get('workflow_mode', 'full_pipeline'))
+
+                prediction_service.save_prediction_result(
+                    workflow_id=state.get('workflow_id'),
+                    user_id=state.get('user_id', 'default'),
+                    workflow_state=dict(state),
+                    mode=workflow_mode,
+                    status='completed'
+                )
+                logger.info(f"Saved prediction results to database for workflow {state.get('workflow_id')}")
+            except Exception as db_error:
+                logger.error(f"Failed to save prediction results to database: {db_error}", exc_info=True)
+                # Don't fail the workflow if database save fails
+
+            # Calculate a rough confidence estimate for logging
+            ingestion_conf = state.get('ingestion_confidence', 0)
+            category_conf = state.get('category_confidence', 0)
+            pattern_insights = len(state.get('pattern_insights', []))
+            suggestions = len(state.get('budget_recommendations', [])) + len(state.get('spending_suggestions', []))
+            alerts = len(state.get('security_alerts', []))
+
+            # Simple confidence estimation
+            stage_confidences = [conf for conf in [ingestion_conf, category_conf] if conf > 0]
+            if pattern_insights > 0:
+                stage_confidences.append(0.75)
+            if suggestions > 0:
+                stage_confidences.append(0.75)
+            if alerts > 0:
+                stage_confidences.append(0.8)
+
+            estimated_confidence = sum(stage_confidences) / len(stage_confidences) if stage_confidences else 0
+
+            print(f"FINALIZATION: Workflow completed in {state.get('total_processing_time', 0):.2f}s with {estimated_confidence:.2f} confidence")
 
         except Exception as e:
             logger.error(f"Finalization failed: {e}")
@@ -803,3 +1451,289 @@ class TransactionProcessingNodes:
             history_entry['data'] = data
 
         state['processing_history'].append(history_entry)
+
+    def _generate_default_financial_suggestions(self) -> List[Dict[str, Any]]:
+        """
+        No hardcoded suggestions for new users.
+        Frontend will display appropriate onboarding message.
+        Real suggestions will be generated after transactions are uploaded.
+        """
+        return []
+
+    def _convert_to_classified_transactions(self, preprocessed_txns: List[Dict[str, Any]]) -> List:
+        """
+        Convert preprocessed transaction dicts to ClassifiedTransaction objects
+        """
+        from ..schemas.transaction_schemas import ClassifiedTransaction, TransactionCategory, TransactionType, PaymentMethod
+
+        classified_transactions = []
+        for txn_dict in preprocessed_txns:
+            try:
+                # Parse date
+                date_str = txn_dict.get('date', datetime.now().isoformat())
+                if isinstance(date_str, str):
+                    try:
+                        parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        parsed_date = datetime.now()
+                else:
+                    parsed_date = date_str if isinstance(date_str, datetime) else datetime.now()
+
+                # Handle payment method - default to CASH for expenses if not valid
+                payment_method_str = txn_dict.get('payment_method', 'cash')
+                try:
+                    payment_method = PaymentMethod(payment_method_str)
+                except ValueError:
+                    # Default to CASH for invalid payment methods
+                    payment_method = PaymentMethod.CASH
+
+                # Create ClassifiedTransaction
+                classified_txn = ClassifiedTransaction(
+                    id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+                    date=parsed_date,
+                    year=parsed_date.year,
+                    month=parsed_date.month,
+                    day=parsed_date.day,
+                    day_of_week=parsed_date.weekday(),
+                    amount=float(txn_dict.get('amount', 0.0)),
+                    transaction_type=TransactionType.EXPENSE,  # Assume expense for now
+                    payment_method=payment_method,
+                    description_cleaned=txn_dict.get('description', ''),
+                    merchant_name=txn_dict.get('merchant_name'),
+                    merchant_standardized=txn_dict.get('merchant_name'),
+                    merchant_category=txn_dict.get('category'),
+                    is_merchant_known=bool(txn_dict.get('merchant_name')),
+                    predicted_category=TransactionCategory(txn_dict.get('category', 'miscellaneous')),
+                    prediction_confidence=0.8,
+                    category_probabilities={txn_dict.get('category', 'miscellaneous'): 0.8}
+                )
+                classified_transactions.append(classified_txn)
+            except Exception as e:
+                logger.warning(f"Failed to convert transaction {txn_dict.get('id')}: {e}")
+                continue
+
+        return classified_transactions
+
+    def _convert_single_transaction_to_classified_object(self, txn_dict: Dict[str, Any], category: str, confidence: float):
+        """
+        Convert a single preprocessed transaction dict to a ClassifiedTransaction object
+        """
+        from ..schemas.transaction_schemas import ClassifiedTransaction, TransactionCategory, TransactionType, PaymentMethod
+
+        # Parse date
+        date_str = txn_dict.get('date', datetime.now().isoformat())
+        if isinstance(date_str, str):
+            try:
+                parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            except:
+                parsed_date = datetime.now()
+        else:
+            parsed_date = date_str if isinstance(date_str, datetime) else datetime.now()
+
+        # Handle payment method
+        payment_method_str = txn_dict.get('payment_method', 'cash')
+        try:
+            payment_method = PaymentMethod(payment_method_str)
+        except ValueError:
+            payment_method = PaymentMethod.CASH
+
+        # Handle transaction type
+        transaction_type_str = txn_dict.get('transaction_type', 'expense')
+        try:
+            transaction_type = TransactionType(transaction_type_str)
+        except ValueError:
+            transaction_type = TransactionType.EXPENSE
+
+        # Create ClassifiedTransaction object
+        classified_txn = ClassifiedTransaction(
+            id=txn_dict.get('id', f"txn_{uuid.uuid4().hex[:8]}"),
+            date=parsed_date,
+            year=parsed_date.year,
+            month=parsed_date.month,
+            day=parsed_date.day,
+            day_of_week=parsed_date.weekday(),
+            amount=float(txn_dict.get('amount', 0.0)),
+            transaction_type=transaction_type,  # Use the determined transaction type
+            payment_method=payment_method,
+            description_cleaned=txn_dict.get('description', ''),
+            merchant_name=txn_dict.get('merchant_name', 'Unknown'),
+            merchant_standardized=txn_dict.get('merchant_name', 'Unknown'),
+            merchant_category=category,
+            is_merchant_known=bool(txn_dict.get('merchant_name')),
+            predicted_category=TransactionCategory[category],
+            prediction_confidence=confidence,
+            category_probabilities={category: confidence}
+        )
+
+        return classified_txn
+
+    def _classify_transaction(self, description: str, merchant: str) -> tuple[str, float]:
+        """
+        Enhanced transaction classification based on description and merchant keywords
+        Returns (category, confidence) tuple
+        """
+        # Convert to lowercase for matching
+        description_lower = description.lower()
+        merchant_lower = merchant.lower()
+
+        # Comprehensive category keywords with weights - mapped to valid TransactionCategory values
+        category_keywords = {
+            'FOOD_DINING': {
+                'keywords': ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonalds', 'burger', 'lunch', 'dinner',
+                           'pizza', 'sushi', 'taco', 'subway', 'wendys', 'kfc', 'food', 'meal', 'eat', 'dining'],
+                'merchant_keywords': ['starbucks', 'mcdonalds', 'subway', 'wendys', 'kfc', 'dominos', 'papa johns',
+                                    'chipotle', 'panera', 'dunkin', 'tim hortons', 'cafe', 'restaurant'],
+                'weight': 0.9
+            },
+            'GROCERIES': {
+                'keywords': ['grocery', 'supermarket', 'market', 'store', 'whole foods', 'trader joes', 'safeway',
+                           'kroger', 'walmart', 'target', 'costco', 'aldi', 'lidl', 'food lion', 'publix'],
+                'merchant_keywords': ['whole foods', 'trader joes', 'safeway', 'kroger', 'walmart', 'target',
+                                    'costco', 'aldi', 'lidl', 'food lion', 'publix', 'giant', 'stop & shop'],
+                'weight': 0.95
+            },
+            'SHOPPING': {
+                'keywords': ['shopping', 'store', 'mall', 'retail', 'amazon', 'ebay', 'etsy', 'clothes', 'clothing',
+                           'shoes', 'accessories', 'jewelry', 'department store', 'boutique', 'furniture', 'appliance'],
+                'merchant_keywords': ['amazon', 'ebay', 'etsy', 'macy', 'nordstrom', 'bloomingdales', 'saks',
+                                    'neiman marcus', 'dillard', 'jcpenney', 'kohls', 'old navy', 'gap', 'h&m',
+                                    'ikea', 'bed bath & beyond', 'home depot', 'lowes'],
+                'weight': 0.85
+            },
+            'ENTERTAINMENT': {
+                'keywords': ['movie', 'cinema', 'theater', 'netflix', 'spotify', 'hulu', 'disney', 'amazon prime',
+                           'hbo', 'showtime', 'entertainment', 'game', 'gaming', 'concert', 'event'],
+                'merchant_keywords': ['netflix', 'spotify', 'hulu', 'disney', 'amazon prime', 'hbo', 'showtime',
+                                    'steam', 'epic games', 'playstation', 'xbox', 'nintendo'],
+                'weight': 0.9
+            },
+            'TRANSPORTATION': {
+                'keywords': ['uber', 'lyft', 'taxi', 'ride', 'bus', 'train', 'subway', 'metro', 'gas', 'fuel',
+                           'shell', 'exxon', 'chevron', 'bp', 'mobil', 'parking', 'toll'],
+                'merchant_keywords': ['uber', 'lyft', 'shell', 'exxon', 'chevron', 'bp', 'mobil', 'valero',
+                                    'speedway', 'sunoco', 'citgo', 'arco'],
+                'weight': 0.9
+            },
+            'UTILITIES': {
+                'keywords': ['electric', 'gas', 'water', 'internet', 'phone', 'mobile', 'cable', 'utility',
+                           'comcast', 'verizon', 'att', 'tmobile', 'sprint', 'utility bill'],
+                'merchant_keywords': ['comcast', 'verizon', 'att', 'tmobile', 'sprint', 'duke energy', 'dominion',
+                                    'southern company', 'pge', 'con edison'],
+                'weight': 0.95
+            },
+            'HEALTHCARE': {
+                'keywords': ['doctor', 'hospital', 'pharmacy', 'medical', 'dental', 'health', 'clinic', 'medicine',
+                           'prescription', 'insurance', 'cvs', 'walgreens', 'rite aid', 'gym', 'fitness', 'spa',
+                           'massage', 'yoga', 'pilates', 'workout', 'exercise', 'wellness', 'salon', 'hair', 'nail', 'beauty'],
+                'merchant_keywords': ['cvs', 'walgreens', 'rite aid', 'walmart pharmacy', 'kaiser', 'anthem',
+                                    'united healthcare', 'aetna', 'cigna', 'planet fitness', 'la fitness', 'equinox',
+                                    'great clips', 'supercuts', 'ulta', 'sephora'],
+                'weight': 0.9
+            },
+            'TRAVEL': {
+                'keywords': ['hotel', 'airbnb', 'booking', 'travel', 'flight', 'airline', 'vacation', 'trip',
+                           'lodging', 'resort', 'motel', 'inn', 'accommodation'],
+                'merchant_keywords': ['airbnb', 'booking.com', 'expedia', 'hotels.com', 'marriott', 'hilton',
+                                    'hyatt', 'ihg', 'wyndham', 'choice hotels'],
+                'weight': 0.9
+            },
+            'EDUCATION': {
+                'keywords': ['school', 'university', 'college', 'education', 'tuition', 'book', 'course', 'class',
+                           'training', 'workshop', 'seminar'],
+                'merchant_keywords': ['amazon books', 'barnes & noble', 'chegg', 'course hero', 'udemy', 'coursera'],
+                'weight': 0.8
+            },
+            'SUBSCRIPTIONS': {
+                'keywords': ['subscription', 'monthly', 'recurring', 'membership', 'club', 'service', 'plan'],
+                'merchant_keywords': ['netflix', 'spotify', 'hulu', 'amazon prime', 'disney+', 'hbo max',
+                                    'paramount+', 'peacock', 'apple music', 'youtube premium'],
+                'weight': 0.95
+            },
+            'RELIGIOUS_DONATIONS': {
+                'keywords': ['donation', 'charity', 'contribution', 'gift', 'nonprofit', 'foundation', 'church',
+                           'temple', 'mosque', 'synagogue', 'red cross', 'unicef', 'rotary'],
+                'merchant_keywords': ['red cross', 'unicef', 'salvation army', 'goodwill', 'habitat for humanity',
+                                    'american cancer society', 'world wildlife fund', 'rotary club'],
+                'weight': 0.9
+            }
+        }
+
+        # Score each category
+        category_scores = {}
+        for category, rules in category_keywords.items():
+            score = 0.0
+
+            # Check description keywords
+            for keyword in rules['keywords']:
+                if keyword in description_lower:
+                    score += rules['weight'] * 0.6  # Description matches are important
+
+            # Check merchant keywords
+            for keyword in rules['merchant_keywords']:
+                if keyword in merchant_lower:
+                    score += rules['weight'] * 0.8  # Merchant matches are very important
+
+            if score > 0:
+                category_scores[category] = score
+
+        # Return the highest scoring category
+        if category_scores:
+            best_category = max(category_scores, key=category_scores.get)
+            confidence = min(category_scores[best_category] / 1.0, 0.95)  # Cap at 0.95
+            return best_category, confidence
+
+        # Default fallback
+        return 'MISCELLANEOUS', 0.3
+
+    def _determine_transaction_type(self, description: str, amount: float) -> str:
+        """
+        Determine transaction type (income/expense) based on description and amount
+        """
+        description_lower = description.lower()
+
+        # Income patterns - high confidence indicators
+        income_patterns = [
+            r'\b(salary|wage|payroll|deposit|refund|return|cashback|interest|dividend)\b',
+            r'\b(income|payment.*received|credit.*balance|reimbursement)\b',
+            r'\b(tax.*refund|bonus|commission|tips|freelance)\b',
+            r'\b(social.*security|unemployment|pension|benefits)\b',
+            r'\b(gift.*received|inheritance|lottery|settlement)\b',
+            r'\b(rental.*income|property.*income|business.*income)\b'
+        ]
+
+        # Check for income patterns
+        for pattern in income_patterns:
+            if re.search(pattern, description_lower, re.IGNORECASE):
+                return 'income'
+
+        # Expense patterns
+        expense_patterns = [
+            r'\b(purchased?|bought|paid|spent|charged|debit|withdrawal)\b',
+            r'\b(shopping|store|grocery|restaurant|gas|fuel|utility|bill)\b',
+            r'\b(amazon|walmart|target|costco|home.*depot|lowes|ikea)\b',
+            r'\b(starbucks|mcdonalds|subway|wendys|chipotle|panera)\b',
+            r'\b(netflix|spotify|hulu|electric|internet|phone|insurance)\b',
+            r'\b(donation|charity|gift.*given|contribution)\b',
+            r'\b(loan.*repayment|installment|emi|mortgage)\b',
+            r'\b(medical|hospital|doctor|pharmacy|healthcare)\b',
+            r'\b(beauty|salon|cosmetics|spa|haircut)\b',
+            r'\b(entertainment|movie|cinema|theater|concert)\b',
+            r'\b(furniture|appliance|household|home)\b',
+            r'\b(subscription|renewal|membership|service)\b'
+        ]
+
+        # Check for expense patterns
+        for pattern in expense_patterns:
+            if re.search(pattern, description_lower, re.IGNORECASE):
+                return 'expense'
+
+        # Amount-based classification: Very large amounts (>10k) are likely income
+        if amount > 10000:
+            return 'income'
+
+        # Amount-based classification: Small amounts (<100) with expense-like descriptions are expenses
+        if amount < 100 and re.search(r'\b(paid|spent|purchased|bought|charged)\b', description_lower, re.IGNORECASE):
+            return 'expense'
+
+        # Default based on amount sign
+        return 'income' if amount > 0 else 'expense'

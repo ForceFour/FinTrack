@@ -1,5 +1,9 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || "v1";
+
+import { ConversationContext } from "./types";
+import { supabase } from "./supabase";
 
 export interface ApiResponse<T = unknown> {
   status: string;
@@ -35,7 +39,7 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface ConversationContext {
+export interface ConversationContextRequest {
   previous_transactions?: Transaction[];
   user_preferences?: Record<string, unknown>;
   session_id?: string;
@@ -51,7 +55,7 @@ class APIClient {
   private token: string | null = null;
 
   constructor() {
-    this.baseUrl = `${API_BASE_URL}/api`;
+    this.baseUrl = `${API_BASE_URL}/api/${API_VERSION}`;
 
     // Try to load token from localStorage if available
     if (typeof window !== "undefined") {
@@ -198,12 +202,29 @@ class APIClient {
     });
   }
 
-  async uploadTransactions(file: File) {
+  async uploadTransactions(file: File, userId?: string) {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("file_type", "csv"); // Add file_type parameter
+
+    // If userId not provided, try to get from Supabase session
+    if (!userId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+
+    if (!userId) {
+      throw new Error("User ID is required for file upload");
+    }
+
+    // Add user_id as query parameter
+    const uploadUrl = new URL(`${this.baseUrl}/transactions/upload`);
+    uploadUrl.searchParams.append("user_id", userId);
 
     try {
-      const response = await fetch(`${this.baseUrl}/transactions/upload`, {
+      const response = await fetch(uploadUrl.toString(), {
         method: "POST",
         headers: {
           ...(this.token && { Authorization: `Bearer ${this.token}` }),
@@ -211,14 +232,21 @@ class APIClient {
         body: formData,
       });
 
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(
+          `Upload failed: ${response.status} ${response.statusText} - ${errorData}`
+        );
+      }
+
       const data = await response.json();
 
       return {
-        status: response.ok ? "success" : "error",
-        data: response.ok ? data : undefined,
-        error: !response.ok ? data.message || data.detail : undefined,
+        status: "success",
+        data: data,
       };
     } catch (error) {
+      console.error("Upload transaction error:", error);
       return {
         status: "error",
         error: error instanceof Error ? error.message : "Upload failed",
@@ -254,6 +282,10 @@ class APIClient {
     }
 
     return this.request(`/analytics/spending?${queryParams}`);
+  }
+
+  async getDashboardSummary(userId: string) {
+    return this.request(`/analytics/summary/dashboard?user_id=${userId}`);
   }
 
   async getCategoryBreakdown(period: string = "monthly") {
@@ -310,11 +342,21 @@ class APIClient {
   // Conversational Transaction Entry
   async processNaturalLanguageTransaction(
     userInput: string,
-    conversationContext?: ConversationContext
+    conversationContext?: ConversationContext,
+    userId?: string
   ) {
+    // If userId not provided, try to get from Supabase session
+    if (!userId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+
     return this.request("/transactions/natural-language", {
       method: "POST",
       body: JSON.stringify({
+        user_id: userId,
         user_input: userInput,
         conversation_context: conversationContext,
       }),

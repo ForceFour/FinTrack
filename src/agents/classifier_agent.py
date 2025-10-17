@@ -15,6 +15,7 @@ from ..schemas.transaction_schemas import (
     MerchantTransaction,
     ClassifiedTransaction,
     TransactionCategory,
+    TransactionType,
     PreprocessedTransaction
 )
 from ..models.category_classifier import CategoryClassifier
@@ -135,42 +136,115 @@ class ClassifierAgent:
             (200000, float('inf')): [TransactionCategory.TRAVEL, TransactionCategory.EDUCATION],
         }
 
-        # Enhanced keyword mapping for categories
+        # Enhanced keyword mapping for categories - COMPREHENSIVE VERSION
         self.category_keywords = {
-            TransactionCategory.FOOD_DINING: {
-                'high_weight': ['restaurant', 'cafe', 'hotel', 'kfc', 'mcdonalds', 'pizza'],
-                'medium_weight': ['food', 'dining', 'coffee', 'burger', 'rice', 'curry'],
-                'low_weight': ['eat', 'meal', 'lunch', 'dinner', 'breakfast']
+            # HOUSING - High priority keywords
+            TransactionCategory.HOUSING: {
+                'high_weight': ['rent', 'mortgage', 'landlord', 'housing', 'apartment', 'condo'],
+                'medium_weight': ['lease', 'rental', 'property', 'real estate'],
+                'low_weight': ['dwelling', 'residence']
             },
+            # INSURANCE - High priority keywords
+            TransactionCategory.INSURANCE: {
+                'high_weight': ['insurance', 'premium', 'policy', 'coverage', 'insurer'],
+                'medium_weight': ['car insurance', 'health insurance', 'life insurance', 'auto insurance'],
+                'low_weight': ['insure', 'claim']
+            },
+            # TELECOMMUNICATIONS - High priority keywords
+            TransactionCategory.TELECOMMUNICATIONS: {
+                'high_weight': ['phone bill', 'mobile bill', 'internet bill', 'broadband', 'data plan', 'bill payment'],
+                'medium_weight': ['dialog', 'mobitel', 'airtel', 'hutch', 'telecom', 'cellular', 'sim'],
+                'low_weight': ['recharge', 'top up']
+            },
+            # ELECTRONICS - High priority keywords
+            TransactionCategory.ELECTRONICS: {
+                'high_weight': ['laptop', 'computer', 'tablet', 'electronics', 'gadget', 'macbook', 'ipad'],
+                'medium_weight': ['samsung', 'dell', 'hp', 'lenovo', 'desktop', 'monitor'],
+                'low_weight': ['tech', 'device', 'hardware', 'accessory']
+            },
+            # FOOD & DINING
+            TransactionCategory.FOOD_DINING: {
+                'high_weight': ['restaurant', 'cafe', 'hotel', 'kfc', 'mcdonalds', 'pizza', 'dining', 'lunch', 'dinner', 'breakfast'],
+                'medium_weight': ['food', 'coffee', 'burger', 'rice', 'curry', 'meal'],
+                'low_weight': ['eat']
+            },
+            # GROCERIES
             TransactionCategory.GROCERIES: {
-                'high_weight': ['keells', 'cargills', 'food city', 'laugfs', 'arpico'],
-                'medium_weight': ['super', 'market', 'grocery'],
+                'high_weight': ['keells', 'cargills', 'food city', 'laugfs', 'arpico', 'walmart', 'grocery', 'groceries', 'grocery shopping'],
+                'medium_weight': ['super', 'market', 'supermarket', 'weekly shopping', 'food shopping'],
                 'low_weight': ['supplies', 'essentials']
             },
+            # TRANSPORTATION & FUEL
             TransactionCategory.TRANSPORTATION: {
-                'high_weight': ['uber', 'pickme', 'taxi', 'ceypetco', 'ioc', 'shell'],
-                'medium_weight': ['fuel', 'petrol', 'diesel', 'transport', 'bus'],
-                'low_weight': ['parking', 'toll', 'car']
+                'high_weight': ['uber', 'pickme', 'taxi', 'ceypetco', 'ioc', 'shell', 'gas station', 'fuel'],
+                'medium_weight': ['petrol', 'diesel', 'transport', 'bus', 'train', 'vehicle'],
+                'low_weight': ['parking', 'toll', 'car', 'bike']
             },
+            # UTILITIES
             TransactionCategory.UTILITIES: {
-                'high_weight': ['dialog', 'mobitel', 'airtel', 'ceb', 'nwsdb'],
-                'medium_weight': ['electricity', 'water', 'internet', 'phone', 'bill'],
-                'low_weight': ['utility', 'service']
+                'high_weight': ['ceb', 'electricity', 'water board', 'nwsdb', 'utility', 'utilities'],
+                'medium_weight': ['water', 'electric', 'power', 'bill payment'],
+                'low_weight': ['service charge', 'maintenance fee']
             },
+            # ENTERTAINMENT
             TransactionCategory.ENTERTAINMENT: {
-                'high_weight': ['netflix', 'spotify', 'youtube'],
-                'medium_weight': ['movie', 'cinema', 'game', 'entertainment'],
-                'low_weight': ['subscription', 'streaming']
+                'high_weight': ['netflix', 'spotify', 'youtube', 'subscription', 'streaming'],
+                'medium_weight': ['movie', 'cinema', 'game', 'entertainment', 'concert', 'show'],
+                'low_weight': ['premium', 'membership']
             },
+            # HEALTHCARE
             TransactionCategory.HEALTHCARE: {
-                'high_weight': ['nawaloka', 'asiri', 'hospital', 'doctor'],
-                'medium_weight': ['medical', 'pharmacy', 'health', 'clinic'],
-                'low_weight': ['medicine', 'treatment']
+                'high_weight': ['nawaloka', 'asiri', 'hospital', 'doctor', 'medical', 'clinic'],
+                'medium_weight': ['pharmacy', 'health', 'medicine', 'treatment', 'consultation'],
+                'low_weight': ['drug', 'prescription', 'wellness']
             },
+            # SHOPPING - General retail
             TransactionCategory.SHOPPING: {
-                'high_weight': ['daraz', 'ikman', 'singer', 'abans', 'softlogic'],
-                'medium_weight': ['shop', 'store', 'buy', 'purchase'],
-                'low_weight': ['retail', 'goods']
+                'high_weight': ['daraz', 'ikman', 'singer', 'abans', 'softlogic', 'shopping'],
+                'medium_weight': ['shop', 'store', 'buy', 'purchase', 'retail'],
+                'low_weight': ['goods', 'item']
+            },
+            # EDUCATION
+            TransactionCategory.EDUCATION: {
+                'high_weight': ['school fee', 'tuition', 'university', 'college', 'education'],
+                'medium_weight': ['course', 'class', 'training', 'book', 'textbook'],
+                'low_weight': ['learning', 'study']
+            },
+            # TRAVEL
+            TransactionCategory.TRAVEL: {
+                'high_weight': ['airline', 'flight', 'hotel booking', 'airbnb', 'hotel stay', 'travel'],
+                'medium_weight': ['trip', 'vacation', 'tourism', 'booking', 'reservation'],
+                'low_weight': ['tour', 'visit']
+            },
+            # PERSONAL CARE
+            TransactionCategory.PERSONAL_CARE: {
+                'high_weight': ['salon', 'spa', 'barber', 'haircut', 'beauty'],
+                'medium_weight': ['cosmetics', 'grooming', 'personal care', 'skincare'],
+                'low_weight': ['hygiene', 'toiletries']
+            },
+            # FITNESS
+            TransactionCategory.FITNESS: {
+                'high_weight': ['gym', 'fitness', 'yoga', 'sports club', 'trainer'],
+                'medium_weight': ['exercise', 'workout', 'sports', 'athletic'],
+                'low_weight': ['health club']
+            },
+            # PETS
+            TransactionCategory.PETS: {
+                'high_weight': ['pet', 'veterinary', 'vet', 'pet store', 'animal'],
+                'medium_weight': ['pet food', 'pet care', 'pet supplies'],
+                'low_weight': ['animal care']
+            },
+            # CHARITABLE
+            TransactionCategory.CHARITABLE: {
+                'high_weight': ['donation', 'charity', 'temple', 'church', 'mosque', 'charitable'],
+                'medium_weight': ['dana', 'offering', 'contribution', 'gift'],
+                'low_weight': ['giving']
+            },
+            # BANKING
+            TransactionCategory.BANKING: {
+                'high_weight': ['atm', 'withdrawal', 'bank charge', 'service fee', 'bank fee'],
+                'medium_weight': ['transfer', 'deposit', 'banking'],
+                'low_weight': ['account']
             }
         }
 
@@ -184,7 +258,7 @@ class ClassifierAgent:
             'investment': ['dividend', 'interest', 'investment', 'capital gains'],
             'business': ['revenue', 'sales', 'business income', 'commission', 'royalty'],
             'government': ['pension', 'allowance', 'government payment'],
-            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund'],
+            'other': ['bonus', 'gift', 'cashback', 'reward', 'reimbursement', 'refund', 'income', 'received', 'rental'],
             'sri_lankan': ['epf', 'etf', 'gratuity', 'festival bonus', 'overtime']
         }
 
@@ -232,19 +306,19 @@ class ClassifierAgent:
 
         # Ensemble weights for category classification
         self.category_ensemble_weights = {
-            'ml_model': 0.4,
-            'merchant_rules': 0.3,
-            'amount_heuristics': 0.15,
-            'temporal_patterns': 0.1,
-            'keywords': 0.05
+            'ml_model': 0.25,           # ML model prediction
+            'merchant': 0.30,           # Merchant-based classification
+            'keywords': 0.35,           # Keyword-based classification (HIGHEST - most reliable)
+            'amount': 0.10,             # Amount-based heuristics
         }
 
         # Ensemble weights for transaction type classification
         self.type_ensemble_weights = {
-            'amount_signal': 0.35,
-            'keyword_signal': 0.35,
-            'merchant_signal': 0.20,
-            'temporal_signal': 0.10
+            'existing_preprocessing_signal': 0.50,  # Highest weight for preprocessing result
+            'amount_signal': 0.25,
+            'keyword_signal': 0.15,
+            'merchant_signal': 0.07,
+            'temporal_signal': 0.03
         }
 
         # Confidence adjustments
@@ -321,6 +395,13 @@ class ClassifierAgent:
     def predict_category(self, transaction: MerchantTransaction, features: np.ndarray) -> Tuple[str, float, Dict[str, float]]:
         """Predict transaction category using ensemble methods"""
 
+        # CRITICAL FIX: For INCOME transactions, force income-related categories
+        transaction_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+
+        if transaction_type == 'income':
+            # Income transaction - determine which type of income
+            return self._classify_income_transaction(transaction)
+
         ensemble_results = {}
 
         # Signal 1: Merchant-based prediction
@@ -350,6 +431,45 @@ class ClassifierAgent:
         # Combine ensemble signals
         return self._combine_category_signals(ensemble_results, transaction)
 
+    def _classify_income_transaction(self, transaction: MerchantTransaction) -> Tuple[str, float, Dict[str, float]]:
+        """Classify income transactions into income-specific categories"""
+        desc = transaction.description_cleaned.lower()
+        merchant = (transaction.merchant_standardized or '').lower()
+        combined_text = f"{desc} {merchant}".strip()
+
+        # Income category keywords
+        income_keywords = {
+            'salary': ['salary', 'payroll', 'wages', 'employer', 'employment', 'paycheck', 'paystub'],
+            'freelance': ['freelance', 'contract', 'consulting', 'client payment', 'invoice', 'gig', 'upwork', 'fiverr'],
+            'business': ['business income', 'revenue', 'sales', 'customer payment', 'stripe', 'paypal business'],
+            'investment': ['dividend', 'interest', 'investment', 'stock', 'bond', 'capital gains', 'mutual fund', 'portfolio'],
+            'rental': ['rent received', 'rental income', 'tenant payment', 'property income'],
+            'refund': ['refund', 'reimbursement', 'return', 'cashback', 'rebate'],
+            'gift': ['gift', 'donation received', 'present'],
+            'other_income': ['income', 'credit', 'deposit', 'transfer in', 'payment received']
+        }
+
+        # Check for keyword matches
+        category_scores = {}
+        for category, keywords in income_keywords.items():
+            score = sum(1.0 if kw in combined_text else 0 for kw in keywords)
+            if score > 0:
+                category_scores[category] = score
+
+        # Determine best category
+        if category_scores:
+            best_category = max(category_scores.keys(), key=lambda x: category_scores[x])
+            confidence = min(0.75 + (category_scores[best_category] * 0.1), 0.95)
+
+            # Create probability distribution
+            total_score = sum(category_scores.values())
+            proba_dist = {cat: score / total_score for cat, score in category_scores.items()}
+
+            return best_category, confidence, proba_dist
+
+        # Default to 'other_income' if no specific keywords found
+        return 'other_income', 0.60, {'other_income': 1.0}
+
     def _predict_category_from_merchant(self, transaction: MerchantTransaction) -> Tuple[Optional[str], float]:
         """Predict category from merchant information"""
         if not transaction.merchant_standardized:
@@ -363,8 +483,14 @@ class ClassifierAgent:
 
         # Merchant category from NER agent
         if transaction.merchant_category:
-            confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
-            return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            # Check if merchant_category is a valid TransactionCategory
+            try:
+                TransactionCategory(transaction.merchant_category)
+                confidence = transaction.metadata.get('merchant_extraction_confidence', 0.8)
+                return transaction.merchant_category, min(0.85 * (1 + confidence * 0.2), 0.95)
+            except ValueError:
+                # Invalid category, skip this signal
+                pass
 
         return None, 0.0
 
@@ -403,7 +529,10 @@ class ClassifierAgent:
         if category_scores:
             best_category = max(category_scores.keys(), key=lambda x: category_scores[x])
             best_score = category_scores[best_category]
-            confidence = min(best_score * 0.4, 0.8)
+            # Higher confidence for keyword matches - they're very reliable
+            # Score of 1.0+ (high_weight match) → confidence 0.65+
+            # Score of 2.0+ (multiple matches) → confidence 0.85+
+            confidence = min(best_score * 0.65, 0.92)
             return best_category.value, confidence
 
         return None, 0.0
@@ -478,6 +607,11 @@ class ClassifierAgent:
         desc = transaction.description_cleaned.lower()
         signals = []
 
+        # Existing transaction type signal (from preprocessing) - highest priority
+        existing_type = transaction.transaction_type.value if hasattr(transaction.transaction_type, 'value') else str(transaction.transaction_type)
+        if existing_type in ['income', 'expense']:
+            signals.append(('existing_preprocessing', existing_type, 0.95))  # Very high confidence for preprocessing result
+
         # Amount signal
         amount_signal = self._analyze_amount_for_type(amount)
         signals.append(('amount', amount_signal['type'], amount_signal['confidence']))
@@ -516,6 +650,10 @@ class ClassifierAgent:
 
     def _analyze_keywords_for_type(self, description: str) -> Dict[str, Any]:
         """Analyze keywords for transaction type"""
+
+        # Special case for rental income
+        if 'rental' in description:
+            return {'type': 'income', 'confidence': 0.95, 'reason': 'Income keyword: rental'}
 
         # Check income keywords
         for category, keywords in self.income_keywords.items():
@@ -649,7 +787,7 @@ class ClassifierAgent:
                     description_cleaned=txn.description_cleaned,
                     has_discount=txn.has_discount,
                     discount_percentage=txn.discount_percentage,
-                    transaction_type=txn.transaction_type,
+                    transaction_type=TransactionType(txn_type),  # Use predicted transaction type
                     metadata=txn.metadata.copy(),
                     merchant_name=txn.merchant_name,
                     merchant_standardized=txn.merchant_standardized,

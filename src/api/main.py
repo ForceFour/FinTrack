@@ -20,6 +20,9 @@ from src.routes.transactions import router as transactions_router
 from src.routes.auth import router as auth_router
 from src.routes.analytics import router as analytics_router
 from src.routes.suggestions import router as suggestions_router
+from src.routes.workflow import router as workflow_router
+from src.api.analytics import router as ai_analytics_router
+from src.api.prediction_results import router as prediction_results_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,11 +44,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(transactions_router)
-app.include_router(auth_router)
-app.include_router(analytics_router)
-app.include_router(suggestions_router)
+# Include routers with API versioning
+app.include_router(transactions_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(suggestions_router, prefix="/api/v1")
+app.include_router(workflow_router, prefix="/api/v1")
+
+# Include AI analytics router (matches frontend calls to /api/analytics/...)
+app.include_router(ai_analytics_router, prefix="/api")
+
+# Include prediction results router (read-only access to processed results)
+app.include_router(prediction_results_router, prefix="/api")
+
+# Health check endpoint
+@app.get("/api/v1/health")
+async def health_check():
+    """
+    Health check endpoint for API status
+    """
+    return {
+        "status": "healthy",
+        "service": "FinTrack API",
+        "version": "2.0.0",
+        "components": {
+            "transactions": "operational",
+            "auth": "operational",
+            "analytics": "operational",
+            "suggestions": "operational",
+            "workflows": "operational"
+        }
+    }
 
 @app.on_event("startup")
 async def startup_event():
@@ -118,14 +147,15 @@ async def process_transaction(
                 detail=f"Invalid workflow mode: {mode}. Valid modes: {[m.value for m in WorkflowMode]}"
             )
 
-        # Execute workflow
+        # Execute workflow using the unified workflow API. Pass the transaction
+        # description as user_input and include the raw transaction data in
+        # raw_transactions / conversation_context so agents can access it.
         result = await workflow.execute_workflow(
             mode=workflow_mode,
             user_input=transaction.description,
+            raw_transactions=[transaction.dict()],
             user_id=user_id,
-            amount=transaction.amount,
-            date=transaction.date,
-            merchant=transaction.merchant
+            conversation_context={"request_source": "api_v1_transactions_process", "original_transaction": transaction.dict()}
         )
 
         return {

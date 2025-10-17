@@ -2,7 +2,7 @@
 Transaction Models - Data models for financial transactions
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from datetime import date as Date
@@ -34,8 +34,9 @@ class TransactionBase(BaseModel):
     offer_discount: Optional[str] = Field(None, max_length=100)
     tags: Optional[List[str]] = Field(default_factory=list)
     notes: Optional[str] = Field(None, max_length=1000)
-    
-    @validator('amount')
+
+    @field_validator('amount')
+    @classmethod
     def validate_amount(cls, v):
         if v == 0:
             raise ValueError('Amount cannot be zero')
@@ -68,17 +69,15 @@ class TransactionResponse(TransactionBase):
     ai_categorized: bool = False
     categorization_confidence: Optional[float] = None
     fraud_score: Optional[float] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class Transaction(TransactionResponse):
     """Complete transaction model with internal fields"""
     raw_data: Optional[Dict[str, Any]] = {}
     processing_metadata: Optional[Dict[str, Any]] = {}
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class TransactionBatch(BaseModel):
     """Batch transaction processing model"""
