@@ -107,7 +107,7 @@ export default function AnalyticsPage() {
         } else {
           const txs = response.data || [];
           setTransactions(txs);
-          
+
           // Generate analytics data from transactions for fallback
           const expenseTxs = txs.filter(tx => tx.amount < 0);
           const incomeTxs = txs.filter(tx => tx.amount > 0);
@@ -211,7 +211,6 @@ export default function AnalyticsPage() {
         // Process the stored analytics data
         const categories = spendingPatterns.expense_categories || spendingPatterns.categories || {};
         const incomeCategories = spendingPatterns.income_categories || {};
-        const merchants = spendingPatterns.merchants || {};
 
         // Get totals from spending patterns
         const totalExpenses = spendingPatterns.total_expenses || 0;
@@ -248,11 +247,11 @@ export default function AnalyticsPage() {
 
         // Process merchant data - ONLY EXPENSES (negative amounts)
         const merchantDataArray: { merchant: string; totalSpent: number; avgTransaction: number; count: number; firstVisit: string; lastVisit: string }[] = [];
-        
+
         // Filter transactions to get only expenses and calculate merchant data from actual transactions
         const expenseTransactions = transactionsForAnalysis.filter(tx => tx.amount < 0);
         const merchantMapFromTx = new Map<string, { totalSpent: number; count: number; firstVisit: Date; lastVisit: Date }>();
-        
+
         expenseTransactions.forEach(tx => {
           if (tx.merchant) {
             const amount = Math.abs(tx.amount);
@@ -1487,8 +1486,8 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={displayData.categoryData.slice(0, 8)}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="category" 
+                    <XAxis
+                      dataKey="category"
                       angle={-45}
                       textAnchor="end"
                       height={80}
@@ -1613,8 +1612,8 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={displayData.merchantData.slice(0, 8)}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="merchant" 
+                    <XAxis
+                      dataKey="merchant"
                       angle={-45}
                       textAnchor="end"
                       height={80}
@@ -1631,40 +1630,40 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Merchant Analysis: Frequency vs Spending</h3>
                 <ResponsiveContainer width="100%" height={400}>
-                  <ScatterChart 
+                  <ScatterChart
                     data={displayData.merchantData}
                     margin={{ top: 20, right: 80, bottom: 60, left: 50 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="count" 
+                    <XAxis
+                      dataKey="count"
                       name="Transaction Count"
                       type="number"
                       domain={['dataMin - 1', 'dataMax + 1']}
                       tickCount={10}
                       allowDecimals={false}
-                      label={{ 
-                        value: 'Number of Transactions', 
-                        position: 'insideBottom', 
+                      label={{
+                        value: 'Number of Transactions',
+                        position: 'insideBottom',
                         offset: -10,
                         style: { textAnchor: 'middle' }
                       }}
                     />
-                    <YAxis 
-                      dataKey="totalSpent" 
-                      name="Total Spent" 
+                    <YAxis
+                      dataKey="totalSpent"
+                      name="Total Spent"
                       type="number"
                       tickFormatter={formatCurrencyCompact}
-                      label={{ 
-                        value: 'Total Amount Spent', 
-                        angle: -90, 
+                      label={{
+                        value: 'Total Amount Spent',
+                        angle: -90,
                         position: 'insideLeft',
                         offset: 1000,
                         style: { textAnchor: 'middle' }
                       }}
                     />
                     <Tooltip
-                      content={({ active, payload, label }) => {
+                      content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;
                           return (
@@ -1699,7 +1698,7 @@ export default function AnalyticsPage() {
                       }}
                     />
                     {displayData.merchantData.map((merchant, index) => (
-                      <Scatter 
+                      <Scatter
                         key={merchant.merchant}
                         data={[{
                           count: merchant.count,
@@ -1708,7 +1707,7 @@ export default function AnalyticsPage() {
                           avgTransaction: merchant.avgTransaction,
                           firstVisit: merchant.firstVisit
                         }]}
-                        fill={COLORS[index % COLORS.length]} 
+                        fill={COLORS[index % COLORS.length]}
                         shape="circle"
                         r={7}
                       />
