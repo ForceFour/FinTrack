@@ -27,7 +27,8 @@ export default function ConversationalEntry({
     useState<ConversationContext>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { refreshTransactions, auth } = useApp();
+  const isInitialMount = useRef(true);
+  const { refreshTransactions, auth, updateAgentStatus } = useApp();
 
   // Check if we have a pending transaction that needs more info
   const contextData = conversationContext as {
@@ -42,7 +43,14 @@ export default function ConversationalEntry({
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Only scroll to bottom if there are messages and it's not the initial mount
+    if (messages.length > 0 && !isInitialMount.current) {
+      scrollToBottom();
+    }
+    // Mark that initial mount is complete after first render
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
   }, [messages]);
 
   const handleSendMessage = async () => {
@@ -64,6 +72,35 @@ export default function ConversationalEntry({
         conversationContext,
         auth.user?.id
       );
+
+      // Simulate agent pipeline for conversational transactions
+      const responseData = response.data as {
+        status?: string;
+        response?: string;
+        conversation_context?: ConversationContext;
+        transaction_processed?: boolean;
+        transaction_ids?: string[];
+        next_action?: string;
+        needs_more_info?: boolean;
+        missing_fields?: string[];
+      };
+      if (response.status === "success" && responseData?.status === "completed") {
+        const agents = [
+          "ingestion",
+          "ner_merchant",
+          "classifier",
+          "pattern_analyzer",
+          "suggestion",
+          "safety_guard",
+        ];
+
+        // Update agent status sequentially to show pipeline progress
+        for (let i = 0; i < agents.length; i++) {
+          updateAgentStatus({ [agents[i]]: "running" });
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          updateAgentStatus({ [agents[i]]: "complete" });
+        }
+      }
 
       if (response.status === "success" && response.data) {
         const data = response.data as {

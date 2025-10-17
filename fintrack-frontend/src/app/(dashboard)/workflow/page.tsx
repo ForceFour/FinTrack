@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import AgentStatusWidget from "@/components/AgentStatusWidget";
 import {
   PlayIcon,
   ArrowPathIcon,
@@ -146,181 +145,204 @@ export default function WorkflowPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Agent Workflow Monitor</h1>
-        <p className="text-gray-600 mt-2">
-          Real-time monitoring of AI agent processing pipelines
-        </p>
-      </div>
-
-      {/* Agent Status Overview */}
-      <AgentStatusWidget />
-
-      {/* Workflow Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <CheckCircleIcon className="h-8 w-8 text-green-500" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Completed</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {workflows.filter(w => w.status === "completed").length}
-              </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
+                  <PlayIcon className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    Agent Workflow Monitor
+                  </h1>
+                  <p className="text-slate-600 mt-1 text-lg">
+                    Real-time monitoring of AI agent processing pipelines
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="hidden md:flex space-x-3">
+              <button
+                onClick={loadWorkflowData}
+                className="px-6 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-all font-medium flex items-center space-x-2"
+              >
+                <ArrowPathIcon className="w-5 h-5" />
+                <span>Refresh</span>
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <PlayIcon className="h-8 w-8 text-blue-500" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Processing</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {workflows.filter(w => w.status === "processing").length}
-              </p>
+        {/* Workflow Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+            <div className="flex items-center">
+              <CheckCircleIcon className="h-8 w-8 text-green-500" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-slate-600">Completed</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {workflows.filter(w => w.status === "completed").length}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <ClockIcon className="h-8 w-8 text-yellow-500" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Pending</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {workflows.filter(w => w.status === "pending").length}
-              </p>
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+            <div className="flex items-center">
+              <PlayIcon className="h-8 w-8 text-blue-500" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-slate-600">Processing</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {workflows.filter(w => w.status === "processing").length}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <XCircleIcon className="h-8 w-8 text-red-500" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Failed</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {workflows.filter(w => w.status === "failed").length}
-              </p>
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+            <div className="flex items-center">
+              <ClockIcon className="h-8 w-8 text-yellow-500" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-slate-600">Pending</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {workflows.filter(w => w.status === "pending").length}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Active Workflows */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Active Workflows</h3>
-        </div>
-        <div className="divide-y divide-gray-200">
-          {workflows.map((workflow) => (
-            <div key={workflow.workflow_id} className="p-6 hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  {getStatusIcon(workflow.status)}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Workflow {workflow.workflow_id}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {workflow.current_agent ? `Current: ${workflow.current_agent.replace('_', ' ')}` : 'Initializing...'}
-                    </p>
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+            <div className="flex items-center">
+              <XCircleIcon className="h-8 w-8 text-red-500" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-slate-600">Failed</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {workflows.filter(w => w.status === "failed").length}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>      {/* Active Workflows */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+          <div className="p-6 border-b border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Active Workflows</h3>
+          </div>
+          <div className="divide-y divide-slate-200">
+            {workflows.map((workflow) => (
+              <div key={workflow.workflow_id} className="p-6 hover:bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(workflow.status)}
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">
+                        Workflow {workflow.workflow_id}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {workflow.current_agent ? `Current: ${workflow.current_agent.replace('_', ' ')}` : 'Initializing...'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                      <div className="w-24 bg-slate-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${workflow.progress}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{workflow.progress}%</p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(workflow.status)}`}>
+                      {workflow.status}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <div className="w-24 bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${workflow.progress}%` }}
-                      ></div>
+                <div className="mt-4 flex justify-between text-sm text-slate-500">
+                  <span>Started: {new Date(workflow.start_time).toLocaleString()}</span>
+                  <span>Duration: {formatDuration(workflow.start_time, workflow.end_time)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Processing Log */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Processing History</h3>
+              <button
+                onClick={loadWorkflowData}
+                className="flex items-center px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+              >
+                <ArrowPathIcon className="h-4 w-4 mr-1" />
+                Refresh
+              </button>
+            </div>
+          </div>
+          <div className="divide-y divide-slate-200">
+            {processingLogs.map((log, index) => (
+              <div key={index} className="p-4 hover:bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(log.status)}
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{log.file}</p>
+                      <p className="text-sm text-slate-500">
+                        {log.transactions} transactions • {new Date(log.timestamp).toLocaleString()}
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{workflow.progress}%</p>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(workflow.status)}`}>
-                    {workflow.status}
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(log.status)}`}>
+                    {log.status}
                   </span>
                 </div>
               </div>
-              <div className="mt-4 flex justify-between text-sm text-gray-500">
-                <span>Started: {new Date(workflow.start_time).toLocaleString()}</span>
-                <span>Duration: {formatDuration(workflow.start_time, workflow.end_time)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Processing Log */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Processing History</h3>
-            <button
-              onClick={loadWorkflowData}
-              className="flex items-center px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-            >
-              <ArrowPathIcon className="h-4 w-4 mr-1" />
-              Refresh
-            </button>
+            ))}
           </div>
         </div>
-        <div className="divide-y divide-gray-200">
-          {processingLogs.map((log, index) => (
-            <div key={index} className="p-4 hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  {getStatusIcon(log.status)}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{log.file}</p>
-                    <p className="text-sm text-gray-500">
-                      {log.transactions} transactions • {new Date(log.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(log.status)}`}>
-                  {log.status}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Agent Communication Log */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Agent Communication</h3>
-        </div>
-        <div className="p-6">
-          <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm">
-            <div className="space-y-2">
-              <div className="text-green-600">
-                [2025-10-08 13:45:23] Ingestion → NER/Merchant: Processed 150 transactions successfully
-              </div>
-              <div className="text-blue-600">
-                [2025-10-08 13:45:24] NER/Merchant → Classifier: Identified 45 unique merchants
-              </div>
-              <div className="text-purple-600">
-                [2025-10-08 13:45:26] Classifier → Pattern Analyzer: Categorized into 12 transaction types
-              </div>
-              <div className="text-orange-600">
-                [2025-10-08 13:45:28] Pattern Analyzer → Suggestion: Detected 8 spending patterns
-              </div>
-              <div className="text-indigo-600">
-                [2025-10-08 13:45:30] Suggestion → Safety Guard: Generated 5 personalized recommendations
-              </div>
-              <div className="text-green-600">
-                [2025-10-08 13:45:32] Safety Guard → System: Security validation passed - no anomalies detected
+        {/* Agent Communication Log */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+          <div className="p-6 border-b border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Agent Communication</h3>
+          </div>
+          <div className="p-6">
+            <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm">
+              <div className="space-y-2">
+                <div className="text-green-600">
+                  [2025-10-08 13:45:23] Ingestion → NER/Merchant: Processed 150 transactions successfully
+                </div>
+                <div className="text-blue-600">
+                  [2025-10-08 13:45:24] NER/Merchant → Classifier: Identified 45 unique merchants
+                </div>
+                <div className="text-purple-600">
+                  [2025-10-08 13:45:26] Classifier → Pattern Analyzer: Categorized into 12 transaction types
+                </div>
+                <div className="text-orange-600">
+                  [2025-10-08 13:45:28] Pattern Analyzer → Suggestion: Detected 8 spending patterns
+                </div>
+                <div className="text-indigo-600">
+                  [2025-10-08 13:45:30] Suggestion → Safety Guard: Generated 5 personalized recommendations
+                </div>
+                <div className="text-green-600">
+                  [2025-10-08 13:45:32] Safety Guard → System: Security validation passed - no anomalies detected
+                </div>
               </div>
             </div>
           </div>

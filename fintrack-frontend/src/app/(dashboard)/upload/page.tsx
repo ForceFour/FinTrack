@@ -162,11 +162,6 @@ export default function UploadPage() {
           </div>
         </div>
 
-        {/* Agent Status */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-          <AgentStatusWidget />
-        </div>
-
         {/* File Upload Section */}
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
           <div className="flex items-center justify-between mb-6">
@@ -308,17 +303,22 @@ export default function UploadPage() {
 
       </div>
 
-      {/* Processing Options */}
+      {/* Agent Status - Shared for both upload and chat operations */}
       <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-        <h3 className="text-xl font-bold text-slate-800">AI Processing Options</h3>
-        <p>Options here</p>
+        <AgentStatusWidget />
       </div>
 
+      {/* Processing Options */}
+      {/* <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+        <h3 className="text-xl font-bold text-slate-800">AI Processing Options</h3>
+        <p>Options here</p>
+      </div> */}
+
       {/* Expected File Format */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+      {/* <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
         <h3 className="text-xl font-bold text-slate-800">Expected File Format</h3>
         <p>Format info here</p>
-      </div>
+      </div> */}
 
       {/* Conversational Transaction Entry */}
       <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
