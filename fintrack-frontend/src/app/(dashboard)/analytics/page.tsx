@@ -91,6 +91,37 @@ export default function AnalyticsPage() {
   const [amountRange, setAmountRange] = useState({ min: 0, max: 0 });
   const { auth } = useApp();
 
+  // Helper function to calculate default ranges from transactions
+  const getDefaultRanges = useCallback((transactions: Transaction[]) => {
+    if (transactions.length === 0) {
+      return {
+        dateRange: { start: '', end: '' },
+        amountRange: { min: 0, max: 0 }
+      };
+    }
+
+    // Get date range (oldest to current date)
+    const dates = transactions.map(tx => new Date(tx.date)).sort((a, b) => a.getTime() - b.getTime());
+    const oldestDate = dates[0];
+    const currentDate = new Date();
+    
+    // Get amount range (lowest to highest absolute amount)
+    const amounts = transactions.map(tx => Math.abs(tx.amount)).sort((a, b) => a - b);
+    const minAmount = amounts[0] || 0;
+    const maxAmount = amounts[amounts.length - 1] || 0;
+
+    return {
+      dateRange: {
+        start: format(oldestDate, 'yyyy-MM-dd'),
+        end: format(currentDate, 'yyyy-MM-dd')
+      },
+      amountRange: {
+        min: minAmount,
+        max: maxAmount
+      }
+    };
+  }, []);
+
   const loadAnalyticsData = useCallback(async () => {
     if (!auth.user) return;
 
@@ -289,13 +320,59 @@ export default function AnalyticsPage() {
         // Sort merchants by total spent descending
         merchantDataArray.sort((a, b) => b.totalSpent - a.totalSpent);
 
-        // Create insights from pattern_insights
+        // Create insights from pattern_insights with deduplication
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const insights: { type: string; message: string; severity: string }[] = patternInsights.map((insight: any) => ({
+        const allInsights = patternInsights.map((insight: any) => ({
           type: insight.insight_type || insight.type || "info",
           message: insight.message || insight.description || "",
           severity: insight.severity || insight.priority || "medium"
         }));
+
+        // Remove duplicates and unwanted messages
+        const filteredInsights = allInsights.filter((insight: { type: string; message: string; severity: string }) => 
+          // Filter out the unwanted user guidance message
+          !insight.message.includes("Welcome! Track your transactions to unlock spending pattern analysis") &&
+          insight.message.trim() !== ""  // Also filter out empty messages
+        );
+
+        // Remove duplicates based on message content
+        const deduplicatedInsights = filteredInsights.filter((insight: { type: string; message: string; severity: string }, index: number, array: { type: string; message: string; severity: string }[]) => 
+          array.findIndex((item: { type: string; message: string; severity: string }) => item.message === insight.message) === index
+        );
+
+        // Make seasonal insights more user-friendly
+        const seasonalInsights = deduplicatedInsights.filter((insight: { type: string; message: string; severity: string }) => 
+          insight.type.includes('seasonal') || 
+          insight.message.toLowerCase().includes('seasonal') ||
+          insight.message.toLowerCase().includes('fall') ||
+          insight.message.toLowerCase().includes('winter') ||
+          insight.message.toLowerCase().includes('spring') ||
+          insight.message.toLowerCase().includes('summer')
+        );
+
+        const nonSeasonalInsights = deduplicatedInsights.filter((insight: { type: string; message: string; severity: string }) => 
+          !insight.type.includes('seasonal') && 
+          !insight.message.toLowerCase().includes('seasonal') &&
+          !insight.message.toLowerCase().includes('fall') &&
+          !insight.message.toLowerCase().includes('winter') &&
+          !insight.message.toLowerCase().includes('spring') &&
+          !insight.message.toLowerCase().includes('summer')
+        );
+
+        // Keep only the most important seasonal insight (highest severity)
+        const prioritizedSeasonalInsights = seasonalInsights
+          .sort((a: { type: string; message: string; severity: string }, b: { type: string; message: string; severity: string }) => {
+            const severityOrder = { high: 3, medium: 2, low: 1 };
+            return (severityOrder[b.severity as keyof typeof severityOrder] || 0) - 
+                   (severityOrder[a.severity as keyof typeof severityOrder] || 0);
+          })
+          .slice(0, 2); // Keep max 2 seasonal insights
+
+        // Combine insights with priority: non-seasonal first, then limited seasonal
+        const insights: { type: string; message: string; severity: string }[] = [
+          ...nonSeasonalInsights,
+          ...prioritizedSeasonalInsights
+        ].slice(0, 6); // Limit total insights to 6 for better UX
 
         // Calculate income category count
         const incomeCategoryCount = Object.keys(incomeCategories).length;
@@ -413,20 +490,27 @@ export default function AnalyticsPage() {
   const filteredData = useMemo(() => {
     if (!analyticsData) return null;
 
+    // Get default ranges if no filters are set
+    const defaultRanges = getDefaultRanges(transactions);
+    
+    // Use default ranges if user hasn't set any filters
+    const effectiveDateRange = (dateRange.start && dateRange.end) ? dateRange : defaultRanges.dateRange;
+    const effectiveAmountRange = (amountRange.min > 0 || amountRange.max > 0) ? amountRange : defaultRanges.amountRange;
+
     // Filter transactions based on controls
     const filtered = transactions.filter(tx => {
-      // Date filter
-      if (dateRange.start && dateRange.end) {
+      // Date filter - now always applied with defaults if no user selection
+      if (effectiveDateRange.start && effectiveDateRange.end) {
         const txDate = new Date(tx.date);
-        const startDate = new Date(dateRange.start);
-        const endDate = new Date(dateRange.end);
+        const startDate = new Date(effectiveDateRange.start);
+        const endDate = new Date(effectiveDateRange.end);
         if (txDate < startDate || txDate > endDate) return false;
       }
 
-      // Amount filter - only apply if user has set values
+      // Amount filter - now always applied with defaults if no user selection
       const absAmount = Math.abs(tx.amount);
-      if (amountRange.min > 0 && absAmount < amountRange.min) return false;
-      if (amountRange.max > 0 && absAmount > amountRange.max) return false;
+      if (effectiveAmountRange.min > 0 && absAmount < effectiveAmountRange.min) return false;
+      if (effectiveAmountRange.max > 0 && absAmount > effectiveAmountRange.max) return false;
 
       // Category filter
       if (selectedCategories.length > 0 && !selectedCategories.includes(tx.category || '')) {
@@ -577,7 +661,7 @@ export default function AnalyticsPage() {
       dailyData: newDailyData,
       weeklyPattern: newWeeklyPattern
     };
-  }, [analyticsData, transactions, dateRange, amountRange, selectedCategories]);
+  }, [analyticsData, transactions, dateRange, amountRange, selectedCategories, getDefaultRanges]);
 
   // Use filtered data for display, fallback to original if no filters applied
   const displayData = filteredData || analyticsData;
@@ -642,6 +726,11 @@ export default function AnalyticsPage() {
       return getLastTableY(pdf, defaultY);
     };
 
+    // Get effective ranges for PDF display
+    const defaultRanges = getDefaultRanges(transactions);
+    const effectiveDateRange = (dateRange.start && dateRange.end) ? dateRange : defaultRanges.dateRange;
+    const effectiveAmountRange = (amountRange.min > 0 || amountRange.max > 0) ? amountRange : defaultRanges.amountRange;
+
     // Get analysis type label
     const currentAnalysis = ANALYSIS_TYPES.find(type => type.id === selectedAnalysis);
     const analysisTitle = currentAnalysis?.label || 'Overview';
@@ -654,8 +743,8 @@ export default function AnalyticsPage() {
     // Date range and filters
     pdf.setFontSize(12);
     pdf.setTextColor(100);
-    pdf.text(`Period: ${dateRange.start} to ${dateRange.end}`, pageWidth / 2, 30, { align: 'center' });
-    pdf.text(`Amount Range: LKR ${amountRange.min.toLocaleString()} - LKR ${amountRange.max.toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
+    pdf.text(`Period: ${effectiveDateRange.start} to ${effectiveDateRange.end}`, pageWidth / 2, 30, { align: 'center' });
+    pdf.text(`Amount Range: LKR ${effectiveAmountRange.min.toLocaleString()} - LKR ${effectiveAmountRange.max.toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
 
     let yPosition = 60;
 
@@ -1202,17 +1291,27 @@ export default function AnalyticsPage() {
                   type="number"
                   placeholder="Min Amount (optional)"
                   value={amountRange.min || ''}
-                  onChange={(e) => setAmountRange(prev => ({ ...prev, min: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const numericValue = value === '' ? 0 : parseInt(value, 10);
+                    setAmountRange(prev => ({ ...prev, min: numericValue }));
+                  }}
                   className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  step="10"
+                  min="0"
+                  step="1"
                 />
                 <input
                   type="number"
                   placeholder="Max Amount (optional)"
                   value={amountRange.max || ''}
-                  onChange={(e) => setAmountRange(prev => ({ ...prev, max: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const numericValue = value === '' ? 0 : parseInt(value, 10);
+                    setAmountRange(prev => ({ ...prev, max: numericValue }));
+                  }}
                   className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  step="10"
+                  min="0"
+                  step="1"
                 />
               </div>
             </div>
@@ -1375,8 +1474,6 @@ export default function AnalyticsPage() {
                 </div>
               </div>
             )}
-
-
 
             {/* Income vs Expenses Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
