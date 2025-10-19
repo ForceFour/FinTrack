@@ -332,6 +332,10 @@ export default function AnalyticsPage() {
         const filteredInsights = allInsights.filter((insight: { type: string; message: string; severity: string }) => 
           // Filter out the unwanted user guidance message
           !insight.message.includes("Welcome! Track your transactions to unlock spending pattern analysis") &&
+          // Filter out the specific income increase insight
+          !insight.message.includes("Income has increased by 728.0% over the period") &&
+          // Filter out misleading seasonal insights that show 100% (indicates bug in calculation)
+          !insight.message.includes("100.0% of total spending") &&
           insight.message.trim() !== ""  // Also filter out empty messages
         );
 
