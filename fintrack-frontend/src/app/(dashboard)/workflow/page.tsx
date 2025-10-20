@@ -400,20 +400,50 @@ export default function WorkflowPage() {
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
             <h3 className="text-lg font-semibold text-slate-900">Agent Communication</h3>
+            <p className="text-sm text-slate-500 mt-1">Real-time agent interactions grouped by workflow</p>
           </div>
           <div className="p-6">
             {communications.length > 0 ? (
-              <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
-                <div className="space-y-2">
-                  {communications.map((comm, index) => (
-                    <div
-                      key={`${comm.workflow_id}-${comm.timestamp}-${index}`}
-                      className={getCommunicationStatusColor(comm.status)}
-                    >
-                      [{formatTimestamp(comm.timestamp)}] {comm.agent}: {comm.message}
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {(() => {
+                  // Group communications by workflow_id
+                  const grouped = communications.reduce((acc, comm) => {
+                    if (!acc[comm.workflow_id]) {
+                      acc[comm.workflow_id] = [];
+                    }
+                    acc[comm.workflow_id].push(comm);
+                    return acc;
+                  }, {} as Record<string, typeof communications>);
+
+                  return Object.entries(grouped).map(([workflowId, comms]) => (
+                    <div key={workflowId} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-300">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          <span className="font-semibold text-slate-700">
+                            Workflow {workflowId}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {comms.length} {comms.length === 1 ? 'stage' : 'stages'}
+                        </span>
+                      </div>
+                      <div className="space-y-1 font-mono text-xs">
+                        {comms
+                          .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                          .map((comm, index) => (
+                            <div
+                              key={`${comm.workflow_id}-${comm.stage}-${index}`}
+                              className={`${getCommunicationStatusColor(comm.status)} py-1`}
+                            >
+                              <span className="text-slate-400">[{formatTimestamp(comm.timestamp)}]</span>{" "}
+                              <span className="font-semibold">{comm.agent}:</span> {comm.message}
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  ));
+                })()}
               </div>
             ) : (
               <div className="bg-slate-50 rounded-lg p-8 text-center">

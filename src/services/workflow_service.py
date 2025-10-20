@@ -227,7 +227,19 @@ class WorkflowService:
                 "input_type, raw_transaction_count, predicted_category, merchant_name"
             ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
 
-            communications = []
+            # Use a dict to deduplicate by workflow_id + stage
+            workflow_communications = {}
+            
+            # Define stages to show - only meaningful agent stages
+            important_stages = {
+                "ingestion",
+                "ner_extraction", 
+                "classification",
+                "pattern_analysis",
+                "suggestion",
+                "safety_guard",
+                "validation"
+            }
             
             for workflow in (result.data or []):
                 processing_history = workflow.get("processing_history", [])
@@ -251,34 +263,45 @@ class WorkflowService:
                         if isinstance(entry, dict):
                             # Extract communication details
                             stage = entry.get("stage", "unknown")
+                            
+                            # Skip stages that aren't in our important list
+                            if stage not in important_stages:
+                                continue
+                            
                             timestamp = entry.get("timestamp") or workflow.get("created_at")
                             base_message = entry.get("message", "")
                             status = entry.get("status", "info")
                             details = entry.get("details", {})
                             
-                            # Create agent communication entry
-                            agent_name = self._map_stage_to_agent(stage)
+                            # Create unique key for deduplication: workflow_id + stage
+                            dedup_key = f"{workflow_id}_{stage}"
                             
-                            # Enhance message with context from details
-                            enhanced_message = self._enhance_message(
-                                base_message, 
-                                stage, 
-                                details, 
-                                workflow, 
-                                source_name
-                            )
-                            
-                            communications.append({
-                                "timestamp": timestamp,
-                                "workflow_id": workflow_short_id,
-                                "agent": agent_name,
-                                "stage": stage,
-                                "message": enhanced_message,
-                                "status": status,
-                                "details": details
-                            })
+                            # Only keep the most recent entry for each workflow + stage combination
+                            if dedup_key not in workflow_communications:
+                                # Create agent communication entry
+                                agent_name = self._map_stage_to_agent(stage)
+                                
+                                # Enhance message with context from details
+                                enhanced_message = self._enhance_message(
+                                    base_message, 
+                                    stage, 
+                                    details, 
+                                    workflow, 
+                                    source_name
+                                )
+                                
+                                workflow_communications[dedup_key] = {
+                                    "timestamp": timestamp,
+                                    "workflow_id": workflow_short_id,
+                                    "agent": agent_name,
+                                    "stage": stage,
+                                    "message": enhanced_message,
+                                    "status": status,
+                                    "details": details
+                                }
             
-            # Sort by timestamp descending (most recent first)
+            # Convert dict to list and sort by timestamp descending (most recent first)
+            communications = list(workflow_communications.values())
             communications.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             
             return communications[:limit]
