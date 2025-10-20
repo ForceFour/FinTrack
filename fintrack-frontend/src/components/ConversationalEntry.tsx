@@ -46,7 +46,10 @@ export default function ConversationalEntry({
   const missingFields = (contextData.missing_fields as string[]) || [];
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const messagesContainer = messagesEndRef.current?.parentElement;
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -155,7 +158,7 @@ export default function ConversationalEntry({
           // Add a follow-up message with next steps
           const nextStepsMessage: ConversationMessage = {
             type: "assistant",
-            content: `🎉 Transaction saved! ${
+            content: `Transaction saved! ${
               data.next_action ||
               "You can view it in your Dashboard or continue adding more transactions."
             }`,
@@ -209,10 +212,10 @@ export default function ConversationalEntry({
   };
 
   const exampleMessages = [
+    `How much did I spend on food last month?`,
     `I spent ${currencySymbol} 2500 at Starbucks yesterday`,
-    `Paid ${currencySymbol} 12000 for groceries at Walmart today using my credit card`,
-    `Gas station charge of ${currencySymbol} 4550 on Monday`,
-    `Coffee shop ${currencySymbol} 475 this morning`,
+    `Paid ${currencySymbol} 12000 for groceries at Walmart today`,
+    `How much did I spend last week?`
   ];
 
   return (
@@ -228,7 +231,7 @@ export default function ConversationalEntry({
               AI Transaction Assistant
             </h3>
             <p className="text-sm text-purple-100 mt-1">
-              Tell me about your transactions naturally - I&apos;ll understand and process them
+              Ask questions about your spending or tell me about transactions - I&apos;ll help you manage your finances!
             </p>
           </div>
         </div>
@@ -254,19 +257,19 @@ export default function ConversationalEntry({
       </div>
 
       {/* Messages Container */}
-      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
+      <div className=" overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
         {messages.length === 0 && (
-          <div className="text-center py-12">
-            <div className="p-5 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg">
+          <div className="text-center py-2">
+            <div className="p-2 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl w-15 h-15 mx-auto mb-3 flex items-center justify-center shadow-lg">
               <BotIcon className="h-10 w-10 text-purple-600" />
             </div>
             <h4 className="text-xl font-bold text-slate-900 mb-3">
               Start a conversation!
             </h4>
-            <p className="text-slate-600 mb-6 max-w-md mx-auto">
+            <p className="text-slate-600 mb-4 max-w-md mx-auto">
               Try saying something like:
             </p>
-            <div className="space-y-3 max-w-md mx-auto">
+            <div className="space-y-1 max-w-md mx-auto">
               {exampleMessages.map((example, index) => (
                 <button
                   key={index}
@@ -351,7 +354,7 @@ export default function ConversationalEntry({
               placeholder={
                 hasPendingTransaction && missingFields.length > 0
                   ? `Please provide: ${missingFields.join(", ")}`
-                  : `Type your transaction here... (e.g., &apos;I spent ${currencySymbol} 2500 at Starbucks yesterday&apos;)`
+                  : `Ask about spending or add transactions... (e.g., 'How much did I spend on food last month?' or 'I spent ${currencySymbol}25 at Starbucks today')`
               }
               className="w-full px-5 py-3.5 pr-12 border-2 border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white shadow-sm hover:shadow-md transition-all duration-200"
               disabled={isTyping}

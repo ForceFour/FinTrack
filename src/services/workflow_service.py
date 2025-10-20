@@ -75,7 +75,7 @@ class WorkflowService:
         """Transform prediction_result record to workflow status format"""
         status = prediction.get("status", "pending")
         current_stage = prediction.get("current_stage")
-        
+
         # Use source_name directly if available
         source_name = prediction.get("source_name")
         if not source_name:
@@ -88,13 +88,13 @@ class WorkflowService:
                 source_name = f"Chat: {user_input[:50]}..." if user_input else "Manual Entry"
             else:
                 source_name = f"Workflow {prediction.get('workflow_id', 'unknown')[:16]}..."
-        
+
         return {
             "workflow_id": prediction.get("workflow_id"),
             "status": status,
             "current_agent": self._map_stage_to_agent(current_stage),
             "progress": self._calculate_progress(status, current_stage),
-            "start_time": prediction.get("started_at") or prediction.get("created_at"),
+            "start_time": prediction.get("created_at"),
             "end_time": prediction.get("completed_at"),
             "source_name": source_name,
             "result": {
@@ -125,7 +125,7 @@ class WorkflowService:
                 source_name = f"Chat: {user_input[:50]}..." if user_input else "Manual Entry"
             else:
                 source_name = f"Workflow {prediction.get('workflow_id', 'unknown')[:16]}..."
-        
+
         return {
             "timestamp": prediction.get("created_at"),
             "file": f"Workflow {prediction.get('workflow_id', 'unknown')[:8]}",
@@ -229,23 +229,23 @@ class WorkflowService:
 
             # Use a dict to deduplicate by workflow_id + stage
             workflow_communications = {}
-            
+
             # Define stages to show - only meaningful agent stages
             important_stages = {
                 "ingestion",
-                "ner_extraction", 
+                "ner_extraction",
                 "classification",
                 "pattern_analysis",
                 "suggestion",
                 "safety_guard",
                 "validation"
             }
-            
+
             for workflow in (result.data or []):
                 processing_history = workflow.get("processing_history", [])
                 workflow_id = workflow.get("workflow_id", "unknown")
                 workflow_short_id = workflow_id[:8]
-                
+
                 # Get source name for context
                 source_name = workflow.get("source_name")
                 if not source_name:
@@ -257,39 +257,39 @@ class WorkflowService:
                         source_name = "Chat"
                     else:
                         source_name = "Upload"
-                
+
                 if processing_history and isinstance(processing_history, list):
                     for entry in processing_history:
                         if isinstance(entry, dict):
                             # Extract communication details
                             stage = entry.get("stage", "unknown")
-                            
+
                             # Skip stages that aren't in our important list
                             if stage not in important_stages:
                                 continue
-                            
+
                             timestamp = entry.get("timestamp") or workflow.get("created_at")
                             base_message = entry.get("message", "")
                             status = entry.get("status", "info")
                             details = entry.get("details", {})
-                            
+
                             # Create unique key for deduplication: workflow_id + stage
                             dedup_key = f"{workflow_id}_{stage}"
-                            
+
                             # Only keep the most recent entry for each workflow + stage combination
                             if dedup_key not in workflow_communications:
                                 # Create agent communication entry
                                 agent_name = self._map_stage_to_agent(stage)
-                                
+
                                 # Enhance message with context from details
                                 enhanced_message = self._enhance_message(
-                                    base_message, 
-                                    stage, 
-                                    details, 
-                                    workflow, 
+                                    base_message,
+                                    stage,
+                                    details,
+                                    workflow,
                                     source_name
                                 )
-                                
+
                                 workflow_communications[dedup_key] = {
                                     "timestamp": timestamp,
                                     "workflow_id": workflow_short_id,
@@ -299,11 +299,11 @@ class WorkflowService:
                                     "status": status,
                                     "details": details
                                 }
-            
+
             # Convert dict to list and sort by timestamp descending (most recent first)
             communications = list(workflow_communications.values())
             communications.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-            
+
             return communications[:limit]
 
         except Exception as e:
@@ -311,10 +311,10 @@ class WorkflowService:
             return []
 
     def _enhance_message(
-        self, 
-        base_message: str, 
-        stage: str, 
-        details: Dict[str, Any], 
+        self,
+        base_message: str,
+        stage: str,
+        details: Dict[str, Any],
         workflow: Dict[str, Any],
         source_name: str
     ) -> str:
@@ -324,47 +324,47 @@ class WorkflowService:
             if stage == "ingestion":
                 tx_count = details.get("transaction_count") or workflow.get("raw_transaction_count", 0)
                 return f"Processed {tx_count} transactions from {source_name}"
-            
+
             elif stage == "classification":
                 category = workflow.get("predicted_category")
                 confidence = details.get("confidence") or workflow.get("category_confidence")
                 if category and confidence:
                     return f"Classified as '{category}' with {confidence*100:.1f}% confidence"
                 return f"Completed transaction classification for {source_name}"
-            
+
             elif stage == "ner_extraction":
                 merchant = details.get("merchant") or workflow.get("merchant_name")
                 if merchant:
                     return f"Identified merchant: {merchant}"
                 return "Extracted merchant and entity information"
-            
+
             elif stage == "pattern_analysis":
                 patterns_found = details.get("patterns_detected", 0)
                 if patterns_found:
                     return f"Detected {patterns_found} spending patterns"
                 return "Analyzed transaction patterns and trends"
-            
+
             elif stage == "suggestion":
                 suggestions = details.get("suggestions_count", 0)
                 if suggestions:
                     return f"Generated {suggestions} personalized recommendations"
                 return "Created budget and savings suggestions"
-            
+
             elif stage == "safety_guard":
                 fraud_score = details.get("fraud_score")
                 if fraud_score and fraud_score > 0.5:
                     return f"⚠️ Security alert: Fraud score {fraud_score*100:.1f}%"
                 return "Security validation passed - no anomalies detected"
-            
+
             elif stage == "validation":
                 valid = details.get("is_valid", True)
                 if valid:
                     return "Data quality validation successful"
                 return "⚠️ Validation issues detected"
-            
+
             else:
                 return base_message or f"Completed {stage} stage"
-        
+
         return base_message
 
 

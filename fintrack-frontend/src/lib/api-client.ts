@@ -85,6 +85,10 @@ class APIClient {
       const data = await response.json();
 
       if (!response.ok) {
+        // Clear invalid token on 401 Unauthorized
+        if (response.status === 401) {
+          this.clearToken();
+        }
         throw new Error(data.message || data.detail || "Request failed");
       }
 
@@ -234,9 +238,22 @@ class APIClient {
 
       if (!response.ok) {
         const errorData = await response.text();
-        throw new Error(
-          `Upload failed: ${response.status} ${response.statusText} - ${errorData}`
-        );
+        let errorMessage = `Upload failed: ${response.status} ${response.statusText}`;
+
+        // Try to parse JSON error response and extract the detail message
+        try {
+          const errorJson = JSON.parse(errorData);
+          if (errorJson.detail) {
+            errorMessage = errorJson.detail;
+          } else if (errorJson.message) {
+            errorMessage = errorJson.message;
+          }
+        } catch {
+          // If JSON parsing fails, use the raw error data
+          errorMessage = errorData || errorMessage;
+        }
+
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -381,6 +398,24 @@ class APIClient {
         user_input: userInput,
         conversation_context: conversationContext,
       }),
+    });
+  }
+
+  async getUserSettings(userId: string) {
+    return this.request(`/user-settings/${userId}`);
+  }
+
+  async updateUserSettings(
+    userId: string,
+    settings: {
+      spending_limits?: Record<string, number>;
+      notifications?: Record<string, boolean>;
+      preferences?: Record<string, string>;
+    }
+  ) {
+    return this.request(`/user-settings/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(settings),
     });
   }
 }

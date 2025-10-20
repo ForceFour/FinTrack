@@ -448,7 +448,7 @@ export default function WorkflowPage() {
                         <div className="flex items-center space-x-2">
                           <div className="w-2.5 h-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
                           <span className="font-bold text-slate-700">
-                            Workflow {workflowId}
+                          {workflowId}
                           </span>
                         </div>
                         <span className="text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded-lg">

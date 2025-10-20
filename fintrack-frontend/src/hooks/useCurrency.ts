@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { apiClient } from "@/lib/api-client";
 
 export interface CurrencySettings {
   currency: string;
@@ -9,6 +10,17 @@ interface SpendingLimit {
   category: string;
   limit: number;
   period: "monthly" | "weekly";
+}
+
+interface UserSettingsResponse {
+  status: string;
+  user_id: string;
+  spending_limits: Record<string, number>;
+  notifications: Record<string, boolean>;
+  preferences: {
+    currency: string;
+    currency_symbol: string;
+  };
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -32,9 +44,40 @@ export const useCurrency = () => {
 
   const [spendingLimits, setSpendingLimits] = useState<SpendingLimit[]>([]);
 
-  // Load currency preference from local storage on mount
+  // Load currency preference from API first, then localStorage as fallback
   useEffect(() => {
-    const loadCurrencyPreference = () => {
+    const loadCurrencyPreference = async () => {
+      // Check if user is authenticated (has access token)
+      const accessToken = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+      if (accessToken) {
+        try {
+          // First try to get from API
+          const user = await apiClient.getUserProfile();
+          if (user.status === "success" && user.data?.id) {
+            const settings = await apiClient.getUserSettings(user.data.id) as { status: string; data: UserSettingsResponse };
+            if (settings.status === "success" && settings.data?.preferences) {
+              const preferences = settings.data.preferences;
+              const currency = preferences.currency || "LKR";
+              const symbol = preferences.currency_symbol || CURRENCY_SYMBOLS[currency] || currency;
+
+              const apiSettings = { currency, symbol };
+              setCurrencySettings(apiSettings);
+
+              // Also update localStorage for offline fallback
+              localStorage.setItem(STORAGE_KEYS.CURRENCY, JSON.stringify(apiSettings));
+              return;
+            }
+          } else if (user.status === "error" && user.error?.includes("401")) {
+            // Token is invalid, clear it
+            localStorage.removeItem("access_token");
+          }
+        } catch (error) {
+          console.warn("Failed to load currency from API, falling back to localStorage:", error);
+        }
+      }
+
+      // Fallback to localStorage (for unauthenticated users or API failure)
       try {
         const stored = localStorage.getItem(STORAGE_KEYS.CURRENCY);
         if (stored) {
@@ -53,7 +96,7 @@ export const useCurrency = () => {
           );
         }
       } catch (error) {
-        console.error("Failed to load currency preference:", error);
+        console.error("Failed to load currency preference from localStorage:", error);
         // Fallback to LKR on error
         setCurrencySettings({ currency: "LKR", symbol: "Rs." });
       }
@@ -75,11 +118,29 @@ export const useCurrency = () => {
     loadSpendingLimits();
   }, []);
 
-  const updateCurrency = (currency: string) => {
+  const updateCurrency = async (currency: string) => {
     const symbol = CURRENCY_SYMBOLS[currency] || currency;
     const newSettings = { currency, symbol };
     setCurrencySettings(newSettings);
     localStorage.setItem(STORAGE_KEYS.CURRENCY, JSON.stringify(newSettings));
+
+    // Also update backend if user is logged in
+    const accessToken = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    if (accessToken) {
+      try {
+        const user = await apiClient.getUserProfile();
+        if (user.status === "success" && user.data?.id) {
+          await apiClient.updateUserSettings(user.data.id, {
+            preferences: {
+              currency,
+              currency_symbol: symbol
+            }
+          });
+        }
+      } catch (error) {
+        console.warn("Failed to sync currency preference to backend:", error);
+      }
+    }
   };
 
   const updateSpendingLimits = (limits: SpendingLimit[]) => {

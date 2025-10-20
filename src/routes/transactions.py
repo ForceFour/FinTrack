@@ -56,17 +56,67 @@ async def upload_transactions(
 
         # Process file based on type
         if file_type == "csv":
-            df = pd.read_csv(io.StringIO(file_content.decode('utf-8')))
+            # Try different encodings and delimiters
+            df = None
+            parse_error = None
+
+            # Common delimiters to try
+            delimiters = [',', ';', '\t', '|']
+            encodings_to_try = ['utf-8', 'latin-1', 'windows-1252', 'cp1252', 'iso-8859-1']
+
+            for encoding in encodings_to_try:
+                try:
+                    decoded_content = file_content.decode(encoding)
+                    for delimiter in delimiters:
+                        try:
+                            df = pd.read_csv(io.StringIO(decoded_content), delimiter=delimiter)
+                            # Check if we got a reasonable number of columns (not just 1)
+                            if len(df.columns) > 1:
+                                break
+                        except (pd.errors.ParserError, pd.errors.EmptyDataError):
+                            continue
+                    if df is not None and len(df.columns) > 1:
+                        break
+                except UnicodeDecodeError:
+                    continue
+
+            if df is None:
+                # Try one more time with error handling to get a better error message
+                try:
+                    df = pd.read_csv(io.StringIO(file_content.decode('utf-8')))
+                except Exception as e:
+                    parse_error = str(e)
+
+                if df is None:
+                    error_msg = "Unable to read the CSV file. "
+                    if "Expected" in parse_error and "fields" in parse_error:
+                        error_msg += "The file appears to have inconsistent formatting or uses a different delimiter (like semicolon instead of comma). "
+                        error_msg += "Please check your CSV file format and try again. "
+                        error_msg += "Common issues: mixed delimiters, unescaped quotes, or extra line breaks."
+                    elif "utf-8" in parse_error.lower():
+                        error_msg += "The file appears to be encoded in an unsupported format. "
+                        error_msg += "Please save your CSV file as UTF-8 encoding and try again. "
+                        error_msg += "Most spreadsheet applications (Excel, Google Sheets) can export as UTF-8 CSV."
+                    else:
+                        error_msg += f"File parsing error: {parse_error}"
+
+                    raise HTTPException(status_code=400, detail=error_msg)
+
         elif file_type in ["excel", "xlsx"]:
-            df = pd.read_excel(io.BytesIO(file_content))
+            try:
+                df = pd.read_excel(io.BytesIO(file_content))
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unable to read the Excel file. The file may be corrupted or in an unsupported format. "
+                           f"Please ensure it's a valid Excel file (.xlsx or .xls) and try again. Error: {str(e)}"
+                )
         elif file_type == "ofx":
             # OFX parsing would need specialized library (ofxparse)
             raise HTTPException(
                 status_code=400,
                 detail="OFX file support coming soon"
             )
-
-        # Validate required columns
         required_columns = ["date", "amount", "description"]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
@@ -90,6 +140,8 @@ async def upload_transactions(
             "errors": result.get("errors", 0)
         }
 
+    except HTTPException:
+        raise
     except pd.errors.EmptyDataError:
         raise HTTPException(status_code=400, detail="File is empty")
     except pd.errors.ParserError as e:
@@ -497,18 +549,45 @@ async def process_natural_language_transaction(
         # Initialize transaction service
         transaction_service = TransactionService(client)
 
-        # Parse the natural language input
+        # First, classify the input type
+        input_type = await _classify_input_type(user_input)
+
+        if input_type == "query":
+            # Handle as a query about spending/analytics
+            response_data = await _handle_spending_query(user_input, user_id, client)
+            return response_data
+        elif input_type == "casual":
+            # Handle casual conversation
+            response_data = await _handle_casual_conversation(user_input)
+            return response_data
+        elif input_type == "transaction":
+            # Continue with existing transaction processing
+            pass
+        else:
+            # Default to transaction processing but with better error handling
+            pass
+
+        # Parse the natural language input for transactions
         parsed_transactions = await _parse_natural_language_transaction(
             user_input, conversation_context, user_id, transaction_service
         )
 
         if not parsed_transactions:
-            return {
-                "status": "error",
-                "response": "I couldn't identify any transactions in your message. Please try again with amounts and descriptions.",
-                "conversation_context": conversation_context,
-                "transaction_processed": False
-            }
+            # If no transactions found, try to classify as query or casual
+            input_type = await _classify_input_type(user_input)
+            if input_type == "query":
+                response_data = await _handle_spending_query(user_input, user_id, client)
+                return response_data
+            elif input_type == "casual":
+                response_data = await _handle_casual_conversation(user_input)
+                return response_data
+            else:
+                return {
+                    "status": "error",
+                    "response": "I couldn't identify any transactions in your message. Please try again with amounts and descriptions.",
+                    "conversation_context": conversation_context,
+                    "transaction_processed": False
+                }
 
         # Check if we have all required information for all transactions
         required_fields = ["amount", "description", "date"]
@@ -691,6 +770,295 @@ async def process_natural_language_transaction(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Natural language processing failed: {str(e)}")
+
+
+async def _classify_input_type(user_input: str) -> str:
+    """
+    Classify the input type: 'transaction', 'query', or 'casual'
+    """
+    import re
+
+    input_lower = user_input.lower().strip()
+
+    # Check for query keywords
+    query_keywords = [
+        "how much", "how many", "what", "where", "when", "spent", "spent on", "cost", "paid for",
+        "total", "sum", "amount", "money", "budget", "expenses", "income", "earnings",
+        "average", "summary", "report", "analytics", "statistics", "breakdown", "overview",
+        "last month", "this month", "last week", "this week", "last year", "this year",
+        "in ", "on ", "for ", "during ", "between ", "from ", "to ", "since ", "until "
+    ]
+
+    # Check for casual conversation keywords
+    casual_keywords = [
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        "thanks", "thank you", "please", "help", "bye", "goodbye", "see you",
+        "how are you", "what's up", "how's it going", "nice", "great", "awesome",
+        "sorry", "excuse me", "pardon", "yes", "no", "okay", "ok", "sure", "alright"
+    ]
+
+    # Check for transaction keywords (amounts, spending actions)
+    transaction_keywords = [
+        "bought", "purchased", "paid", "spent", "got", "received", "earned", "made",
+        "charged", "debited", "credited", "withdrew", "deposited", "transferred",
+        "billed", "invoiced", "ordered", "rented", "leased", "subscribed"
+    ]
+
+    # Look for amounts (strong indicator of transactions)
+    amount_patterns = [
+        r'\d+(?:\.\d{2})?\s*(?:rs|inr|usd|\$|dollars?|bucks?|rupees?)',
+        r'\$\s*\d+(?:\.\d{2})?',
+        r'\d+(?:\.\d{2})?\s*₹'
+    ]
+
+    has_amount = any(re.search(pattern, input_lower) for pattern in amount_patterns)
+    has_query = any(keyword in input_lower for keyword in query_keywords)
+    has_casual = any(keyword in input_lower for keyword in casual_keywords)
+    has_transaction = any(keyword in input_lower for keyword in transaction_keywords) or has_amount
+
+    # Prioritize based on content
+    if has_query and not has_transaction:
+        return "query"
+    elif has_casual and not has_transaction and not has_query:
+        return "casual"
+    elif has_transaction or has_amount:
+        return "transaction"
+    else:
+        # Default to casual for ambiguous inputs
+        return "casual"
+
+
+async def _handle_spending_query(user_input: str, user_id: str, client) -> Dict[str, Any]:
+    """
+    Handle queries about spending and analytics
+    """
+    import re
+    from datetime import datetime, timedelta
+    from ..db.operations import TransactionCRUD
+
+    input_lower = user_input.lower()
+
+    # Get user's currency symbol
+    currency_symbol = "Rs."
+    try:
+        user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
+        if user_settings_result.data and len(user_settings_result.data) > 0:
+            preferences = user_settings_result.data[0].get("preferences", {})
+            currency_symbol = preferences.get("currency_symbol", "Rs.")
+    except Exception as e:
+        print(f"Failed to fetch user currency settings: {e}")
+
+    # Parse time period
+    start_date = None
+    end_date = datetime.now().date()
+
+    if "last month" in input_lower or "previous month" in input_lower:
+        # Last month
+        first_of_this_month = end_date.replace(day=1)
+        start_date = (first_of_this_month - timedelta(days=1)).replace(day=1)
+        end_date = first_of_this_month - timedelta(days=1)
+    elif "this month" in input_lower:
+        # This month
+        start_date = end_date.replace(day=1)
+    elif "last week" in input_lower or "previous week" in input_lower:
+        # Last week
+        start_date = end_date - timedelta(days=end_date.weekday() + 7)
+        end_date = start_date + timedelta(days=6)
+    elif "this week" in input_lower:
+        # This week
+        start_date = end_date - timedelta(days=end_date.weekday())
+    elif "last year" in input_lower or "previous year" in input_lower:
+        # Last year
+        start_date = end_date.replace(year=end_date.year - 1, month=1, day=1)
+        end_date = end_date.replace(year=end_date.year - 1, month=12, day=31)
+    elif "this year" in input_lower:
+        # This year
+        start_date = end_date.replace(month=1, day=1)
+    # If no period is mentioned, start_date remains None (all periods)
+
+    # Parse category
+    category = None
+    categories = {
+        "food_dining": ["food", "restaurant", "cafe", "coffee", "lunch", "dinner", "eat", "meal", "snack"],
+        "groceries": ["grocery", "groceries", "supermarket", "market", "food shopping"],
+        "fuel": ["transport", "gas", "fuel", "petrol", "diesel", "gas station", "ceypetco", "ioc", "shell"],
+        "shopping": ["shopping", "clothes", "shoes", "store", "amazon", "walmart", "retail", "purchase", "buy"],
+        "entertainment": ["entertainment", "netflix", "spotify", "movie", "game", "concert", "cinema", "music"],
+        "utilities": ["utilities", "electric", "water", "internet", "phone", "gas bill", "utility", "electricity"],
+        "subscriptions": ["subscription", "subscriptions", "membership", "premium", "service"],
+        "healthcare": ["healthcare", "medical", "doctor", "hospital", "pharmacy", "health"],
+        "household": ["household", "furniture", "home", "appliance", "house"],
+        "beauty": ["beauty", "salon", "spa", "haircut", "grooming", "personal care"],
+        "miscellaneous": ["miscellaneous", "other", "misc", "various"]
+    }
+
+    for cat, keywords in categories.items():
+        if any(keyword in input_lower for keyword in keywords):
+            category = cat
+            break
+
+    # Query transactions
+    filters = {"user_id": user_id}
+    if start_date:
+        filters["start_date"] = start_date
+    if end_date:
+        filters["end_date"] = end_date
+    if category:
+        filters["category"] = category
+
+    try:
+        transactions, total_count = await TransactionCRUD.get_transactions(client, filters)
+
+        if not transactions:
+            period_text = "this period"
+            if "last month" in input_lower:
+                period_text = "last month"
+            elif "this month" in input_lower:
+                period_text = "this month"
+            elif "last week" in input_lower:
+                period_text = "last week"
+            elif "this week" in input_lower:
+                period_text = "this week"
+            else:
+                period_text = "all time"
+
+            category_text = f" in {category}" if category else ""
+            return {
+                "status": "success",
+                "response": f"I couldn't find any transactions{category_text} for {period_text}. Try adding some transactions first!",
+                "conversation_context": {},
+                "transaction_processed": False
+            }
+
+        # Calculate totals
+        total_expenses = sum(abs(tx["amount"]) for tx in transactions if tx["amount"] < 0)
+        total_income = sum(tx["amount"] for tx in transactions if tx["amount"] > 0)
+        transaction_count = len(transactions)
+
+        # Generate response
+        period_text = "all time"
+        if "last month" in input_lower:
+            period_text = "last month"
+        elif "this month" in input_lower:
+            period_text = "this month"
+        elif "last week" in input_lower:
+            period_text = "last week"
+        elif "this week" in input_lower:
+            period_text = "this week"
+
+        category_text = f" on {category.title()}" if category else ""
+
+        response_lines = []
+        response_lines.append(f"Here's your spending summary{category_text} for {period_text}:")
+        response_lines.append("")
+
+        if total_expenses > 0:
+            response_lines.append(f"Total Expenses: {currency_symbol}{total_expenses:.2f}")
+        if total_income > 0:
+            response_lines.append(f"Total Income: {currency_symbol}{total_income:.2f}")
+
+        response_lines.append(f"Total Transactions: {transaction_count}")
+
+        if transaction_count > 0:
+            avg_transaction = (total_expenses + total_income) / transaction_count
+            response_lines.append(f"Average Transaction: {currency_symbol}{abs(avg_transaction):.2f}")
+
+        # Show top categories if no specific category was asked
+        if not category and total_expenses > 0:
+            category_totals = {}
+            for tx in transactions:
+                if tx["amount"] < 0:
+                    cat = tx.get("category") or "Uncategorized"
+                    category_totals[cat] = category_totals.get(cat, 0) + abs(tx["amount"])
+
+            if category_totals:
+                response_lines.append("")
+                response_lines.append("Top spending categories:")
+                sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)[:3]
+                for cat, amount in sorted_categories:
+                    response_lines.append(f"   - {cat}: {currency_symbol}{amount:.2f}")
+
+        response_text = "\n".join(response_lines)
+
+        return {
+            "status": "success",
+            "response": response_text,
+            "conversation_context": {},
+            "transaction_processed": False
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "response": f"Sorry, I couldn't retrieve your spending data. Error: {str(e)}",
+            "conversation_context": {},
+            "transaction_processed": False
+        }
+
+
+async def _handle_casual_conversation(user_input: str) -> Dict[str, Any]:
+    """
+    Handle casual conversation inputs
+    """
+    input_lower = user_input.lower().strip()
+
+    # Greeting responses
+    if any(word in input_lower for word in ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"]):
+        responses = [
+            "Hello! I'm your AI financial assistant. I can help you track expenses, analyze spending patterns, or answer questions about your finances.",
+            "Hi there! Ready to help you manage your money better. What would you like to know?",
+            "Hey! I'm here to help with your financial tracking. Ask me about your spending or add new transactions!"
+        ]
+        response = responses[hash(user_input) % len(responses)]
+
+    # Thanks responses
+    elif any(word in input_lower for word in ["thank", "thanks"]):
+        responses = [
+            "You're welcome! Happy to help with your finances.",
+            "No problem at all! Let me know if you need anything else.",
+            "Glad I could help! Feel free to ask about your spending anytime."
+        ]
+        response = responses[hash(user_input) % len(responses)]
+
+    # Help responses
+    elif any(word in input_lower for word in ["help", "what can you do"]):
+        response = """I can help you with:
+
+**Track Expenses**: Tell me about purchases like "I spent $25 at Starbucks yesterday"
+**Analyze Spending**: Ask questions like "How much did I spend on food last month?"
+**View Insights**: Get summaries of your spending patterns
+**Set Goals**: Help you understand your financial habits
+
+Try asking me something like:
+- "How much did I spend last week?"
+- "What's my biggest expense category?"
+- "I bought coffee for $5 today"
+"""
+
+    # Goodbye responses
+    elif any(word in input_lower for word in ["bye", "goodbye", "see you"]):
+        responses = [
+            "Goodbye! Come back anytime for financial insights.",
+            "See you later! Keep tracking those expenses!",
+            "Bye! Your financial data is always here when you need it."
+        ]
+        response = responses[hash(user_input) % len(responses)]
+
+    # Default casual response
+    else:
+        responses = [
+            "I'm here to help with your financial tracking! You can ask me about your spending or add new transactions.",
+            "How can I assist you with your finances today?",
+            "Feel free to ask me about your spending patterns or add new transactions!"
+        ]
+        response = responses[hash(user_input) % len(responses)]
+
+    return {
+        "status": "success",
+        "response": response,
+        "conversation_context": {},
+        "transaction_processed": False
+    }
 
 
 async def _parse_natural_language_transaction(
@@ -1189,4 +1557,3 @@ async def _generate_conversational_response(
         response += "\n\nI already understood:\n" + "\n".join(understood)
 
     return response
-                    
