@@ -90,6 +90,38 @@ export default function SuggestionsPage() {
   const { auth } = useApp();
   const { formatAmount } = useCurrency();
 
+  // Helper function to replace hardcoded $ in descriptions with proper currency
+  const formatDescriptionCurrency = (description: string): string => {
+    if (!description) return description;
+    
+    // Match patterns like $18249.67, $2281.21, $1,234.56 (with or without commas)
+    // Changed \d{1,3} to \d+ to match any number of digits (handles $18249.67)
+    // \b ensures word boundary to prevent matching across multiple amounts
+    const currencyPattern = /\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)\b/g;
+    
+    let result = description;
+    const matches = [...description.matchAll(currencyPattern)];
+    
+    // Replace in reverse order to maintain correct string indices
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const fullMatch = match[0]; // e.g., "$18249.67"
+      const amount = match[1]; // e.g., "18249.67"
+      const index = match.index!;
+      
+      // Remove commas and parse the number
+      const numericValue = parseFloat(amount.replace(/,/g, ''));
+      
+      // Format with proper currency (e.g., "Rs. 18,249.67")
+      const formatted = formatAmount(numericValue);
+      
+      // Replace the match in the string
+      result = result.substring(0, index) + formatted + result.substring(index + fullMatch.length);
+    }
+    
+    return result;
+  };
+
   useEffect(() => {
     if (auth.isAuthenticated && auth.user) {
       loadSuggestions();
@@ -579,7 +611,7 @@ export default function SuggestionsPage() {
               <div className="bg-white/10 rounded-xl p-6 backdrop-blur-sm">
                 <h3 className="text-lg font-semibold mb-2">Potential Monthly Savings</h3>
                 <div className="text-3xl font-bold mb-2">
-                  ${combinedTotalSavings > 0 ? combinedTotalSavings.toFixed(2) : '0.00'}
+                  {formatAmount(combinedTotalSavings > 0 ? combinedTotalSavings : 0)}
                 </div>
                 <p className="text-sm text-purple-100">
                   From {suggestions.length + spendingSuggestions.length + savingsOpportunities.length} personalized suggestions
@@ -678,22 +710,22 @@ export default function SuggestionsPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Direct Savings</div>
-                <div className="text-2xl font-bold">${totalPotentialFromSuggestions.toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalPotentialFromSuggestions)}</div>
                 <div className="text-xs text-green-200">From {savingsFocusedSuggestions.length} suggestions</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Opportunities</div>
-                <div className="text-2xl font-bold">${totalSavingsOpportunities.toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalSavingsOpportunities)}</div>
                 <div className="text-xs text-green-200">From {filteredSavingsOpportunities.length} opportunities</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Total Monthly</div>
-                <div className="text-2xl font-bold">${(totalPotentialFromSuggestions + totalSavingsOpportunities).toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalPotentialFromSuggestions + totalSavingsOpportunities)}</div>
                 <div className="text-xs text-green-200">Combined potential</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Annual Impact</div>
-                <div className="text-2xl font-bold">${((totalPotentialFromSuggestions + totalSavingsOpportunities) * 12).toFixed(0)}</div>
+                <div className="text-2xl font-bold">{formatAmount((totalPotentialFromSuggestions + totalSavingsOpportunities) * 12)}</div>
                 <div className="text-xs text-green-200">Yearly projection</div>
               </div>
             </div>
@@ -730,7 +762,7 @@ export default function SuggestionsPage() {
                     .map(([category, data]) => (
                       <div key={category} className="bg-white/10 rounded-lg p-3">
                         <div className="text-xs text-green-100 font-medium capitalize mb-1">{category}</div>
-                        <div className="text-lg font-bold">${data.amount.toFixed(2)}</div>
+                        <div className="text-lg font-bold">{formatAmount(data.amount)}</div>
                         <div className="text-xs text-green-200">{data.count} item{data.count > 1 ? 's' : ''}</div>
                       </div>
                     ));
@@ -753,6 +785,7 @@ export default function SuggestionsPage() {
                   getTypeIcon={getTypeIcon}
                   getDifficultyColor={getDifficultyColor}
                   formatAmount={formatAmount}
+                  formatDescriptionCurrency={formatDescriptionCurrency}
                 />
               ))
             }
@@ -988,6 +1021,7 @@ function SuggestionCard({
   getTypeIcon,
   getDifficultyColor,
   formatAmount,
+  formatDescriptionCurrency,
 }: {
   suggestion: Suggestion;
   onFeedback: (id: string, rating: number, type: string) => void;
@@ -996,6 +1030,7 @@ function SuggestionCard({
   getTypeIcon: (type: SuggestionType) => React.ReactNode;
   getDifficultyColor: (difficulty: string) => string;
   formatAmount: (amount: number, includeSymbol?: boolean) => string;
+  formatDescriptionCurrency: (description: string) => string;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
@@ -1039,7 +1074,7 @@ function SuggestionCard({
 
         {/* Description */}
         <p className="text-slate-600 mb-4 leading-relaxed">
-          {suggestion.description}
+          {formatDescriptionCurrency(suggestion.description)}
         </p>
 
         {/* Metadata */}
@@ -1078,7 +1113,7 @@ function SuggestionCard({
                   if (metadata.current_spending) {
                     details.push(
                       <div key="current_spending" className="text-xs text-slate-700">
-                        <span className="font-medium">Current spending:</span> ${Number(metadata.current_spending).toFixed(2)}
+                        <span className="font-medium">Current spending:</span> {formatAmount(Number(metadata.current_spending))}
                       </div>
                     );
                   }
