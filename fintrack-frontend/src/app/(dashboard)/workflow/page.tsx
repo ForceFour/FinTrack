@@ -191,30 +191,38 @@ export default function WorkflowPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center space-x-3">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
-                  <PlayIcon className="w-8 h-8 text-white" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Hero Header Section */}
+        <div className="relative bg-white rounded-3xl shadow-2xl p-6 md:p-8 lg:p-10 border border-slate-200 overflow-hidden">
+          {/* Decorative Elements */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-indigo-400/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-purple-400/20 to-pink-400/20 rounded-full blur-3xl -ml-24 -mb-24"></div>
+          
+          <div className="relative z-10">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl blur-lg opacity-50 animate-pulse"></div>
+                    <div className="relative p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl shadow-lg">
+                      <PlayIcon className="w-8 h-8 text-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                      AI Workflow Monitor
+                    </h1>
+                  </div>
                 </div>
-                <div>
-                  <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                    Agent Workflow Monitor
-                  </h1>
-                  <p className="text-slate-600 mt-1 text-lg">
-                    Real-time monitoring of AI agent processing pipelines
-                  </p>
-                </div>
+                <p className="text-slate-600 text-base md:text-lg leading-relaxed max-w-3xl">
+                  Real-time monitoring of AI agent processing pipelines and transaction workflows
+                </p>
               </div>
-            </div>
-            <div className="hidden md:flex space-x-3">
+              
               <button
                 onClick={loadWorkflowData}
-                className="px-6 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-all font-medium flex items-center space-x-2"
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl hover:from-blue-600 hover:to-indigo-700 transition-all font-medium flex items-center space-x-2 shadow-lg hover:shadow-xl"
               >
                 <ArrowPathIcon className="w-5 h-5" />
                 <span>Refresh</span>
@@ -224,49 +232,57 @@ export default function WorkflowPage() {
         </div>
 
         {/* Workflow Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
-            <div className="flex items-center">
-              <CheckCircleIcon className="h-8 w-8 text-green-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Completed</p>
-                <p className="text-2xl font-bold text-slate-900">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+          <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-200 hover:shadow-2xl transition-shadow">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl shadow-lg">
+                <CheckCircleIcon className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Completed</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                   {statistics.completed}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
-            <div className="flex items-center">
-              <PlayIcon className="h-8 w-8 text-blue-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Processing</p>
-                <p className="text-2xl font-bold text-slate-900">
+          <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-200 hover:shadow-2xl transition-shadow">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl shadow-lg">
+                <PlayIcon className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Processing</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                   {statistics.processing}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
-            <div className="flex items-center">
-              <ClockIcon className="h-8 w-8 text-yellow-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Pending</p>
-                <p className="text-2xl font-bold text-slate-900">
+          <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-200 hover:shadow-2xl transition-shadow">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-xl shadow-lg">
+                <ClockIcon className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Pending</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent">
                   {statistics.pending}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
-            <div className="flex items-center">
-              <XCircleIcon className="h-8 w-8 text-red-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-slate-600">Failed</p>
-                <p className="text-2xl font-bold text-slate-900">
+          <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-200 hover:shadow-2xl transition-shadow">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-red-500 to-pink-500 rounded-xl shadow-lg">
+                <XCircleIcon className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Failed</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent">
                   {statistics.failed}
                 </p>
               </div>
@@ -277,34 +293,39 @@ export default function WorkflowPage() {
         {/* Active Workflows and Processing History - Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Active Workflows */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-900">Active Workflows</h3>
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-200">
+            <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h3 className="text-xl font-bold text-slate-900">Active Workflows</h3>
+              <p className="text-sm text-slate-600 mt-1">Currently processing transactions</p>
             </div>
-            <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
               {workflows.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  No active workflows found. Upload transactions to start processing.
+                <div className="p-12 text-center">
+                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex items-center justify-center mb-4">
+                    <PlayIcon className="h-8 w-8 text-slate-400" />
+                  </div>
+                  <p className="text-slate-500 font-medium">No active workflows found</p>
+                  <p className="text-sm text-slate-400 mt-1">Upload transactions to start processing</p>
                 </div>
               ) : (
                 workflows.map((workflow) => (
-                  <div key={workflow.workflow_id} className="p-6 hover:bg-slate-50">
+                  <div key={workflow.workflow_id} className="p-6 hover:bg-gradient-to-r hover:from-blue-50 hover:to-transparent transition-all">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         {getStatusIcon(workflow.status)}
                         <div>
-                          <div className="font-medium text-slate-900">
+                          <div className="font-semibold text-slate-900">
                             {workflow.workflow_id.substring(0, 16)}...
                           </div>
-                          <div className="text-sm text-slate-500">
-                            Current Agent: {workflow.current_agent || "Initializing"}
+                          <div className="text-sm text-slate-500 mt-1">
+                            Current Agent: <span className="font-medium text-slate-700">{workflow.current_agent || "Initializing"}</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
                           <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm ${getStatusColor(
                               workflow.status
                             )}`}
                           >
@@ -312,13 +333,13 @@ export default function WorkflowPage() {
                           </span>
                         </div>
                         <div className="w-48">
-                          <div className="flex justify-between text-xs text-slate-600 mb-1">
+                          <div className="flex justify-between text-xs font-medium text-slate-600 mb-1.5">
                             <span>Progress</span>
-                            <span>{workflow.progress}%</span>
+                            <span className="text-blue-600">{workflow.progress}%</span>
                           </div>
-                          <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="w-full bg-slate-200 rounded-full h-2.5 shadow-inner">
                             <div
-                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2.5 rounded-full transition-all shadow-sm"
                               style={{ width: `${workflow.progress}%` }}
                             ></div>
                           </div>
@@ -326,14 +347,14 @@ export default function WorkflowPage() {
                       </div>
                     </div>
                     <div className="mt-4 flex justify-between text-sm text-slate-500">
-                      <span>Started: {formatTimestamp(workflow.start_time)}</span>
-                      <span>Duration: {formatDuration(workflow.start_time, workflow.end_time)}</span>
+                      <span>Started: <span className="font-medium text-slate-700">{formatTimestamp(workflow.start_time)}</span></span>
+                      <span>Duration: <span className="font-medium text-slate-700">{formatDuration(workflow.start_time, workflow.end_time)}</span></span>
                     </div>
                     {workflow.result && (
-                      <div className="mt-3 flex gap-4 text-xs text-slate-600">
-                        <span>Transactions: {workflow.result.transactions_processed}</span>
-                        <span>Insights: {workflow.result.insights_generated}</span>
-                        <span>Suggestions: {workflow.result.suggestions_count}</span>
+                      <div className="mt-3 flex gap-4 text-xs">
+                        <span className="text-slate-600">Transactions: <span className="font-semibold text-slate-900">{workflow.result.transactions_processed}</span></span>
+                        <span className="text-slate-600">Insights: <span className="font-semibold text-slate-900">{workflow.result.insights_generated}</span></span>
+                        <span className="text-slate-600">Suggestions: <span className="font-semibold text-slate-900">{workflow.result.suggestions_count}</span></span>
                       </div>
                     )}
                   </div>
@@ -343,45 +364,52 @@ export default function WorkflowPage() {
           </div>
 
           {/* Processing History */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
-            <div className="p-6 border-b border-slate-200">
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-200">
+            <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-pink-50">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-900">Processing History</h3>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Processing History</h3>
+                  <p className="text-sm text-slate-600 mt-1">Recent transaction processing</p>
+                </div>
                 <button
                   onClick={loadWorkflowData}
-                  className="flex items-center px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+                  className="flex items-center px-3 py-2 text-sm bg-white hover:bg-slate-50 rounded-xl transition-colors shadow-sm border border-slate-200"
                 >
                   <ArrowPathIcon className="h-4 w-4 mr-1" />
                   Refresh
                 </button>
               </div>
             </div>
-            <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
               {processingLogs.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  No processing history available.
+                <div className="p-12 text-center">
+                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl flex items-center justify-center mb-4">
+                    <ClockIcon className="h-8 w-8 text-purple-400" />
+                  </div>
+                  <p className="text-slate-500 font-medium">No processing history available</p>
+                  <p className="text-sm text-slate-400 mt-1">Completed workflows will appear here</p>
                 </div>
               ) : (
                 processingLogs.map((log, index) => (
-                  <div key={index} className="p-4 hover:bg-slate-50">
+                  <div key={index} className="p-4 hover:bg-gradient-to-r hover:from-purple-50 hover:to-transparent transition-all">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         {getStatusIcon(log.status)}
                         <div>
-                          <div className="font-medium text-slate-900">
+                          <div className="font-semibold text-slate-900">
                             {log.source_name || log.file || "Unknown Source"}
                           </div>
-                          <div className="text-sm text-slate-500">
+                          <div className="text-sm text-slate-500 mt-1">
                             {formatTimestamp(log.timestamp)}
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-medium text-slate-700">
+                        <div className="text-sm font-semibold text-slate-700 mb-1">
                           {log.transactions} transactions
                         </div>
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                          className={`px-2 py-1 rounded-xl text-xs font-semibold shadow-sm ${getStatusColor(
                             log.status
                           )}`}
                         >
@@ -397,10 +425,10 @@ export default function WorkflowPage() {
         </div>
 
         {/* Agent Communication Log */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900">Agent Communication</h3>
-            <p className="text-sm text-slate-500 mt-1">Real-time agent interactions grouped by workflow</p>
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200">
+          <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-teal-50">
+            <h3 className="text-xl font-bold text-slate-900">Agent Communication</h3>
+            <p className="text-sm text-slate-600 mt-1">Real-time agent interactions grouped by workflow</p>
           </div>
           <div className="p-6">
             {communications.length > 0 ? (
@@ -416,28 +444,28 @@ export default function WorkflowPage() {
                   }, {} as Record<string, typeof communications>);
 
                   return Object.entries(grouped).map(([workflowId, comms]) => (
-                    <div key={workflowId} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-300">
+                    <div key={workflowId} className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-4 border border-slate-200 shadow-sm">
+                      <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-300">
                         <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          <span className="font-semibold text-slate-700">
+                          <div className="w-2.5 h-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
+                          <span className="font-bold text-slate-700">
                             Workflow {workflowId}
                           </span>
                         </div>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded-lg">
                           {comms.length} {comms.length === 1 ? 'stage' : 'stages'}
                         </span>
                       </div>
-                      <div className="space-y-1 font-mono text-xs">
+                      <div className="space-y-1.5 font-mono text-xs">
                         {comms
                           .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
                           .map((comm, index) => (
                             <div
                               key={`${comm.workflow_id}-${comm.stage}-${index}`}
-                              className={`${getCommunicationStatusColor(comm.status)} py-1`}
+                              className={`${getCommunicationStatusColor(comm.status)} py-1.5 px-2 rounded-lg`}
                             >
                               <span className="text-slate-400">[{formatTimestamp(comm.timestamp)}]</span>{" "}
-                              <span className="font-semibold">{comm.agent}:</span> {comm.message}
+                              <span className="font-bold text-slate-700">{comm.agent}:</span> <span className="text-slate-600">{comm.message}</span>
                             </div>
                           ))}
                       </div>
@@ -446,8 +474,12 @@ export default function WorkflowPage() {
                 })()}
               </div>
             ) : (
-              <div className="bg-slate-50 rounded-lg p-8 text-center">
-                <p className="text-slate-500">No agent communications yet. Upload transactions to see real-time agent interactions.</p>
+              <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-12 text-center border border-slate-200">
+                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center mb-4">
+                  <ExclamationTriangleIcon className="h-8 w-8 text-emerald-400" />
+                </div>
+                <p className="text-slate-500 font-medium">No agent communications yet</p>
+                <p className="text-sm text-slate-400 mt-1">Upload transactions to see real-time agent interactions</p>
               </div>
             )}
           </div>
