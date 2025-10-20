@@ -1470,10 +1470,10 @@ export default function AnalyticsPage() {
 
             {/* Income vs Expenses Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Types (Count)</h3>
                 <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
+                  <PieChart margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
                     <Pie
                       data={[
                         { name: 'Income', value: transactions.filter(tx => tx.amount > 0).length, fill: '#10B981' },
@@ -1485,6 +1485,7 @@ export default function AnalyticsPage() {
                       fill="#8884d8"
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      style={{ fontSize: '14px', fontWeight: '500' }}
                     >
                       <Cell fill="#10B981" />
                       <Cell fill="#EF4444" />
@@ -1494,10 +1495,10 @@ export default function AnalyticsPage() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Types (Amount)</h3>
                 <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
+                  <PieChart margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
                     <Pie
                       data={[
                         { name: 'Income', value: displayData.totalIncome, fill: '#10B981' },
@@ -1509,6 +1510,7 @@ export default function AnalyticsPage() {
                       fill="#8884d8"
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      style={{ fontSize: '14px', fontWeight: '500' }}
                     >
                       <Cell fill="#10B981" />
                       <Cell fill="#EF4444" />
@@ -1518,13 +1520,16 @@ export default function AnalyticsPage() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Income vs Expenses</h3>
                 <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={[
-                    { type: 'Income', amount: displayData.totalIncome },
-                    { type: 'Expenses', amount: displayData.totalExpenses }
-                  ]}>
+                  <BarChart 
+                    data={[
+                      { type: 'Income', amount: displayData.totalIncome },
+                      { type: 'Expenses', amount: displayData.totalExpenses }
+                    ]}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="type" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1539,7 +1544,10 @@ export default function AnalyticsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Financial Flow</h3>
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={displayData.monthlyData}>
+                <BarChart 
+                  data={displayData.monthlyData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1561,7 +1569,10 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Spending by Day of Week</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.weeklyPattern}>
+                  <BarChart 
+                    data={displayData.weeklyPattern}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1574,7 +1585,10 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Distribution by Category</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.categoryData.slice(0, 8)}>
+                  <BarChart 
+                    data={displayData.categoryData.slice(0, 8)}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="category"
@@ -1597,12 +1611,12 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Distribution</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
+                  <PieChart margin={{ top: 25, right: 35, bottom: 25, left: 35 }}>
                     <Pie
                       data={displayData.categoryData.slice(0, 6)}
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
+                      outerRadius={85}
                       fill="#8884d8"
                       dataKey="amount"
                       label={({ category, percentage }) => `${category}: ${percentage.toFixed(1)}%`}
@@ -1646,9 +1660,20 @@ export default function AnalyticsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Spending Trends with Moving Averages</h3>
               <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={displayData.dailyData}>
+                <LineChart 
+                  data={displayData.dailyData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} />
+                  <XAxis 
+                    dataKey="date" 
+                    tickFormatter={(date, index) => {
+                      // Skip the first tick (starting date)
+                      if (index === 0) return '';
+                      return format(new Date(date), 'MMM dd');
+                    }}
+                    minTickGap={30}
+                  />
                   <YAxis tickFormatter={formatCurrencyCompact} />
                   <Tooltip
                     labelFormatter={(date) => format(new Date(date), 'PPP')}
@@ -1667,9 +1692,20 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Pattern</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={displayData.monthlyData}>
+                  <LineChart 
+                    data={displayData.monthlyData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
+                    <XAxis 
+                      dataKey="month" 
+                      tickFormatter={(month, index) => {
+                        // Skip the first tick (starting month)
+                        if (index === 0) return '';
+                        return month;
+                      }}
+                      minTickGap={20}
+                    />
                     <YAxis tickFormatter={formatCurrencyCompact} />
                     <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Expenses']} />
                     <Line type="monotone" dataKey="expenses" stroke="#10B981" strokeWidth={3} />
@@ -1680,7 +1716,10 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Weekly Spending Pattern</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.weeklyPattern}>
+                  <BarChart 
+                    data={displayData.weeklyPattern}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" />
                     <YAxis tickFormatter={formatCurrencyCompact} />
@@ -1700,7 +1739,10 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Merchants by Spending</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={displayData.merchantData.slice(0, 8)}>
+                  <BarChart 
+                    data={displayData.merchantData.slice(0, 8)}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="merchant"
@@ -1901,25 +1943,29 @@ export default function AnalyticsPage() {
               </div>
 
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={[
-                  // Only show last 30 days of actual data (from 30 days ago to today)
-                  ...displayData.dailyData.filter(d => {
-                    const dataDate = new Date(d.date);
-                    const thirtyDaysAgo = subDays(new Date(), 30);
-                    const today = new Date();
-                    return dataDate >= thirtyDaysAgo && dataDate <= today;
-                  }),
-                  // Future predictions (next 30 days)
-                  ...Array.from({ length: 30 }, (_, i) => ({
-                    date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
-                    amount: displayData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
-                    ma7: 0,
-                    ma30: 0,
-                    predicted: true
-                  }))
-                ]}>
+                <AreaChart 
+                  data={[
+                    // Future predictions only (next 30 days from current date)
+                    ...Array.from({ length: 31 }, (_, i) => ({
+                      date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
+                      amount: displayData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
+                      ma7: 0,
+                      ma30: 0,
+                      predicted: true
+                    }))
+                  ]}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} />
+                  <XAxis 
+                    dataKey="date" 
+                    tickFormatter={(date, index) => {
+                      // Skip the first tick (starting date)
+                      if (index === 0) return '';
+                      return format(new Date(date), 'MMM dd');
+                    }}
+                    minTickGap={30}
+                  />
                   <YAxis tickFormatter={formatCurrencyCompact} />
                   <Tooltip
                     labelFormatter={(date) => format(new Date(date), 'PPP')}
