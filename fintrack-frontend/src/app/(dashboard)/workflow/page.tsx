@@ -9,90 +9,91 @@ import {
   XCircleIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
-
-interface WorkflowStatus {
-  workflow_id: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  current_agent?: string;
-  progress: number;
-  start_time: string;
-  end_time?: string;
-  result?: Record<string, unknown>;
-}
-
-interface ProcessingLog {
-  timestamp: string;
-  file: string;
-  transactions: number;
-  status: string;
-  workflow_id?: string;
-}
+import { apiClient } from "@/lib/api-client";
+import { supabase } from "@/lib/supabase";
+import type {
+  WorkflowStatusData,
+  ProcessingLog,
+  WorkflowStatistics,
+  WorkflowStatisticsResponse,
+  ActiveWorkflowsResponse,
+  WorkflowHistoryResponse,
+  AgentCommunication,
+  AgentCommunicationsResponse,
+} from "@/lib/types/workflow";
 
 export default function WorkflowPage() {
-  const [workflows, setWorkflows] = useState<WorkflowStatus[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowStatusData[]>([]);
   const [processingLogs, setProcessingLogs] = useState<ProcessingLog[]>([]);
+  const [communications, setCommunications] = useState<AgentCommunication[]>([]);
+  const [statistics, setStatistics] = useState<WorkflowStatistics>({
+    total: 0,
+    completed: 0,
+    processing: 0,
+    pending: 0,
+    failed: 0,
+  });
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadWorkflowData();
-    // Set up polling for real-time updates
-    const interval = setInterval(loadWorkflowData, 5000);
-    return () => clearInterval(interval);
+    initializeUser();
   }, []);
 
-  const loadWorkflowData = async () => {
+  useEffect(() => {
+    if (userId) {
+      loadWorkflowData();
+      // Set up polling for real-time updates
+      const interval = setInterval(loadWorkflowData, 5000);
+      return () => clearInterval(interval);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const initializeUser = async () => {
     try {
-      // Load workflow statistics (using mock data for now)
-      // const statsResponse = await apiClient.request("/workflow/statistics");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    } catch (error) {
+      console.error("Failed to get user:", error);
+    }
+  };
 
-      // Mock workflow data
-      const mockWorkflows: WorkflowStatus[] = [
-        {
-          workflow_id: "wf_001",
-          status: "completed",
-          current_agent: "safety_guard",
-          progress: 100,
-          start_time: new Date(Date.now() - 300000).toISOString(),
-          end_time: new Date().toISOString(),
-          result: { transactions_processed: 150, insights_generated: 12 }
-        },
-        {
-          workflow_id: "wf_002",
-          status: "processing",
-          current_agent: "pattern_analyzer",
-          progress: 75,
-          start_time: new Date(Date.now() - 120000).toISOString(),
-          result: { transactions_processed: 89 }
-        }
-      ];
-      setWorkflows(mockWorkflows);
+  const loadWorkflowData = async () => {
+    if (!userId) return;
 
-      // Load processing logs (mock data for now)
-      const mockLogs: ProcessingLog[] = [
-        {
-          timestamp: new Date(Date.now() - 300000).toISOString(),
-          file: "transactions_january.csv",
-          transactions: 150,
-          status: "completed",
-          workflow_id: "wf_001"
-        },
-        {
-          timestamp: new Date(Date.now() - 120000).toISOString(),
-          file: "bank_statement_feb.xlsx",
-          transactions: 89,
-          status: "processing",
-          workflow_id: "wf_002"
-        },
-        {
-          timestamp: new Date(Date.now() - 86400000).toISOString(),
-          file: "credit_card_dec.csv",
-          transactions: 234,
-          status: "completed",
-          workflow_id: "wf_003"
-        }
-      ];
-      setProcessingLogs(mockLogs);
+    try {
+      // Load workflow statistics
+      const statsResponse = await apiClient.getWorkflowStatistics(userId);
+      if (statsResponse.status === "success" && statsResponse.data) {
+        const data = statsResponse.data as WorkflowStatisticsResponse;
+        setStatistics(data.statistics);
+      }
 
+      // Load active workflows
+      const workflowsResponse = await apiClient.getActiveWorkflows(userId, 10);
+      if (workflowsResponse.status === "success" && workflowsResponse.data) {
+        const data = workflowsResponse.data as ActiveWorkflowsResponse;
+        setWorkflows(data.workflows);
+      }
+
+      // Load processing history
+      const historyResponse = await apiClient.getWorkflowHistory(userId, 20);
+      if (historyResponse.status === "success" && historyResponse.data) {
+        const data = historyResponse.data as WorkflowHistoryResponse;
+        setProcessingLogs(data.history);
+      }
+
+      // Load agent communications
+      const commsResponse = await apiClient.getAgentCommunications(userId, 50);
+      if (commsResponse.status === "success" && commsResponse.data) {
+        const data = commsResponse.data as AgentCommunicationsResponse;
+        setCommunications(data.communications);
+      }
     } catch (error) {
       console.error("Failed to load workflow data:", error);
     } finally {
@@ -130,6 +131,24 @@ export default function WorkflowPage() {
     }
   };
 
+  const getCommunicationStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "success":
+      case "completed":
+        return "text-green-600";
+      case "info":
+      case "processing":
+        return "text-blue-600";
+      case "warning":
+        return "text-orange-600";
+      case "error":
+      case "failed":
+        return "text-red-600";
+      default:
+        return "text-purple-600";
+    }
+  };
+
   const formatDuration = (start: string, end?: string) => {
     const startTime = new Date(start);
     const endTime = end ? new Date(end) : new Date();
@@ -143,12 +162,28 @@ export default function WorkflowPage() {
     return `${seconds}s`;
   };
 
+  const formatTimestamp = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <p className="text-slate-600">Please log in to view workflows</p>
           </div>
         </div>
       </div>
@@ -196,7 +231,7 @@ export default function WorkflowPage() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-slate-600">Completed</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {workflows.filter(w => w.status === "completed").length}
+                  {statistics.completed}
                 </p>
               </div>
             </div>
@@ -208,7 +243,7 @@ export default function WorkflowPage() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-slate-600">Processing</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {workflows.filter(w => w.status === "processing").length}
+                  {statistics.processing}
                 </p>
               </div>
             </div>
@@ -220,7 +255,7 @@ export default function WorkflowPage() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-slate-600">Pending</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {workflows.filter(w => w.status === "pending").length}
+                  {statistics.pending}
                 </p>
               </div>
             </div>
@@ -232,88 +267,132 @@ export default function WorkflowPage() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-slate-600">Failed</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {workflows.filter(w => w.status === "failed").length}
+                  {statistics.failed}
                 </p>
               </div>
             </div>
           </div>
-        </div>      {/* Active Workflows */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900">Active Workflows</h3>
-          </div>
-          <div className="divide-y divide-slate-200">
-            {workflows.map((workflow) => (
-              <div key={workflow.workflow_id} className="p-6 hover:bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    {getStatusIcon(workflow.status)}
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">
-                        Workflow {workflow.workflow_id}
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        {workflow.current_agent ? `Current: ${workflow.current_agent.replace('_', ' ')}` : 'Initializing...'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <div className="w-24 bg-slate-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${workflow.progress}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">{workflow.progress}%</p>
-                    </div>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(workflow.status)}`}>
-                      {workflow.status}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-4 flex justify-between text-sm text-slate-500">
-                  <span>Started: {new Date(workflow.start_time).toLocaleString()}</span>
-                  <span>Duration: {formatDuration(workflow.start_time, workflow.end_time)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
 
-        {/* Processing Log */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Processing History</h3>
-              <button
-                onClick={loadWorkflowData}
-                className="flex items-center px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-              >
-                <ArrowPathIcon className="h-4 w-4 mr-1" />
-                Refresh
-              </button>
+        {/* Active Workflows and Processing History - Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Active Workflows */}
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-900">Active Workflows</h3>
+            </div>
+            <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+              {workflows.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  No active workflows found. Upload transactions to start processing.
+                </div>
+              ) : (
+                workflows.map((workflow) => (
+                  <div key={workflow.workflow_id} className="p-6 hover:bg-slate-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(workflow.status)}
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {workflow.workflow_id.substring(0, 16)}...
+                          </div>
+                          <div className="text-sm text-slate-500">
+                            Current Agent: {workflow.current_agent || "Initializing"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              workflow.status
+                            )}`}
+                          >
+                            {workflow.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="w-48">
+                          <div className="flex justify-between text-xs text-slate-600 mb-1">
+                            <span>Progress</span>
+                            <span>{workflow.progress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              style={{ width: `${workflow.progress}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-between text-sm text-slate-500">
+                      <span>Started: {formatTimestamp(workflow.start_time)}</span>
+                      <span>Duration: {formatDuration(workflow.start_time, workflow.end_time)}</span>
+                    </div>
+                    {workflow.result && (
+                      <div className="mt-3 flex gap-4 text-xs text-slate-600">
+                        <span>Transactions: {workflow.result.transactions_processed}</span>
+                        <span>Insights: {workflow.result.insights_generated}</span>
+                        <span>Suggestions: {workflow.result.suggestions_count}</span>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <div className="divide-y divide-slate-200">
-            {processingLogs.map((log, index) => (
-              <div key={index} className="p-4 hover:bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    {getStatusIcon(log.status)}
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">{log.file}</p>
-                      <p className="text-sm text-slate-500">
-                        {log.transactions} transactions • {new Date(log.timestamp).toLocaleString()}
-                      </p>
+
+          {/* Processing History */}
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900">Processing History</h3>
+                <button
+                  onClick={loadWorkflowData}
+                  className="flex items-center px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+                >
+                  <ArrowPathIcon className="h-4 w-4 mr-1" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+              {processingLogs.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  No processing history available.
+                </div>
+              ) : (
+                processingLogs.map((log, index) => (
+                  <div key={index} className="p-4 hover:bg-slate-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(log.status)}
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {log.source_name || log.file || "Unknown Source"}
+                          </div>
+                          <div className="text-sm text-slate-500">
+                            {formatTimestamp(log.timestamp)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-slate-700">
+                          {log.transactions} transactions
+                        </div>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            log.status
+                          )}`}
+                        >
+                          {log.status.toUpperCase()}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(log.status)}`}>
-                    {log.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+                ))
+              )}
+            </div>
           </div>
         </div>
 
@@ -323,28 +402,24 @@ export default function WorkflowPage() {
             <h3 className="text-lg font-semibold text-slate-900">Agent Communication</h3>
           </div>
           <div className="p-6">
-            <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm">
-              <div className="space-y-2">
-                <div className="text-green-600">
-                  [2025-10-08 13:45:23] Ingestion → NER/Merchant: Processed 150 transactions successfully
-                </div>
-                <div className="text-blue-600">
-                  [2025-10-08 13:45:24] NER/Merchant → Classifier: Identified 45 unique merchants
-                </div>
-                <div className="text-purple-600">
-                  [2025-10-08 13:45:26] Classifier → Pattern Analyzer: Categorized into 12 transaction types
-                </div>
-                <div className="text-orange-600">
-                  [2025-10-08 13:45:28] Pattern Analyzer → Suggestion: Detected 8 spending patterns
-                </div>
-                <div className="text-indigo-600">
-                  [2025-10-08 13:45:30] Suggestion → Safety Guard: Generated 5 personalized recommendations
-                </div>
-                <div className="text-green-600">
-                  [2025-10-08 13:45:32] Safety Guard → System: Security validation passed - no anomalies detected
+            {communications.length > 0 ? (
+              <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
+                <div className="space-y-2">
+                  {communications.map((comm, index) => (
+                    <div
+                      key={`${comm.workflow_id}-${comm.timestamp}-${index}`}
+                      className={getCommunicationStatusColor(comm.status)}
+                    >
+                      [{formatTimestamp(comm.timestamp)}] {comm.agent}: {comm.message}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-slate-50 rounded-lg p-8 text-center">
+                <p className="text-slate-500">No agent communications yet. Upload transactions to see real-time agent interactions.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

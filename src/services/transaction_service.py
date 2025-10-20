@@ -43,8 +43,14 @@ class TransactionService:
 
         return mapped
 
-    async def process_uploaded_transactions(self, df: pd.DataFrame, user_id: str) -> Dict[str, int]:
-        """Process uploaded transaction file through the unified workflow pipeline AND save to database"""
+    async def process_uploaded_transactions(self, df: pd.DataFrame, user_id: str, source_name: str = None) -> Dict[str, int]:
+        """Process uploaded transaction file through the unified workflow pipeline AND save to database
+        
+        Args:
+            df: DataFrame containing transaction data
+            user_id: User identifier
+            source_name: Name of the source file or chat title (optional)
+        """
         from ..agents.ingestion_agent import IngestionAgent, IngestionAgentInput
         from ..workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode
 
@@ -100,6 +106,7 @@ class TransactionService:
                     mode=WorkflowMode.FULL_PIPELINE,
                     raw_transactions=raw_transactions,
                     user_id=user_id,
+                    source_name=source_name,  # Pass source name to workflow
                     conversation_context={
                         'user_preferences': user_preferences
                     }
@@ -541,11 +548,16 @@ class TransactionService:
             # Initialize unified workflow
             workflow = UnifiedTransactionWorkflow()
 
+            # Generate source name for chat input
+            chat_preview = text[:50] + "..." if len(text) > 50 else text
+            source_name = f"Chat: {chat_preview}"
+
             # Execute workflow with quick classification mode for conversational input
             result = await workflow.execute_workflow(
                 mode=WorkflowMode.QUICK_CLASSIFICATION,
                 user_input=text,
-                user_id=user_id
+                user_id=user_id,
+                source_name=source_name
             )
 
             if result['status'] == 'success':

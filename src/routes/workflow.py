@@ -11,6 +11,7 @@ from datetime import datetime
 from ..workflows.unified_workflow import UnifiedTransactionWorkflow, get_workflow_instance
 from ..workflows.config import WorkflowMode, get_workflow_config
 from ..schemas.transaction_schemas import RawTransaction
+from ..services.workflow_service import get_workflow_service
 
 logger = logging.getLogger(__name__)
 
@@ -455,6 +456,157 @@ async def unified_workflow_health_check():
             "workflow_initialized": False,
             "timestamp": datetime.now().isoformat()
         }
+
+
+# ========================================
+# Workflow Monitoring Endpoints
+# ========================================
+
+@workflow_router.get("/statistics/{user_id}")
+async def get_workflow_statistics(user_id: str):
+    """
+    Get workflow statistics for a specific user
+    Returns counts of workflows by status
+    """
+    try:
+        workflow_service = get_workflow_service()
+        stats = workflow_service.get_workflow_statistics(user_id)
+
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "statistics": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get workflow statistics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get workflow statistics: {str(e)}"
+        )
+
+
+@workflow_router.get("/active/{user_id}")
+async def get_active_workflows(
+    user_id: str,
+    limit: int = 10
+):
+    """
+    Get active workflows for a specific user
+    Returns workflows that are pending, processing, or recently completed
+    """
+    try:
+        workflow_service = get_workflow_service()
+        workflows = workflow_service.get_active_workflows(user_id, limit)
+
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "workflows": workflows,
+            "count": len(workflows),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get active workflows: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get active workflows: {str(e)}"
+        )
+
+
+@workflow_router.get("/history/{user_id}")
+async def get_workflow_history(
+    user_id: str,
+    limit: int = 20
+):
+    """
+    Get workflow processing history for a specific user
+    Returns processing logs of recent workflows
+    """
+    try:
+        workflow_service = get_workflow_service()
+        history = workflow_service.get_workflow_history(user_id, limit)
+
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "history": history,
+            "count": len(history),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get workflow history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get workflow history: {str(e)}"
+        )
+
+
+@workflow_router.get("/detail/{workflow_id}/{user_id}")
+async def get_workflow_detail(
+    workflow_id: str,
+    user_id: str
+):
+    """
+    Get detailed information about a specific workflow
+    """
+    try:
+        workflow_service = get_workflow_service()
+        workflow = workflow_service.get_workflow_by_id(workflow_id, user_id)
+
+        if not workflow:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow {workflow_id} not found for user {user_id}"
+            )
+
+        return {
+            "status": "success",
+            "workflow": workflow,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get workflow detail: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get workflow detail: {str(e)}"
+        )
+
+
+@workflow_router.get("/communications/{user_id}")
+async def get_agent_communications(
+    user_id: str,
+    limit: int = 50
+):
+    """
+    Get agent communication logs for a specific user
+    Returns processing history showing agent interactions
+    """
+    try:
+        workflow_service = get_workflow_service()
+        communications = workflow_service.get_agent_communications(user_id, limit)
+
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "communications": communications,
+            "count": len(communications),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get agent communications: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get agent communications: {str(e)}"
+        )
+
 
 # Export the router
 router = workflow_router

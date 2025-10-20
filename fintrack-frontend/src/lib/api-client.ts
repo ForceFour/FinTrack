@@ -339,6 +339,27 @@ class APIClient {
     return this.request("/agents/performance");
   }
 
+  // Workflow Monitoring Endpoints
+  async getWorkflowStatistics(userId: string) {
+    return this.request(`/workflow/statistics/${userId}`);
+  }
+
+  async getActiveWorkflows(userId: string, limit: number = 10) {
+    return this.request(`/workflow/active/${userId}?limit=${limit}`);
+  }
+
+  async getWorkflowHistory(userId: string, limit: number = 20) {
+    return this.request(`/workflow/history/${userId}?limit=${limit}`);
+  }
+
+  async getWorkflowDetail(workflowId: string, userId: string) {
+    return this.request(`/workflow/detail/${workflowId}/${userId}`);
+  }
+
+  async getAgentCommunications(userId: string, limit: number = 50) {
+    return this.request(`/workflow/communications/${userId}?limit=${limit}`);
+  }
+
   // Conversational Transaction Entry
   async processNaturalLanguageTransaction(
     userInput: string,
