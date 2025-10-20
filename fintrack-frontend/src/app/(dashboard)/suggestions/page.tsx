@@ -173,7 +173,8 @@ export default function SuggestionsPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         data.suggestions.forEach((suggestion: any) => {
           allSuggestions.push({
-            id: `suggestion_${suggestion.workflow_id}_${Math.random().toString(36).substr(2, 9)}`,
+                        // Use backend-provided ID if available, otherwise generate consistent ID
+            id: suggestion.id || `suggestion_${suggestion.workflow_id}_${generateConsistentId(suggestion)}`,
             type: mapSuggestionType(suggestion.suggestion_type),
             title: suggestion.title || suggestion.category || "Financial Suggestion",
             description: suggestion.description || suggestion.message || "",
@@ -254,6 +255,30 @@ export default function SuggestionsPage() {
     setLoading(false);
   };
 
+  const generateConsistentId = (suggestion: any): string => {
+    // Generate consistent ID based on suggestion content
+    const contentFields = [
+      suggestion.title || "",
+      suggestion.description || "",
+      suggestion.category || "",
+      suggestion.suggestion_type || "",
+      String(suggestion.potential_savings || 0),
+      String(suggestion.potential_monthly_savings || 0)
+    ];
+    
+    const contentString = contentFields.join("|").toLowerCase();
+    
+    // Simple hash function for consistency (not for security)
+    let hash = 0;
+    for (let i = 0; i < contentString.length; i++) {
+      const char = contentString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    return Math.abs(hash).toString(36);
+  };
+  
   const mapSuggestionType = (backendType: string): SuggestionType => {
     const typeMap: Record<string, SuggestionType> = {
       'budget_adjustment': 'budget',
@@ -629,11 +654,6 @@ export default function SuggestionsPage() {
               active={selectedFilter === "budget"}
               onClick={() => setSelectedFilter("budget")}
             />
-            <FilterTab
-              label="Goals"
-              active={selectedFilter === "goal"}
-              onClick={() => setSelectedFilter("goal")}
-            />
           </div>
         </div>
 
@@ -735,362 +755,6 @@ export default function SuggestionsPage() {
             }
           </div>
         )}
-
-        {/* Savings Goals & Milestones Section - Moved to Goals tab */}
-        {selectedFilter === "goal" && (
-          <div className="space-y-8">
-            {/* Main Header Card */}
-            <div className="bg-gradient-to-br from-purple-600 via-indigo-600 to-blue-600 rounded-3xl shadow-2xl p-10 text-white">
-              <div className="flex items-center mb-6">
-                <div className="p-4 bg-white/20 rounded-2xl shadow-lg mr-5 backdrop-blur-sm">
-                  <ArrowTrendingUpIcon className="w-10 h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-4xl font-bold mb-2">Financial Goals & Milestones</h2>
-                  <p className="text-purple-100 text-lg">Strategic planning for your financial future and wealth building journey</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                <div className="bg-white/10 rounded-xl p-5 backdrop-blur-sm border border-white/20">
-                  <div className="text-3xl font-bold mb-2">${(totalPotentialFromSuggestions + totalSavingsOpportunities).toFixed(2)}</div>
-                  <div className="text-sm text-purple-100">Monthly Savings Potential</div>
-                </div>
-                <div className="bg-white/10 rounded-xl p-5 backdrop-blur-sm border border-white/20">
-                  <div className="text-3xl font-bold mb-2">${((totalPotentialFromSuggestions + totalSavingsOpportunities) * 12).toFixed(0)}</div>
-                  <div className="text-sm text-purple-100">Yearly Accumulation</div>
-                </div>
-                <div className="bg-white/10 rounded-xl p-5 backdrop-blur-sm border border-white/20">
-                  <div className="text-3xl font-bold mb-2">3</div>
-                  <div className="text-sm text-purple-100">Active Savings Goals</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Emergency Fund Builder - Expanded */}
-            <div className="bg-white rounded-3xl shadow-xl p-10 border-2 border-indigo-100">
-              <div className="flex items-center mb-8">
-                <div className="p-4 bg-gradient-to-br from-indigo-500 to-blue-500 rounded-2xl shadow-lg mr-5">
-                  <BanknotesIcon className="w-10 h-10 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-3xl font-bold text-indigo-900 mb-2">Emergency Fund Builder</h3>
-                  <p className="text-lg text-indigo-700">
-                    Build a comprehensive financial safety net to protect yourself and your family from unexpected expenses
-                  </p>
-                </div>
-              </div>
-
-              {/* Info Banner */}
-              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-6 mb-8 border-2 border-indigo-200">
-                <div className="flex items-start">
-                  <div className="p-3 bg-indigo-100 rounded-xl mr-4">
-                    <LightBulbIcon className="w-7 h-7 text-indigo-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-xl font-bold text-indigo-900 mb-3">Why an Emergency Fund Matters</h4>
-                    <p className="text-indigo-800 leading-relaxed mb-4">
-                      Financial experts universally recommend maintaining an emergency fund covering 3-6 months of living expenses. 
-                      This financial cushion protects you from unexpected medical bills, job loss, car repairs, or home maintenance issues 
-                      without derailing your long-term financial goals or forcing you into debt.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                      <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                        <div className="text-2xl font-bold text-indigo-600 mb-1">78%</div>
-                        <div className="text-sm text-indigo-700">of Americans live paycheck to paycheck</div>
-                      </div>
-                      <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                        <div className="text-2xl font-bold text-indigo-600 mb-1">$400</div>
-                        <div className="text-sm text-indigo-700">average emergency many can't afford</div>
-                      </div>
-                      <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                        <div className="text-2xl font-bold text-indigo-600 mb-1">3-6</div>
-                        <div className="text-sm text-indigo-700">months recommended coverage</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Savings Milestones */}
-              <div className="mb-8">
-                <h4 className="text-2xl font-bold text-slate-900 mb-6">Your Personalized Savings Roadmap</h4>
-                <p className="text-slate-600 mb-6 text-lg">
-                  Based on your current savings potential of <span className="font-bold text-indigo-600">${(totalPotentialFromSuggestions + totalSavingsOpportunities).toFixed(2)}/month</span>, 
-                  here's your strategic path to financial security:
-                </p>
-                
-                <div className="space-y-6">
-                  {[
-                    { 
-                      amount: 1000, 
-                      level: 'Level 1',
-                      title: 'Foundation Fund', 
-                      desc: 'Your first line of defense against minor emergencies like car repairs or small medical bills',
-                      icon: '🛡️',
-                      color: 'from-blue-500 to-cyan-500',
-                      bgColor: 'from-blue-50 to-cyan-50',
-                      borderColor: 'border-blue-300'
-                    },
-                    { 
-                      amount: 3000, 
-                      level: 'Level 2',
-                      title: 'Security Buffer', 
-                      desc: 'Three months of essential expenses covered - protection against job loss or major unexpected costs',
-                      icon: '🔒',
-                      color: 'from-indigo-500 to-purple-500',
-                      bgColor: 'from-indigo-50 to-purple-50',
-                      borderColor: 'border-indigo-300'
-                    },
-                    { 
-                      amount: 6000, 
-                      level: 'Level 3',
-                      title: 'Complete Safety Net', 
-                      desc: 'Six months of full financial security - the gold standard for emergency preparedness and peace of mind',
-                      icon: '⭐',
-                      color: 'from-purple-500 to-pink-500',
-                      bgColor: 'from-purple-50 to-pink-50',
-                      borderColor: 'border-purple-300'
-                    }
-                  ].map((goal, index) => {
-                    const monthsToGoal = Math.ceil(goal.amount / (totalPotentialFromSuggestions + totalSavingsOpportunities));
-                    const progressPercent = Math.min(100, (100 / monthsToGoal) * 1);
-                    const yearEstimate = (monthsToGoal / 12).toFixed(1);
-                    
-                    return (
-                      <div key={goal.amount} className={`bg-gradient-to-br ${goal.bgColor} rounded-2xl p-8 border-2 ${goal.borderColor} shadow-lg hover:shadow-xl transition-all`}>
-                        <div className="flex items-start justify-between mb-6">
-                          <div className="flex items-start flex-1">
-                            <div className="text-5xl mr-5">{goal.icon}</div>
-                            <div className="flex-1">
-                              <div className="flex items-center mb-2">
-                                <span className="text-xs font-bold text-slate-600 bg-white px-3 py-1 rounded-full mr-3">{goal.level}</span>
-                                <span className="text-xs text-slate-500">Milestone {index + 1} of 3</span>
-                              </div>
-                              <h5 className="text-2xl font-bold text-slate-900 mb-2">{goal.title}</h5>
-                              <div className="text-3xl font-bold text-indigo-600 mb-3">${goal.amount.toLocaleString()}</div>
-                              <p className="text-slate-700 leading-relaxed">{goal.desc}</p>
-                            </div>
-                          </div>
-                          <div className={`text-center bg-gradient-to-br ${goal.color} text-white rounded-xl p-5 ml-4 shadow-lg min-w-[140px]`}>
-                            <div className="text-3xl font-bold mb-1">{monthsToGoal}</div>
-                            <div className="text-sm opacity-90">{monthsToGoal === 1 ? 'Month' : 'Months'}</div>
-                            <div className="text-xs opacity-75 mt-2">≈ {yearEstimate} {parseFloat(yearEstimate) === 1 ? 'Year' : 'Years'}</div>
-                          </div>
-                        </div>
-                        
-                        {/* Enhanced Progress Bar */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm font-semibold text-slate-700">
-                            <span>Progress Timeline</span>
-                            <span>{progressPercent.toFixed(0)}% of first month</span>
-                          </div>
-                          <div className="w-full bg-white rounded-full h-4 overflow-hidden shadow-inner border-2 border-slate-200">
-                            <div 
-                              className={`bg-gradient-to-r ${goal.color} h-4 rounded-full transition-all duration-700 shadow-lg relative`}
-                              style={{ width: `${progressPercent}%` }}
-                            >
-                              <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                            </div>
-                          </div>
-                          <div className="flex justify-between text-xs text-slate-600 mt-2">
-                            <span>Start: $0</span>
-                            <span>Target: ${goal.amount.toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        {/* Monthly Breakdown */}
-                        <div className="mt-6 grid grid-cols-3 gap-4">
-                          <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                            <div className="text-xs text-slate-600 mb-1">Monthly Save</div>
-                            <div className="text-lg font-bold text-slate-900">${(totalPotentialFromSuggestions + totalSavingsOpportunities).toFixed(0)}</div>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                            <div className="text-xs text-slate-600 mb-1">Daily Amount</div>
-                            <div className="text-lg font-bold text-slate-900">${((totalPotentialFromSuggestions + totalSavingsOpportunities) / 30).toFixed(2)}</div>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                            <div className="text-xs text-slate-600 mb-1">Completion Date</div>
-                            <div className="text-sm font-bold text-slate-900">
-                              {new Date(Date.now() + monthsToGoal * 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Action Tips */}
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200">
-                <h4 className="text-xl font-bold text-green-900 mb-4 flex items-center">
-                  <CheckCircleIcon className="w-6 h-6 mr-2" />
-                  Pro Tips for Building Your Emergency Fund
-                </h4>
-                <ul className="space-y-3 text-green-800">
-                  <li className="flex items-start">
-                    <span className="text-green-600 mr-3 font-bold">1.</span>
-                    <span><strong>Automate your savings:</strong> Set up automatic transfers on payday to make saving effortless and consistent</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-600 mr-3 font-bold">2.</span>
-                    <span><strong>Keep it separate:</strong> Store emergency funds in a high-yield savings account separate from daily spending</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-600 mr-3 font-bold">3.</span>
-                    <span><strong>Start small:</strong> Even $10-20 per week adds up significantly over time - consistency beats perfection</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-600 mr-3 font-bold">4.</span>
-                    <span><strong>Use windfalls wisely:</strong> Direct tax refunds, bonuses, or unexpected income toward your emergency fund</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Default Goals Page - When no savings data available */}
-        {selectedFilter === "goal" && (totalPotentialFromSuggestions + totalSavingsOpportunities) === 0 && (
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-            <div className="flex items-center mb-6">
-              <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl shadow-lg mr-4">
-                <ArrowTrendingUpIcon className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">Financial Goals & Milestones</h2>
-                <p className="text-slate-600">Set and track your financial objectives</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Emergency Fund Goal */}
-              <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-6 border-2 border-red-200">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-red-100 rounded-lg mr-3">
-                    <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-red-900">Emergency Fund</h3>
-                </div>
-                <p className="text-sm text-red-800 mb-4">
-                  Build a safety net for unexpected expenses
-                </p>
-                
-                <div className="space-y-3">
-                  {[
-                    { amount: 1000, label: 'Starter Fund' },
-                    { amount: 3000, label: '3-Month Buffer' },
-                    { amount: 6000, label: '6-Month Security' }
-                  ].map((goal) => (
-                    <div key={goal.amount} className="bg-white rounded-lg p-3 border border-red-300">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold text-red-900">${goal.amount.toLocaleString()}</span>
-                        <span className="text-xs text-red-700">{goal.label}</span>
-                      </div>
-                      <div className="w-full bg-red-200 rounded-full h-2 mt-2">
-                        <div className="bg-gradient-to-r from-red-500 to-orange-500 h-2 rounded-full w-0" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Savings Goals */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-200">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-green-100 rounded-lg mr-3">
-                    <BanknotesIcon className="w-6 h-6 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-green-900">Savings Goals</h3>
-                </div>
-                <p className="text-sm text-green-800 mb-4">
-                  Work towards your dreams and aspirations
-                </p>
-                
-                <div className="space-y-3">
-                  {[
-                    { name: 'Weekend Getaway', amount: 500 },
-                    { name: 'Dream Vacation', amount: 2500 },
-                    { name: 'Home Down Payment', amount: 15000 }
-                  ].map((goal) => (
-                    <div key={goal.name} className="bg-white rounded-lg p-3 border border-green-300">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="font-semibold text-green-900 text-sm">{goal.name}</div>
-                          <div className="text-xs text-green-700">${goal.amount.toLocaleString()}</div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-green-200 rounded-full h-2 mt-2">
-                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full w-0" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Investment Goals */}
-              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border-2 border-purple-200">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-purple-100 rounded-lg mr-3">
-                    <ChartBarIcon className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-purple-900">Investment Goals</h3>
-                </div>
-                <p className="text-sm text-purple-800 mb-4">
-                  Build long-term wealth through investing
-                </p>
-                
-                <div className="space-y-3">
-                  {[
-                    { name: 'Retirement Fund', target: 100000 },
-                    { name: 'Investment Portfolio', target: 50000 },
-                    { name: 'Education Fund', target: 25000 }
-                  ].map((goal) => (
-                    <div key={goal.name} className="bg-white rounded-lg p-3 border border-purple-300">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="font-semibold text-purple-900 text-sm">{goal.name}</div>
-                          <div className="text-xs text-purple-700">${goal.target.toLocaleString()}</div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-purple-200 rounded-full h-2 mt-2">
-                        <div className="bg-gradient-to-r from-purple-500 to-indigo-500 h-2 rounded-full w-0" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Getting Started Section */}
-            <div className="mt-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl p-6 text-white">
-              <h3 className="text-lg font-bold mb-4">Get Started with Goal Setting</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-semibold mb-2">📊 Upload Your Transactions</h4>
-                  <p className="text-sm text-blue-100 mb-4">
-                    Upload your financial data to get personalized goal recommendations and track your progress automatically.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">🎯 Set SMART Goals</h4>
-                  <p className="text-sm text-blue-100 mb-4">
-                    Create Specific, Measurable, Achievable, Relevant, and Time-bound financial goals for better success.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => window.location.href = '/upload'}
-                className="mt-4 px-6 py-2 bg-white/20 rounded-lg hover:bg-white/30 transition-all font-medium"
-              >
-                Start Your Financial Journey
-              </button>
-            </div>
-          </div>
-        )}
-
-
 
         {/* Success Stories Section */}
         {implementedCount > 0 && (
