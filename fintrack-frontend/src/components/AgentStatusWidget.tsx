@@ -31,8 +31,9 @@ const statusIcons: Record<StatusType, LucideIcon> = {
 };
 
 
-export default function AgentStatusWidget() {
-  const { agentStatus } = useApp();
+export default function AgentStatusWidget({ agentStatus: propAgentStatus }: { agentStatus?: AgentStatus }) {
+  const { agentStatus: globalAgentStatus } = useApp();
+  const agentStatus = propAgentStatus || globalAgentStatus;
 
   return (
     <div className="bg-gradient-to-br from-white via-gray-50 to-blue-50 rounded-xl shadow-xl border border-gray-200/50 backdrop-blur-sm p-6">

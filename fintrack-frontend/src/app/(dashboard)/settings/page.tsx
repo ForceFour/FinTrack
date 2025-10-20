@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   UserCircleIcon,
   CogIcon,
@@ -22,25 +23,33 @@ interface SpendingLimit {
 
 export default function SettingsPage() {
   const { auth } = useApp();
+  const {
+    currency,
+    symbol: currencySymbol,
+    spendingLimits: storedLimits,
+    updateCurrency,
+    updateSpendingLimits,
+  } = useCurrency();
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const hasLoadedRef = useRef(false); // Track if we've already loaded settings
 
   // User profile state
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
 
-  // Spending limits state
-  const [spendingLimits, setSpendingLimits] = useState<SpendingLimit[]>([]);
+  // Local spending limits state (initialized from hook)
+  const [localSpendingLimits, setLocalSpendingLimits] = useState<SpendingLimit[]>([]);
   const [newLimit, setNewLimit] = useState({
     category: "food",
     limit: "",
     period: "monthly" as "monthly" | "weekly",
   });
 
-  // User preferences state
-  const [currency, setCurrency] = useState("LKR");
-  const [currencySymbol, setCurrencySymbol] = useState("LKR");
+  // Local currency state (initialized from hook)
+  const [localCurrency, setLocalCurrency] = useState(currency);
 
   const categories = [
     "food",
@@ -55,11 +64,26 @@ export default function SettingsPage() {
     "other",
   ];
 
+  // Sync local state with stored values on mount (only once)
+  useEffect(() => {
+    setLocalCurrency(currency);
+    // Convert stored limits to local format with id (only on mount)
+    const limitsWithId = storedLimits.map((limit, index) => ({
+      id: `${limit.category}-${index}`,
+      ...limit,
+    }));
+    setLocalSpendingLimits(limitsWithId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
   useEffect(() => {
     const loadUserSettings = async () => {
-      if (!auth.user) return;
+      // Prevent multiple loads - check ref only, not loading state
+      if (!auth.user || hasLoadedRef.current) return;
 
+      hasLoadedRef.current = true;
       setLoading(true);
+
       try {
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
         const response = await fetch(`${API_BASE}/api/user-settings/${auth.user.id}`, {
@@ -71,27 +95,29 @@ export default function SettingsPage() {
 
         if (response.ok) {
           const data = await response.json();
-          if (data.spending_limits) {
+          if (data.spending_limits && typeof data.spending_limits === 'object') {
             const limits: SpendingLimit[] = Object.entries(data.spending_limits).map(
-              ([category, limit]) => ({
-                id: `${category}-${Date.now()}`,
+              ([category, limit], index) => ({
+                id: `${category}-${index}`,
                 category,
                 limit: limit as number,
                 period: "monthly",
               })
             );
-            setSpendingLimits(limits);
+            setLocalSpendingLimits(limits);
+            // Don't call updateSpendingLimits here to avoid loop
           }
-          // Load currency preference (default to LKR)
+          // Load currency preference from backend
           if (data.preferences?.currency) {
-            setCurrency(data.preferences.currency);
-            setCurrencySymbol(data.preferences.currency_symbol || data.preferences.currency);
+            setLocalCurrency(data.preferences.currency);
+            // Don't call updateCurrency here to avoid loop
           }
         }
       } catch (err) {
         console.error("Failed to load settings:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     if (auth.user) {
@@ -99,7 +125,7 @@ export default function SettingsPage() {
       setEmail(auth.user.email || "");
       loadUserSettings();
     }
-  }, [auth.user]);
+  }, [auth.user]); // Only depend on auth.user to load settings once
 
   const saveSettings = async () => {
     if (!auth.user) return;
@@ -107,12 +133,20 @@ export default function SettingsPage() {
     setSaving(true);
     setSuccessMessage("");
 
+    // Save to local storage immediately
+    updateCurrency(localCurrency);
+    updateSpendingLimits(localSpendingLimits.map(l => ({
+      category: l.category,
+      limit: l.limit,
+      period: l.period,
+    })));
+
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
       // Convert spending limits to backend format
       const spending_limits: Record<string, number> = {};
-      spendingLimits.forEach((limit) => {
+      localSpendingLimits.forEach((limit) => {
         spending_limits[limit.category] = limit.limit;
       });
 
@@ -128,7 +162,7 @@ export default function SettingsPage() {
             push_notifications: true,
           },
           preferences: {
-            currency,
+            currency: localCurrency,
             currency_symbol: currencySymbol,
           },
         }),
@@ -159,12 +193,12 @@ export default function SettingsPage() {
       period: newLimit.period,
     };
 
-    setSpendingLimits([...spendingLimits, limit]);
+    setLocalSpendingLimits([...localSpendingLimits, limit]);
     setNewLimit({ category: "food", limit: "", period: "monthly" });
   };
 
   const removeSpendingLimit = (id: string) => {
-    setSpendingLimits(spendingLimits.filter((limit) => limit.id !== id));
+    setLocalSpendingLimits(localSpendingLimits.filter((limit: SpendingLimit) => limit.id !== id));
   };
 
   if (loading) {
@@ -253,10 +287,9 @@ export default function SettingsPage() {
               Currency Preference
             </label>
             <select
-              value={currency}
+              value={localCurrency}
               onChange={(e) => {
-                setCurrency(e.target.value);
-                setCurrencySymbol(e.target.value);
+                setLocalCurrency(e.target.value);
               }}
               className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
@@ -286,14 +319,14 @@ export default function SettingsPage() {
 
           {/* Existing Limits */}
           <div className="space-y-3 mb-6">
-            {spendingLimits.length === 0 ? (
+            {localSpendingLimits.length === 0 ? (
               <div className="text-center py-8 bg-slate-50 rounded-lg">
                 <BanknotesIcon className="w-12 h-12 text-slate-400 mx-auto mb-3" />
                 <p className="text-slate-600">No spending limits set yet</p>
                 <p className="text-sm text-slate-500">Add your first limit below</p>
               </div>
             ) : (
-              spendingLimits.map((limit) => (
+              localSpendingLimits.map((limit: SpendingLimit) => (
                 <div
                   key={limit.id}
                   className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl"
