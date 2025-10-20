@@ -490,6 +490,7 @@ class UnifiedTransactionWorkflow:
                              user_input: str = None,
                              raw_transactions: List[Dict[str, Any]] = None,
                              user_id: str = "default",
+                             source_name: str = None,
                              conversation_context: Dict[str, Any] = None,
                              custom_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -500,6 +501,7 @@ class UnifiedTransactionWorkflow:
             user_input: Natural language input for processing
             raw_transactions: Raw transaction data for structured processing
             user_id: User identifier
+            source_name: Name of the source (filename for uploads, title for chats)
             conversation_context: Conversation state for multi-turn interactions
             custom_config: Runtime configuration overrides
 
@@ -510,7 +512,7 @@ class UnifiedTransactionWorkflow:
         workflow_id = f"workflow_{uuid.uuid4().hex[:8]}"
         start_time = datetime.now()
 
-        logger.info(f"Starting workflow {workflow_id} in {mode.value} mode")
+        logger.info(f"Starting workflow {workflow_id} in {mode.value} mode for source: {source_name}")
 
         try:
             # Update mode usage statistics
@@ -528,7 +530,7 @@ class UnifiedTransactionWorkflow:
             # Load user profile with spending limits
             user_profile = await self._load_user_profile(user_id)
 
-            # Initialize state
+            # Initialize state with source_name
             initial_state = TransactionProcessingState(
                 workflow_id=workflow_id,
                 user_input=user_input or "",
@@ -536,6 +538,7 @@ class UnifiedTransactionWorkflow:
                 conversation_context=conversation_context or {},
                 raw_transactions=raw_transactions or [],
                 input_type=input_type,  # Add input_type to state
+                source_name=source_name or "",  # Add source_name to state
                 current_stage=ProcessingStage.INITIAL,
                 processing_history=[],
                 confidence_scores=[],

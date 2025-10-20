@@ -193,6 +193,7 @@ export interface PredictionResult {
   user_input?: string | null;
   input_type?: string | null;
   raw_transaction_count?: number;
+  source_name?: string | null; // File name for uploads, title for chats
 
   // Classification results
   predicted_category?: string | null;
