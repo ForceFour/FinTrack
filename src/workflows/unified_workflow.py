@@ -444,8 +444,8 @@ class UnifiedTransactionWorkflow:
 
             supabase = await get_db_client()
 
-            # Get user profile
-            result = supabase.table("user_profile").select("*").eq("user_id", user_id).execute()
+            # Get user profile from profiles table
+            result = supabase.table("profiles").select("*").eq("id", user_id).execute()
 
             if result.data and len(result.data) > 0:
                 profile = result.data[0]

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   SparklesIcon,
   ChartBarIcon,
@@ -86,6 +87,7 @@ export default function SuggestionsPage() {
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const { auth } = useApp();
+  const { formatAmount } = useCurrency();
 
   useEffect(() => {
     if (auth.isAuthenticated && auth.user) {
@@ -429,7 +431,7 @@ export default function SuggestionsPage() {
           />
           <StatCard
             title="Potential Savings"
-            value={`$${combinedTotalSavings.toFixed(2)}`}
+            value={formatAmount(combinedTotalSavings)}
             icon={<BanknotesIcon className="w-6 h-6" />}
             gradient="from-green-500 to-emerald-500"
             description="Monthly savings potential"
@@ -530,6 +532,7 @@ export default function SuggestionsPage() {
                 getPriorityBadgeColor={getPriorityBadgeColor}
                 getTypeIcon={getTypeIcon}
                 getDifficultyColor={getDifficultyColor}
+                formatAmount={formatAmount}
               />
             ))
           )}
@@ -557,9 +560,9 @@ export default function SuggestionsPage() {
                       <div className="text-xs text-blue-600 font-medium">Potential Savings</div>
                       <div className="text-xl font-bold text-blue-700">
                         {suggestion.potential_monthly_savings && suggestion.potential_monthly_savings > 0
-                          ? `$${suggestion.potential_monthly_savings.toFixed(2)}/mo`
+                          ? `${formatAmount(suggestion.potential_monthly_savings)}/mo`
                           : suggestion.potential_savings && suggestion.potential_savings > 0
-                          ? `$${suggestion.potential_savings.toFixed(2)}`
+                          ? formatAmount(suggestion.potential_savings)
                           : 'Variable'}
                       </div>
                     </div>
@@ -596,9 +599,9 @@ export default function SuggestionsPage() {
                     <div className="text-xs text-green-600 font-medium mb-1">Monthly Savings Potential</div>
                     <div className="text-2xl font-bold text-green-700">
                       {opportunity.potential_monthly_savings && opportunity.potential_monthly_savings > 0
-                        ? `$${opportunity.potential_monthly_savings.toFixed(2)}`
+                        ? formatAmount(opportunity.potential_monthly_savings)
                         : opportunity.potential_savings && opportunity.potential_savings > 0
-                        ? `$${opportunity.potential_savings.toFixed(2)}`
+                        ? formatAmount(opportunity.potential_savings)
                         : 'Variable'}
                     </div>
                   </div>
@@ -642,7 +645,7 @@ export default function SuggestionsPage() {
                     Monthly Income
                   </div>
                   <div className="text-4xl font-bold">
-                    ${budgetRecommendations.monthly_income.toFixed(2)}
+                    {formatAmount(budgetRecommendations.monthly_income)}
                   </div>
                   <div className="mt-2 text-green-100">
                     Confidence: {(budgetRecommendations.confidence_score * 100).toFixed(0)}%
@@ -658,7 +661,7 @@ export default function SuggestionsPage() {
                           Potential Monthly Savings
                         </div>
                         <div className="text-3xl font-bold text-blue-600">
-                          ${budgetRecommendations.savings_potential.toFixed(2)}
+                          {formatAmount(budgetRecommendations.savings_potential)}
                         </div>
                       </div>
                       <BanknotesIcon className="w-12 h-12 text-blue-500" />
@@ -688,12 +691,12 @@ export default function SuggestionsPage() {
                                 {category}
                               </span>
                               <span className="text-lg font-bold text-slate-800">
-                                ${amount.toFixed(2)}
+                                {formatAmount(amount)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-slate-600">
-                                Current: ${current.toFixed(2)}
+                                Current: {formatAmount(current)}
                               </span>
                               <span className="text-slate-500">
                                 {percentage.toFixed(1)}% of income
@@ -744,13 +747,13 @@ export default function SuggestionsPage() {
                           </div>
                           <div className="text-sm space-y-1">
                             <div>
-                              Current: ${adj.current_amount.toFixed(2)}
+                              Current: {formatAmount(adj.current_amount)}
                             </div>
                             <div>
-                              Recommended: ${adj.recommended_amount.toFixed(2)}
+                              Recommended: {formatAmount(adj.recommended_amount)}
                             </div>
                             <div className="font-semibold text-red-600">
-                              Reduce by: ${adj.difference.toFixed(2)}
+                              Reduce by: {formatAmount(adj.difference)}
                             </div>
                           </div>
                         </div>
@@ -827,6 +830,7 @@ function SuggestionCard({
   getPriorityBadgeColor,
   getTypeIcon,
   getDifficultyColor,
+  formatAmount,
 }: {
   suggestion: Suggestion;
   onFeedback: (id: string, rating: number, type: string) => void;
@@ -834,6 +838,7 @@ function SuggestionCard({
   getPriorityBadgeColor: (priority: SuggestionPriority) => string;
   getTypeIcon: (type: SuggestionType) => React.ReactNode;
   getDifficultyColor: (difficulty: string) => string;
+  formatAmount: (amount: number, includeSymbol?: boolean) => string;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
@@ -889,7 +894,7 @@ function SuggestionCard({
             </div>
             <div className="text-2xl font-bold text-green-600">
               {suggestion.potential_savings && suggestion.potential_savings > 0
-                ? `$${suggestion.potential_savings.toFixed(2)}`
+                ? formatAmount(suggestion.potential_savings)
                 : 'Variable'}
             </div>
           </div>

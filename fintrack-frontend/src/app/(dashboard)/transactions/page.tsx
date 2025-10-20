@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getTransactions, updateTransaction, deleteTransaction, deleteTransactions, type TransactionFilters } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import { format } from "date-fns";
 import {
   PencilIcon,
@@ -38,6 +39,7 @@ export default function TransactionsPage() {
     transaction_type: "",
   });
   const { auth, onTransactionsRefresh } = useApp();
+  const { formatAmount } = useCurrency();
 
   const loadTransactions = useCallback(async () => {
     if (!auth.user) return;
@@ -432,7 +434,8 @@ export default function TransactionsPage() {
                             : "text-green-600"
                         }
                       >
-                        {transaction.transaction_type === "expense" ? "-" : "+"}${Math.abs(transaction.amount).toFixed(2)}
+                        {transaction.transaction_type === "expense" ? "-" : "+"}
+                        {formatAmount(Math.abs(transaction.amount))}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-900 max-w-xs truncate">
