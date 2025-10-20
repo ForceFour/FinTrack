@@ -216,11 +216,11 @@ export default function ConversationalEntry({
   ];
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 p-6">
         <div className="flex items-center space-x-3">
-          <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+          <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm shadow-lg">
             <MessageCircleIcon className="h-6 w-6 text-white" />
           </div>
           <div>
@@ -233,7 +233,7 @@ export default function ConversationalEntry({
           </div>
         </div>
         {hasPendingTransaction && missingFields.length > 0 && (
-          <div className="mt-4 p-3 bg-yellow-400/20 border border-yellow-300/30 rounded-lg backdrop-blur-sm">
+          <div className="mt-4 p-3 bg-yellow-400/20 border border-yellow-300/30 rounded-xl backdrop-blur-sm">
             <p className="text-sm text-yellow-100 flex items-center space-x-2">
               <RefreshCwIcon className="h-4 w-4" />
               <span>
@@ -244,7 +244,7 @@ export default function ConversationalEntry({
           </div>
         )}
         {hasPendingTransaction && missingFields.length === 0 && (
-          <div className="mt-4 p-3 bg-green-400/20 border border-green-300/30 rounded-lg backdrop-blur-sm">
+          <div className="mt-4 p-3 bg-green-400/20 border border-green-300/30 rounded-xl backdrop-blur-sm">
             <p className="text-sm text-green-100 flex items-center space-x-2">
               <CheckCircle className="h-4 w-4" />
               <span>Ready to save transaction</span>
@@ -254,10 +254,10 @@ export default function ConversationalEntry({
       </div>
 
       {/* Messages Container */}
-      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/30 to-white">
+      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
         {messages.length === 0 && (
           <div className="text-center py-12">
-            <div className="p-4 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg">
+            <div className="p-5 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg">
               <BotIcon className="h-10 w-10 text-purple-600" />
             </div>
             <h4 className="text-xl font-bold text-slate-900 mb-3">
@@ -271,7 +271,7 @@ export default function ConversationalEntry({
                 <button
                   key={index}
                   onClick={() => setInput(example)}
-                  className="block w-full text-left p-4 bg-white hover:bg-gradient-to-r hover:from-purple-50 hover:to-indigo-50 border border-slate-200 hover:border-purple-300 rounded-xl text-sm text-slate-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="block w-full text-left p-4 bg-white hover:bg-gradient-to-r hover:from-purple-50 hover:to-indigo-50 border border-slate-200 hover:border-purple-300 rounded-2xl text-sm text-slate-700 transition-all duration-200 shadow-sm hover:shadow-lg transform hover:scale-[1.02]"
                 >
                   &quot;{example}&quot;
                 </button>
@@ -288,10 +288,10 @@ export default function ConversationalEntry({
             }`}
           >
             <div
-              className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm ${
+              className={`max-w-xs lg:max-w-md px-5 py-3 rounded-2xl shadow-md ${
                 message.type === "user"
                   ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-br-md"
-                  : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
+                  : "bg-white text-slate-900 border border-slate-200 rounded-bl-md shadow-lg"
               }`}
             >
               <div className="flex items-center space-x-2 mb-2">
@@ -301,7 +301,7 @@ export default function ConversationalEntry({
                   <BotIcon className="h-4 w-4 text-purple-600" />
                 )}
                 <span
-                  className={`text-xs font-medium ${
+                  className={`text-xs font-semibold ${
                     message.type === "user" ? "text-purple-100" : "text-slate-500"
                   }`}
                 >
@@ -317,17 +317,17 @@ export default function ConversationalEntry({
 
         {isTyping && (
           <div className="flex justify-start">
-            <div className="bg-white px-4 py-3 rounded-2xl rounded-bl-md border border-slate-200 shadow-sm">
+            <div className="bg-white px-5 py-3 rounded-2xl rounded-bl-md border border-slate-200 shadow-lg">
               <div className="flex items-center space-x-3">
-                <div className="p-1 bg-purple-100 rounded-full">
+                <div className="p-1.5 bg-purple-100 rounded-full">
                   <BotIcon className="h-4 w-4 text-purple-600" />
                 </div>
-                <div className="flex space-x-1">
+                <div className="flex space-x-1.5">
                   <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
                   <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
                   <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
                 </div>
-                <span className="text-xs text-slate-500 font-medium">
+                <span className="text-xs text-slate-500 font-semibold">
                   AI is thinking...
                 </span>
               </div>
@@ -339,7 +339,7 @@ export default function ConversationalEntry({
       </div>
 
       {/* Input Area */}
-      <div className="p-6 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-purple-50/30">
+      <div className="p-6 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-purple-50/40">
         <div className="flex space-x-3">
           <div className="flex-1 relative">
             <input
@@ -353,13 +353,13 @@ export default function ConversationalEntry({
                   ? `Please provide: ${missingFields.join(", ")}`
                   : `Type your transaction here... (e.g., &apos;I spent ${currencySymbol} 2500 at Starbucks yesterday&apos;)`
               }
-              className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white shadow-sm transition-all duration-200"
+              className="w-full px-5 py-3.5 pr-12 border-2 border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white shadow-sm hover:shadow-md transition-all duration-200"
               disabled={isTyping}
             />
             {input.trim() && (
               <button
                 onClick={() => setInput("")}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors text-xl font-bold"
               >
                 ×
               </button>
@@ -368,14 +368,14 @@ export default function ConversationalEntry({
           <button
             onClick={handleSendMessage}
             disabled={!input.trim() || isTyping}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center space-x-2"
+            className="px-7 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center space-x-2"
           >
             {isTyping ? (
               <RefreshCwIcon className="h-5 w-5 animate-spin" />
             ) : (
               <>
                 <SendIcon className="h-5 w-5" />
-                <span className="font-medium">Send</span>
+                <span className="font-semibold">Send</span>
               </>
             )}
           </button>
@@ -384,19 +384,19 @@ export default function ConversationalEntry({
         {/* Conversation Stats */}
         {messages.length > 0 && (
           <div className="flex justify-between items-center mt-4 text-sm">
-            <span className="text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200">
+            <span className="text-slate-500 bg-white px-4 py-1.5 rounded-full border border-slate-200 font-medium shadow-sm">
               {messages.length} messages
             </span>
             <div className="flex space-x-2">
               <button
                 onClick={() => setConversationContext({})}
-                className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
+                className="px-4 py-1.5 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition-colors text-sm font-semibold shadow-sm hover:shadow-md"
               >
                 New Transaction
               </button>
               <button
                 onClick={clearConversation}
-                className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
+                className="px-4 py-1.5 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 transition-colors text-sm font-semibold shadow-sm hover:shadow-md"
               >
                 Clear Chat
               </button>

@@ -522,9 +522,19 @@ async def process_natural_language_transaction(
                     missing_fields.add(field)
 
         if not all_have_required:
+            # Get user's currency symbol for conversational response
+            currency_symbol = "Rs."  # Default
+            try:
+                user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
+                if user_settings_result.data and len(user_settings_result.data) > 0:
+                    preferences = user_settings_result.data[0].get("preferences", {})
+                    currency_symbol = preferences.get("currency_symbol", "Rs.")
+            except Exception as e:
+                logger.warning(f"Failed to fetch user currency settings: {e}")
+
             # Ask for missing information conversationally
             response_text = await _generate_conversational_response(
-                parsed_transactions[0], list(missing_fields), conversation_context
+                parsed_transactions[0], list(missing_fields), conversation_context, currency_symbol
             )
 
             # Update conversation context
@@ -625,11 +635,21 @@ async def process_natural_language_transaction(
 
                 # Generate response for multiple transactions
                 if created_transactions:
+                    # Get user's currency symbol
+                    currency_symbol = "Rs."  # Default
+                    try:
+                        user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
+                        if user_settings_result.data and len(user_settings_result.data) > 0:
+                            preferences = user_settings_result.data[0].get("preferences", {})
+                            currency_symbol = preferences.get("currency_symbol", "Rs.")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch user currency settings: {e}")
+
                     response_lines = ["Transactions recorded successfully!\n"]
                     for i, tx in enumerate(created_transactions, 1):
                         response_lines.append(f"Transaction {i}: {tx['description']}")
-                        # Show amount with sign and type indicator
-                        amount_str = f"${abs(tx['amount']):.2f}"
+                        # Show amount with sign and type indicator using user's currency
+                        amount_str = f"{currency_symbol}{abs(tx['amount']):.2f}"
                         if tx['amount'] < 0:
                             response_lines.append(f"Expense: -{amount_str}")
                         else:
@@ -1137,13 +1157,14 @@ async def _parse_natural_language_transaction(
 async def _generate_conversational_response(
     transaction: Dict[str, Any],
     missing_fields: List[str],
-    conversation_context: Dict[str, Any]
+    conversation_context: Dict[str, Any],
+    currency_symbol: str = "Rs."
 ) -> str:
     """
     Generate a conversational response asking for missing information
     """
     responses = {
-        "amount": "How much did you spend? Please include the dollar amount.",
+        "amount": f"How much did you spend? Please include the amount in {currency_symbol}.",
         "description": "What did you purchase or what was this transaction for?",
         "date": "When did this transaction occur? Please provide the date."
     }
@@ -1158,7 +1179,7 @@ async def _generate_conversational_response(
     # Show what we already understood
     understood = []
     if transaction.get("amount"):
-        understood.append(f"💰 Amount: ${abs(transaction['amount']):.2f}")
+        understood.append(f"💰 Amount: {currency_symbol}{abs(transaction['amount']):.2f}")
     if transaction.get("description"):
         understood.append(f"📝 Description: {transaction['description']}")
     if transaction.get("date"):
@@ -1168,3 +1189,4 @@ async def _generate_conversational_response(
         response += "\n\nI already understood:\n" + "\n".join(understood)
 
     return response
+                    
