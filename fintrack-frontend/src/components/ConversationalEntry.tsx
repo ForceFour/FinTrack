@@ -2,23 +2,25 @@
 
 import { useState, useRef, useEffect } from "react";
 import { apiClient } from "@/lib/api-client";
-import { ConversationMessage, ConversationContext } from "@/lib/types";
+import { ConversationMessage, ConversationContext, AgentStatus } from "@/lib/types";
 import {
-  SendIcon,
-  MessageCircleIcon,
   BotIcon,
-  UserIcon,
-  RefreshCwIcon,
   CheckCircle,
+  MessageCircleIcon,
+  RefreshCwIcon,
+  SendIcon,
+  UserIcon,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
 
 interface ConversationalEntryProps {
   onTransactionAdded?: () => void;
+  updateAgentStatus?: (status: Partial<AgentStatus>) => void;
 }
 
 export default function ConversationalEntry({
   onTransactionAdded,
+  updateAgentStatus: propUpdateAgentStatus,
 }: ConversationalEntryProps) {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState("");
@@ -28,7 +30,10 @@ export default function ConversationalEntry({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isInitialMount = useRef(true);
-  const { refreshTransactions, auth, updateAgentStatus } = useApp();
+  const { refreshTransactions, auth, updateAgentStatus: globalUpdateAgentStatus } = useApp();
+
+  // Use the passed updateAgentStatus or fall back to global
+  const updateAgentStatus = propUpdateAgentStatus || globalUpdateAgentStatus;
 
   // Check if we have a pending transaction that needs more info
   const contextData = conversationContext as {
@@ -100,6 +105,18 @@ export default function ConversationalEntry({
           await new Promise((resolve) => setTimeout(resolve, 600));
           updateAgentStatus({ [agents[i]]: "complete" });
         }
+
+        // Reset chat agents to idle after completion
+        setTimeout(() => {
+          updateAgentStatus({
+            ingestion: "idle",
+            ner_merchant: "idle",
+            classifier: "idle",
+            pattern_analyzer: "idle",
+            suggestion: "idle",
+            safety_guard: "idle",
+          });
+        }, 3000);
       }
 
       if (response.status === "success" && response.data) {
@@ -197,28 +214,30 @@ export default function ConversationalEntry({
   ];
 
   return (
-    <div className="bg-gradient-to-br from-white via-blue-50 to-indigo-50 rounded-xl shadow-xl border border-gray-200/50 backdrop-blur-sm">
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-t-xl">
+      <div className="bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 p-6">
         <div className="flex items-center space-x-3">
-          <div className="p-2 bg-white/20 rounded-lg">
+          <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
             <MessageCircleIcon className="h-6 w-6 text-white" />
           </div>
           <div>
             <h3 className="text-xl font-bold text-white">
-              Conversational Transaction Entry
+              AI Transaction Assistant
             </h3>
-            <p className="text-sm text-blue-100 mt-1">
-              Enter transaction details naturally - I&apos;ll understand and
-              process them for you!
+            <p className="text-sm text-purple-100 mt-1">
+              Tell me about your transactions naturally - I&apos;ll understand and process them
             </p>
           </div>
         </div>
         {hasPendingTransaction && missingFields.length > 0 && (
           <div className="mt-4 p-3 bg-yellow-400/20 border border-yellow-300/30 rounded-lg backdrop-blur-sm">
-            <p className="text-sm text-yellow-100">
-              <span className="font-semibold">Missing information:</span>{" "}
-              {missingFields.join(", ")}
+            <p className="text-sm text-yellow-100 flex items-center space-x-2">
+              <RefreshCwIcon className="h-4 w-4" />
+              <span>
+                <span className="font-semibold">Missing information:</span>{" "}
+                {missingFields.join(", ")}
+              </span>
             </p>
           </div>
         )}
@@ -233,24 +252,26 @@ export default function ConversationalEntry({
       </div>
 
       {/* Messages Container */}
-      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-transparent to-gray-50/30">
+      <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/30 to-white">
         {messages.length === 0 && (
           <div className="text-center py-12">
-            <div className="p-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
-              <BotIcon className="h-10 w-10 text-blue-600" />
+            <div className="p-4 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg">
+              <BotIcon className="h-10 w-10 text-purple-600" />
             </div>
-            <h4 className="text-xl font-bold text-gray-900 mb-3">
+            <h4 className="text-xl font-bold text-slate-900 mb-3">
               Start a conversation!
             </h4>
-            <p className="text-gray-600 mb-6">Try saying something like:</p>
+            <p className="text-slate-600 mb-6 max-w-md mx-auto">
+              Try saying something like:
+            </p>
             <div className="space-y-3 max-w-md mx-auto">
               {exampleMessages.map((example, index) => (
                 <button
                   key={index}
                   onClick={() => setInput(example)}
-                  className="block w-full text-left p-4 bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border border-gray-200 hover:border-blue-300 rounded-xl text-sm text-gray-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="block w-full text-left p-4 bg-white hover:bg-gradient-to-r hover:from-purple-50 hover:to-indigo-50 border border-slate-200 hover:border-purple-300 rounded-xl text-sm text-slate-700 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
-                  &ldquo;{example}&rdquo;
+                  &quot;{example}&quot;
                 </button>
               ))}
             </div>
@@ -267,19 +288,19 @@ export default function ConversationalEntry({
             <div
               className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm ${
                 message.type === "user"
-                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-md"
-                  : "bg-white text-gray-900 border border-gray-200 rounded-bl-md"
+                  ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-br-md"
+                  : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
               }`}
             >
               <div className="flex items-center space-x-2 mb-2">
                 {message.type === "user" ? (
                   <UserIcon className="h-4 w-4 opacity-90" />
                 ) : (
-                  <BotIcon className="h-4 w-4 text-blue-600" />
+                  <BotIcon className="h-4 w-4 text-purple-600" />
                 )}
                 <span
                   className={`text-xs font-medium ${
-                    message.type === "user" ? "text-blue-100" : "text-gray-500"
+                    message.type === "user" ? "text-purple-100" : "text-slate-500"
                   }`}
                 >
                   {message.type === "user" ? "You" : "AI Assistant"}
@@ -294,23 +315,17 @@ export default function ConversationalEntry({
 
         {isTyping && (
           <div className="flex justify-start">
-            <div className="bg-white px-4 py-3 rounded-2xl rounded-bl-md border border-gray-200 shadow-sm">
+            <div className="bg-white px-4 py-3 rounded-2xl rounded-bl-md border border-slate-200 shadow-sm">
               <div className="flex items-center space-x-3">
-                <div className="p-1 bg-blue-100 rounded-full">
-                  <BotIcon className="h-4 w-4 text-blue-600" />
+                <div className="p-1 bg-purple-100 rounded-full">
+                  <BotIcon className="h-4 w-4 text-purple-600" />
                 </div>
                 <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                  <div
-                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.1s" }}
-                  ></div>
-                  <div
-                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.2s" }}
-                  ></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
                 </div>
-                <span className="text-xs text-gray-500 font-medium">
+                <span className="text-xs text-slate-500 font-medium">
                   AI is thinking...
                 </span>
               </div>
@@ -322,7 +337,7 @@ export default function ConversationalEntry({
       </div>
 
       {/* Input Area */}
-      <div className="p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50/30 rounded-b-xl">
+      <div className="p-6 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-purple-50/30">
         <div className="flex space-x-3">
           <div className="flex-1 relative">
             <input
@@ -334,15 +349,15 @@ export default function ConversationalEntry({
               placeholder={
                 hasPendingTransaction && missingFields.length > 0
                   ? `Please provide: ${missingFields.join(", ")}`
-                  : "Type your transaction here... (e.g., 'I spent $25 at Starbucks yesterday')"
+                  : "Type your transaction here... (e.g., &apos;I spent $25 at Starbucks yesterday&apos;)"
               }
-              className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm transition-all duration-200"
+              className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white shadow-sm transition-all duration-200"
               disabled={isTyping}
             />
             {input.trim() && (
               <button
                 onClick={() => setInput("")}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 ×
               </button>
@@ -351,12 +366,15 @@ export default function ConversationalEntry({
           <button
             onClick={handleSendMessage}
             disabled={!input.trim() || isTyping}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center space-x-2"
           >
             {isTyping ? (
               <RefreshCwIcon className="h-5 w-5 animate-spin" />
             ) : (
-              <SendIcon className="h-5 w-5" />
+              <>
+                <SendIcon className="h-5 w-5" />
+                <span className="font-medium">Send</span>
+              </>
             )}
           </button>
         </div>
@@ -364,7 +382,7 @@ export default function ConversationalEntry({
         {/* Conversation Stats */}
         {messages.length > 0 && (
           <div className="flex justify-between items-center mt-4 text-sm">
-            <span className="text-gray-500 bg-white px-3 py-1 rounded-full border border-gray-200">
+            <span className="text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200">
               {messages.length} messages
             </span>
             <div className="flex space-x-2">
@@ -376,9 +394,9 @@ export default function ConversationalEntry({
               </button>
               <button
                 onClick={clearConversation}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
               >
-                Clear conversation
+                Clear Chat
               </button>
             </div>
           </div>

@@ -11,6 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 import AgentStatusWidget from "@/components/AgentStatusWidget";
 import ConversationalEntry from "@/components/ConversationalEntry";
+import { AgentStatus } from "@/lib/types";
 
 interface UploadResult {
   transactions_processed?: number;
@@ -26,7 +27,26 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateAgentStatus, refreshTransactions, auth } = useApp();
+  const { refreshTransactions, auth } = useApp();
+
+  // Separate agent status for file uploads and chat
+  const [uploadAgentStatus, setUploadAgentStatus] = useState<AgentStatus>({
+    ingestion: "idle",
+    ner_merchant: "idle",
+    classifier: "idle",
+    pattern_analyzer: "idle",
+    suggestion: "idle",
+    safety_guard: "idle",
+  });
+
+  const [chatAgentStatus, setChatAgentStatus] = useState<AgentStatus>({
+    ingestion: "idle",
+    ner_merchant: "idle",
+    classifier: "idle",
+    pattern_analyzer: "idle",
+    suggestion: "idle",
+    safety_guard: "idle",
+  });
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -74,7 +94,7 @@ export default function UploadPage() {
       "safety_guard",
     ];
 
-    // Start agents
+    // Start agents for upload
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) {
@@ -85,11 +105,11 @@ export default function UploadPage() {
       });
     }, 500);
 
-    // Update agent status
+    // Update upload agent status sequentially
     for (let i = 0; i < agents.length; i++) {
-      updateAgentStatus({ [agents[i]]: "running" });
+      setUploadAgentStatus(prev => ({ ...prev, [agents[i]]: "running" }));
       await new Promise((resolve) => setTimeout(resolve, 800));
-      updateAgentStatus({ [agents[i]]: "complete" });
+      setUploadAgentStatus(prev => ({ ...prev, [agents[i]]: "complete" }));
     }
 
     try {
@@ -126,14 +146,21 @@ export default function UploadPage() {
     } catch (err) {
       console.error("Upload error:", err);
       setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
-      agents.forEach((agent) => updateAgentStatus({ [agent]: "error" }));
+      agents.forEach((agent) => setUploadAgentStatus(prev => ({ ...prev, [agent]: "error" })));
     } finally {
       clearInterval(progressInterval);
       setUploading(false);
 
-      // Reset agents to idle after a delay
+      // Reset upload agents to idle after a delay
       setTimeout(() => {
-        agents.forEach((agent) => updateAgentStatus({ [agent]: "idle" }));
+        setUploadAgentStatus({
+          ingestion: "idle",
+          ner_merchant: "idle",
+          classifier: "idle",
+          pattern_analyzer: "idle",
+          suggestion: "idle",
+          safety_guard: "idle",
+        });
       }, 3000);
     }
   };
@@ -162,168 +189,193 @@ export default function UploadPage() {
           </div>
         </div>
 
-        {/* File Upload Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-slate-800">Upload Transaction File</h3>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-sm text-slate-600">Secure Upload</span>
-            </div>
-          </div>
-
-          <div className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
-            isDragOver
-              ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-cyan-50 scale-105'
-              : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
-          }`}
-               onDragOver={handleDragOver}
-               onDragLeave={handleDragLeave}
-               onDrop={handleDrop}>
-            <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent rounded-2xl"></div>
-            <div className="relative z-10">
-              <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
-                <ArrowUpTrayIcon className="h-10 w-10 text-white" />
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <span className="text-xl font-semibold text-slate-800 hover:text-blue-600 transition-colors">
-                      {file ? file.name : "Click to upload or drag and drop"}
-                    </span>
-                  </label>
-                  <p className="text-slate-500 mt-2">
-                    CSV, XLSX, XLS up to 10MB
-                  </p>
+        {/* Main Content Grid */}
+        <div className="space-y-8">
+          {/* Row 1: File Upload + Agent Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            {/* File Upload Section */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 min-h-[600px] flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-800">Upload Transaction File</h3>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-sm text-slate-600">Secure Upload</span>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  id="file-upload"
-                  name="file-upload"
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  className="sr-only"
-                  onChange={handleFileChange}
-                />
               </div>
-            </div>
-          </div>
 
-          {/* Upload Button */}
-          {file && !result && (
-            <div className="mt-6 flex justify-center">
-              <button
-                onClick={handleUpload}
-                disabled={uploading || !auth.user?.id}
-                className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-              >
-                {uploading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>Uploading... {progress}%</span>
+              <div className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
+                isDragOver
+                  ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-cyan-50 scale-105'
+                  : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+              }`}
+                   onDragOver={handleDragOver}
+                   onDragLeave={handleDragLeave}
+                   onDrop={handleDrop}>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent rounded-2xl"></div>
+                <div className="relative z-10">
+                  <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
+                    <ArrowUpTrayIcon className="h-10 w-10 text-white" />
                   </div>
-                ) : !auth.user?.id ? (
-                  <div className="flex items-center space-x-2">
-                    <ArrowUpTrayIcon className="h-5 w-5" />
-                    <span>Please Login to Upload</span>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="file-upload" className="cursor-pointer">
+                        <span className="text-xl font-semibold text-slate-800 hover:text-blue-600 transition-colors">
+                          {file ? file.name : "Click to upload or drag and drop"}
+                        </span>
+                      </label>
+                      <p className="text-slate-500 mt-2">
+                        CSV, XLSX, XLS up to 10MB
+                      </p>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      id="file-upload"
+                      name="file-upload"
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      className="sr-only"
+                      onChange={handleFileChange}
+                    />
                   </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <ArrowUpTrayIcon className="h-5 w-5" />
-                    <span>Upload & Process</span>
+                </div>
+              </div>
+
+              {/* Upload Button */}
+              {file && !result && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={handleUpload}
+                    disabled={uploading || !auth.user?.id}
+                    className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    {uploading ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>Uploading... {progress}%</span>
+                      </div>
+                    ) : !auth.user?.id ? (
+                      <div className="flex items-center space-x-2">
+                        <ArrowUpTrayIcon className="h-5 w-5" />
+                        <span>Please Login to Upload</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <ArrowUpTrayIcon className="h-5 w-5" />
+                        <span>Upload & Process</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+              )}
+
+            {file && (
+              <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
+                <div className="flex items-center space-x-3">
+                  <CheckCircleIcon className="h-6 w-6 text-green-600" />
+                  <div>
+                    <p className="font-semibold text-green-800">{file.name}</p>
+                    <p className="text-sm text-green-600">
+                      {(file.size / 1024 / 1024).toFixed(2)} MB • Ready to upload
+                    </p>
                   </div>
-                )}
-              </button>
-            </div>
-          )}
-
-        {file && (
-          <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
-            <div className="flex items-center space-x-3">
-              <CheckCircleIcon className="h-6 w-6 text-green-600" />
-              <div>
-                <p className="font-semibold text-green-800">{file.name}</p>
-                <p className="text-sm text-green-600">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB • Ready to upload
-                </p>
+                  <button
+                    onClick={() => setFile(null)}
+                    className="ml-auto p-1 hover:bg-green-100 rounded-full transition-colors"
+                  >
+                    <XMarkIcon className="h-5 w-5 text-green-600" />
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => setFile(null)}
-                className="ml-auto p-1 hover:bg-green-100 rounded-full transition-colors"
-              >
-                <XMarkIcon className="h-5 w-5 text-green-600" />
-              </button>
+            )}
+
+            {error && (
+              <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl">
+                <div className="flex items-center space-x-3">
+                  <XCircleIcon className="h-6 w-6 text-red-600" />
+                  <div>
+                    <p className="font-semibold text-red-800">Upload Failed</p>
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                  <button
+                    onClick={() => setError("")}
+                    className="ml-auto p-1 hover:bg-red-100 rounded-full transition-colors"
+                  >
+                    <XMarkIcon className="h-5 w-5 text-red-600" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {result && (
+              <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
+                <div className="flex items-center space-x-3 mb-4">
+                  <CheckCircleIcon className="h-8 w-8 text-blue-600" />
+                  <div>
+                    <h4 className="text-lg font-bold text-blue-800">Upload Successful!</h4>
+                    <p className="text-blue-600">Your transactions have been processed</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white p-4 rounded-lg border border-blue-200">
+                    <div className="text-2xl font-bold text-blue-600">{result.transactions_processed || 0}</div>
+                    <div className="text-sm text-blue-800">Transactions Processed</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-green-200">
+                    <div className="text-2xl font-bold text-green-600">{result.new_transactions || 0}</div>
+                    <div className="text-sm text-green-800">New Transactions</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-yellow-200">
+                    <div className="text-2xl font-bold text-yellow-600">{result.duplicates_found || 0}</div>
+                    <div className="text-sm text-yellow-800">Duplicates Found</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            </div>
+
+            {/* Agent Status Widget for File Upload */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 min-h-[600px] flex flex-col">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg">
+                  <ArrowUpTrayIcon className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-slate-900">File Upload Processing</h4>
+                  <p className="text-sm text-slate-600">AI pipeline status for file uploads</p>
+                </div>
+              </div>
+              <AgentStatusWidget agentStatus={uploadAgentStatus} />
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl">
-            <div className="flex items-center space-x-3">
-              <XCircleIcon className="h-6 w-6 text-red-600" />
-              <div>
-                <p className="font-semibold text-red-800">Upload Failed</p>
-                <p className="text-sm text-red-600">{error}</p>
+          {/* Row 2: Chat + Agent Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            {/* Conversational Transaction Entry */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 min-h-[600px] flex flex-col">
+              <ConversationalEntry
+                onTransactionAdded={() => {}}
+                updateAgentStatus={(status: Partial<AgentStatus>) => {
+                  // Update chat agent status
+                  setChatAgentStatus(prev => ({ ...prev, ...status }));
+                }}
+              />
+            </div>
+
+            {/* Agent Status Widget for Chat */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 min-h-[600px] flex flex-col">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="p-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg">
+                  <CheckCircleIcon className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-slate-900">Chat Processing</h4>
+                  <p className="text-sm text-slate-600">AI pipeline status for chat interactions</p>
+                </div>
               </div>
-              <button
-                onClick={() => setError("")}
-                className="ml-auto p-1 hover:bg-red-100 rounded-full transition-colors"
-              >
-                <XMarkIcon className="h-5 w-5 text-red-600" />
-              </button>
+              <AgentStatusWidget agentStatus={chatAgentStatus} />
             </div>
           </div>
-        )}
-
-        {result && (
-          <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
-            <div className="flex items-center space-x-3 mb-4">
-              <CheckCircleIcon className="h-8 w-8 text-blue-600" />
-              <div>
-                <h4 className="text-lg font-bold text-blue-800">Upload Successful!</h4>
-                <p className="text-blue-600">Your transactions have been processed</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg border border-blue-200">
-                <div className="text-2xl font-bold text-blue-600">{result.transactions_processed || 0}</div>
-                <div className="text-sm text-blue-800">Transactions Processed</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-green-200">
-                <div className="text-2xl font-bold text-green-600">{result.new_transactions || 0}</div>
-                <div className="text-sm text-green-800">New Transactions</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-yellow-200">
-                <div className="text-2xl font-bold text-yellow-600">{result.duplicates_found || 0}</div>
-                <div className="text-sm text-yellow-800">Duplicates Found</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
-
-      {/* Agent Status - Shared for both upload and chat operations */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-        <AgentStatusWidget />
-      </div>
-
-      {/* Processing Options */}
-      {/* <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-        <h3 className="text-xl font-bold text-slate-800">AI Processing Options</h3>
-        <p>Options here</p>
-      </div> */}
-
-      {/* Expected File Format */}
-      {/* <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-        <h3 className="text-xl font-bold text-slate-800">Expected File Format</h3>
-        <p>Format info here</p>
-      </div> */}
-
-      {/* Conversational Transaction Entry */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-        <ConversationalEntry onTransactionAdded={() => {}} />
-      </div>
+        </div>
       </div>
     </div>
   );
