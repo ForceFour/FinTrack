@@ -27,7 +27,7 @@ async def get_user_settings(user_id: str):
 
         # Get user profile which contains spending limits
         try:
-            result = supabase.table("user_profile").select("*").eq("user_id", user_id).execute()
+            result = supabase.table("profiles").select("*").eq("id", user_id).execute()
 
             if not result.data or len(result.data) == 0:
                 # Return default settings for new users
@@ -41,7 +41,7 @@ async def get_user_settings(user_id: str):
                     },
                     "preferences": {
                         "currency": "LKR",
-                        "currency_symbol": "LKR"
+                        "currency_symbol": "Rs."
                     }
                 }
 
@@ -50,7 +50,7 @@ async def get_user_settings(user_id: str):
             spending_limits = user_data.get("spending_limits", {})
             preferences = user_data.get("preferences", {
                 "currency": "LKR",
-                "currency_symbol": "LKR"
+                "currency_symbol": "Rs."
             })
 
             return {
@@ -65,6 +65,7 @@ async def get_user_settings(user_id: str):
             }
         except Exception as query_error:
             # If table doesn't exist or query fails, return default settings
+            print(f"Error querying profiles: {query_error}")
             return {
                 "status": "success",
                 "user_id": user_id,
@@ -75,7 +76,7 @@ async def get_user_settings(user_id: str):
                 },
                 "preferences": {
                     "currency": "LKR",
-                    "currency_symbol": "LKR"
+                    "currency_symbol": "Rs."
                 }
             }
 
@@ -92,7 +93,7 @@ async def update_user_settings(user_id: str, settings: UserSettingsUpdate):
         supabase = await get_db_client()
 
         # Check if user profile exists
-        existing = supabase.table("user_profile").select("*").eq("user_id", user_id).execute()
+        existing = supabase.table("profiles").select("*").eq("id", user_id).execute()
 
         update_data: Dict[str, Any] = {}
 
@@ -107,17 +108,11 @@ async def update_user_settings(user_id: str, settings: UserSettingsUpdate):
             pass
 
         if not existing.data:
-            # Create new user profile
-            update_data["user_id"] = user_id
-            update_data["total_transactions"] = 0
-            update_data["categories_seen"] = []
-            update_data["merchants_seen"] = []
-            update_data["average_transaction_amount"] = 0.0
-
-            result = supabase.table("user_profile").insert(update_data).execute()
+            # User profile doesn't exist - this shouldn't happen but return error
+            raise HTTPException(status_code=404, detail="User profile not found")
         else:
             # Update existing profile
-            result = supabase.table("user_profile").update(update_data).eq("user_id", user_id).execute()
+            result = supabase.table("profiles").update(update_data).eq("id", user_id).execute()
 
         return {
             "status": "success",
@@ -125,5 +120,7 @@ async def update_user_settings(user_id: str, settings: UserSettingsUpdate):
             "user_id": user_id
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update user settings: {str(e)}")

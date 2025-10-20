@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import AgentStatusWidget from "@/components/AgentStatusWidget";
 import {
   LineChart,
@@ -42,6 +43,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const { auth, onTransactionsRefresh } = useApp();
+  const { symbol, formatAmount } = useCurrency();
 
   const loadTransactions = useCallback(async () => {
     if (!auth.user) return;
@@ -176,7 +178,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <MetricCard
             title="Total Expenses"
-            value={`$${totalExpenses.toFixed(2)}`}
+            value={formatAmount(totalExpenses)}
             delta={`${expenseRatio.toFixed(1)}% of income`}
             deltaType="neutral"
             icon= {<CurrencyDollarIcon className="w-15 h-15" />}
@@ -184,15 +186,15 @@ export default function DashboardPage() {
           />
           <MetricCard
             title="Total Income"
-            value={`$${totalIncome.toFixed(2)}`}
-            delta={`$${incomePerDay.toFixed(2)} per day`}
+            value={formatAmount(totalIncome)}
+            delta={`${formatAmount(incomePerDay)} per day`}
             deltaType="neutral"
             icon={<CreditCardIcon className="w-15 h-15" />}
             gradient="from-green-500 to-emerald-500"
           />
           <MetricCard
             title="Net Cash Flow"
-            value={`$${netCashFlow.toFixed(2)}`}
+            value={formatAmount(netCashFlow)}
             delta={totalIncome > 0 ? `${((netCashFlow / totalIncome) * 100).toFixed(1)}% savings` : "N/A"}
             deltaType={netCashFlow >= 0 ? "positive" : "negative"}
             icon={<PresentationChartLineIcon className="w-15 h-15" />}
@@ -200,7 +202,7 @@ export default function DashboardPage() {
           />
           <MetricCard
             title="Avg Transaction"
-            value={`$${avgTransaction.toFixed(2)}`}
+            value={formatAmount(avgTransaction)}
             delta={`${avgTransactionCategory} spending`}
             deltaType="neutral"
             icon={<ReceiptPercentIcon className="w-15 h-15" />}
@@ -250,7 +252,7 @@ export default function DashboardPage() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Amount']}
+                  formatter={(value: number) => [formatAmount(value), 'Amount']}
                   contentStyle={{
                     backgroundColor: 'white',
                     border: '1px solid #e2e8f0',
@@ -288,10 +290,10 @@ export default function DashboardPage() {
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => `${symbol} ${value}`}
                 />
                 <Tooltip
-                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Amount']}
+                  formatter={(value: number) => [formatAmount(value), 'Amount']}
                   labelStyle={{ color: '#374151' }}
                   contentStyle={{
                     backgroundColor: 'white',
@@ -364,7 +366,8 @@ export default function DashboardPage() {
                             : "text-green-600"
                         }
                       >
-                        {transaction.transaction_type === "expense" ? "-" : "+"}${Math.abs(transaction.amount).toFixed(2)}
+                        {transaction.transaction_type === "expense" ? "-" : "+"}
+                        {formatAmount(Math.abs(transaction.amount))}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-900 max-w-xs truncate">

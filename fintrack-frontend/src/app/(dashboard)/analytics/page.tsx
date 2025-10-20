@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   LineChart,
   Line,
@@ -90,6 +91,7 @@ export default function AnalyticsPage() {
   const [showAnomalies] = useState(true);
   const [amountRange, setAmountRange] = useState({ min: 0, max: 0 });
   const { auth } = useApp();
+  const { formatAmount, formatAmountCompact, symbol } = useCurrency();
 
   // Helper function to calculate default ranges from transactions
   const getDefaultRanges = useCallback((transactions: Transaction[]) => {
@@ -694,22 +696,9 @@ export default function AnalyticsPage() {
     setSelectedCategories([]);
   };
 
-  const formatCurrency = (amount: number) => {
-    return `LKR ${Math.abs(amount).toLocaleString('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    })}`;
-  };
-
-  const formatCurrencyCompact = (amount: number) => {
-    const abs = Math.abs(amount);
-    if (abs >= 1e9) return `LKR ${(abs/1e9).toFixed(1)}B`;
-    if (abs >= 1e6) return `LKR ${(abs/1e6).toFixed(1)}M`;
-    if (abs >= 1e3) return `LKR ${(abs/1e3).toFixed(1)}K`;
-    if (abs >= 100) return `LKR ${abs.toFixed(0)}`;
-    if (abs >= 1) return `LKR ${abs.toFixed(2)}`;
-    return `LKR ${abs.toFixed(2)}`;
-  };
+  // Wrapper functions for chart compatibility
+  const formatCurrency = (amount: number) => formatAmount(amount, true);
+  const formatCurrencyCompact = (amount: number) => formatAmountCompact(amount, true);
 
   // Helper to get lastAutoTable.finalY safely
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -748,7 +737,7 @@ export default function AnalyticsPage() {
     pdf.setFontSize(12);
     pdf.setTextColor(100);
     pdf.text(`Period: ${effectiveDateRange.start} to ${effectiveDateRange.end}`, pageWidth / 2, 30, { align: 'center' });
-    pdf.text(`Amount Range: LKR ${effectiveAmountRange.min.toLocaleString()} - LKR ${effectiveAmountRange.max.toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
+    pdf.text(`Amount Range: ${symbol} ${effectiveAmountRange.min.toLocaleString()} - ${symbol} ${effectiveAmountRange.max.toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
 
     let yPosition = 60;
 

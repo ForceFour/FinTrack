@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useApp } from "@/app/providers";
 import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   HomeIcon,
   ArrowUpTrayIcon,
@@ -42,15 +43,9 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { auth, logout } = useApp();
   const { summary, loading } = useDashboardSummary();
+  const { formatAmountCompact } = useCurrency();
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatAmountCompact(amount, true);
 
   const formatPercentage = (value: number) => {
     const sign = value >= 0 ? "+" : "";

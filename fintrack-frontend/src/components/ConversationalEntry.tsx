@@ -12,6 +12,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface ConversationalEntryProps {
   onTransactionAdded?: () => void;
@@ -31,6 +32,7 @@ export default function ConversationalEntry({
   const inputRef = useRef<HTMLInputElement>(null);
   const isInitialMount = useRef(true);
   const { refreshTransactions, auth, updateAgentStatus: globalUpdateAgentStatus } = useApp();
+  const { symbol: currencySymbol } = useCurrency();
 
   // Use the passed updateAgentStatus or fall back to global
   const updateAgentStatus = propUpdateAgentStatus || globalUpdateAgentStatus;
@@ -207,10 +209,10 @@ export default function ConversationalEntry({
   };
 
   const exampleMessages = [
-    "I spent $25 at Starbucks yesterday",
-    "Paid $120 for groceries at Walmart today using my credit card",
-    "Gas station charge of $45.50 on Monday",
-    "Coffee shop $4.75 this morning",
+    `I spent ${currencySymbol} 2500 at Starbucks yesterday`,
+    `Paid ${currencySymbol} 12000 for groceries at Walmart today using my credit card`,
+    `Gas station charge of ${currencySymbol} 4550 on Monday`,
+    `Coffee shop ${currencySymbol} 475 this morning`,
   ];
 
   return (
@@ -349,7 +351,7 @@ export default function ConversationalEntry({
               placeholder={
                 hasPendingTransaction && missingFields.length > 0
                   ? `Please provide: ${missingFields.join(", ")}`
-                  : "Type your transaction here... (e.g., &apos;I spent $25 at Starbucks yesterday&apos;)"
+                  : `Type your transaction here... (e.g., &apos;I spent ${currencySymbol} 2500 at Starbucks yesterday&apos;)`
               }
               className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white shadow-sm transition-all duration-200"
               disabled={isTyping}
