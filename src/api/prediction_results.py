@@ -7,8 +7,87 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from ..core.database_config import get_db_client
+import hashlib
 
 router = APIRouter(prefix="/prediction-results", tags=["prediction-results"])
+
+
+def _generate_suggestion_hash(suggestion: Dict[str, Any]) -> str:
+    """Generate a unique hash for a suggestion based on its content"""
+    # Use key fields to create a unique identifier
+    # Normalize and clean the content to catch variations
+    def clean_text(text):
+        if not text:
+            return ""
+        # More aggressive normalization
+        cleaned = str(text).lower().strip()
+        # Remove extra whitespace
+        cleaned = " ".join(cleaned.split())
+        # Remove common punctuation that might vary
+        cleaned = cleaned.replace(".", "").replace(",", "").replace("!", "").replace("?", "")
+        return cleaned
+    
+    # Only use core content fields, exclude metadata that might vary between workflows
+    core_fields = [
+        clean_text(suggestion.get("title", "")),
+        clean_text(suggestion.get("description", "")),
+        clean_text(suggestion.get("category", "")),
+        clean_text(suggestion.get("suggestion_type", "")),
+    ]
+    
+    # For savings, round to nearest 10 to group similar amounts
+    savings = suggestion.get("potential_savings", 0) or suggestion.get("potential_monthly_savings", 0)
+    if savings:
+        # Round to nearest 10 to group similar savings amounts
+        rounded_savings = str(round(float(savings) / 10) * 10)
+        core_fields.append(rounded_savings)
+    
+    # Create a normalized string and hash it
+    content_string = "|".join(core_fields)
+    hash_result = hashlib.md5(content_string.encode()).hexdigest()
+    
+    print(f"DEBUG: Hash input: {content_string}")
+    print(f"DEBUG: Hash result: {hash_result[:8]}")
+    
+    return hash_result
+
+
+def _deduplicate_suggestions(suggestions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate suggestions based on content similarity"""
+    seen_hashes = set()
+    seen_titles = set()  # Additional check for title similarity
+    unique_suggestions = []
+    
+    print(f"DEBUG: Processing {len(suggestions)} suggestions for deduplication")
+    
+    for i, suggestion in enumerate(suggestions):
+        # Generate hash based on content
+        suggestion_hash = _generate_suggestion_hash(suggestion)
+        
+        # Also check for title similarity (case-insensitive, normalized)
+        title = str(suggestion.get("title", "")).lower().strip()
+        normalized_title = " ".join(title.split())  # Normalize whitespace
+        
+        print(f"DEBUG: Suggestion {i+1}: hash={suggestion_hash[:8]}, title='{suggestion.get('title', 'NO_TITLE')[:50]}...'")
+        
+        # Check both hash and title similarity
+        is_duplicate = (suggestion_hash in seen_hashes) or (normalized_title and normalized_title in seen_titles)
+        
+        if not is_duplicate:
+            seen_hashes.add(suggestion_hash)
+            if normalized_title:
+                seen_titles.add(normalized_title)
+            
+            # Add a unique ID based on content hash for consistent frontend rendering
+            suggestion["id"] = f"suggestion_{suggestion_hash[:16]}"
+            unique_suggestions.append(suggestion)
+            print(f"DEBUG: Added unique suggestion (total unique: {len(unique_suggestions)})")
+        else:
+            print(f"DEBUG: Skipped duplicate suggestion (hash duplicate: {suggestion_hash in seen_hashes}, title duplicate: {normalized_title in seen_titles})")
+    
+    print(f"DEBUG: Deduplication complete: {len(suggestions)} -> {len(unique_suggestions)} (removed {len(suggestions) - len(unique_suggestions)} duplicates)")
+    
+    return unique_suggestions
 
 @router.get("/user/{user_id}/latest")
 async def get_latest_predictions(
@@ -79,10 +158,27 @@ async def get_suggestions_from_predictions(
     try:
         supabase = await get_db_client()
 
-        # Get completed predictions with suggestions
+        # First check if user has any transactions
+        tx_check = supabase.table("transactions").select("id").eq("user_id", user_id).limit(1).execute()
+        
+        # If no transactions exist, return empty suggestions (clear all suggestions)
+        if not tx_check.data or len(tx_check.data) == 0:
+            return {
+                "status": "success",
+                "suggestions": [],
+                "budget_recommendations": [],
+                "spending_suggestions": [],
+                "savings_opportunities": [],
+                "total_count": 0,
+                "message": "No transactions found. Upload transactions to generate suggestions."
+            }
+
+       # Get completed predictions with suggestions - limit to recent workflows to reduce duplicates
+        # Limit to last 5 workflows to get fresh suggestions without too much historical data
+        recent_workflows_limit = min(5, limit)
         result = supabase.table("prediction_results").select(
             "workflow_id, budget_recommendations, spending_suggestions, savings_opportunities, suggestion_confidence, created_at"
-        ).eq("user_id", user_id).eq("status", "completed").not_.is_("budget_recommendations", "null").order("created_at", desc=True).limit(limit).execute()
+        ).eq("user_id", user_id).eq("status", "completed").not_.is_("budget_recommendations", "null").order("created_at", desc=True).limit(recent_workflows_limit).execute()
 
         if not result.data:
             return {
@@ -100,27 +196,41 @@ async def get_suggestions_from_predictions(
         all_spending_suggs = []
         all_savings_opps = []
 
-        for prediction in result.data:
+        print(f"DEBUG: Processing {len(result.data)} workflows for suggestions")
+        
+        for i, prediction in enumerate(result.data):
+            print(f"DEBUG: Processing workflow {i+1}: {prediction['workflow_id']}")
+
             if prediction.get("budget_recommendations"):
                 for rec in prediction["budget_recommendations"]:
                     if rec and isinstance(rec, dict):
-                        rec["workflow_id"] = prediction["workflow_id"]
-                        rec["generated_at"] = prediction["created_at"]
-                        all_budget_recs.append(rec)
+                        # Make a copy to avoid modifying the original
+                        rec_copy = rec.copy()
+                        rec_copy["workflow_id"] = prediction["workflow_id"]
+                        rec_copy["generated_at"] = prediction["created_at"]
+                        all_budget_recs.append(rec_copy)
+                print(f"DEBUG: Added {len(prediction['budget_recommendations'])} budget recommendations")
 
             if prediction.get("spending_suggestions"):
                 for sugg in prediction["spending_suggestions"]:
                     if sugg and isinstance(sugg, dict):
-                        sugg["workflow_id"] = prediction["workflow_id"]
-                        sugg["generated_at"] = prediction["created_at"]
-                        all_spending_suggs.append(sugg)
+                      # Make a copy to avoid modifying the original
+                        sugg_copy = sugg.copy()
+                        sugg_copy["workflow_id"] = prediction["workflow_id"]
+                        sugg_copy["generated_at"] = prediction["created_at"]
+                        all_spending_suggs.append(sugg_copy)
+                print(f"DEBUG: Added {len(prediction['spending_suggestions'])} spending suggestions")
+  
 
             if prediction.get("savings_opportunities"):
                 for opp in prediction["savings_opportunities"]:
                     if opp and isinstance(opp, dict):
-                        opp["workflow_id"] = prediction["workflow_id"]
-                        opp["generated_at"] = prediction["created_at"]
-                        all_savings_opps.append(opp)
+                        # Make a copy to avoid modifying the original
+                        opp_copy = opp.copy()
+                        opp_copy["workflow_id"] = prediction["workflow_id"]
+                        opp_copy["generated_at"] = prediction["created_at"]
+                        all_savings_opps.append(opp_copy)
+                print(f"DEBUG: Added {len(prediction['savings_opportunities'])} savings opportunities")
 
         # Combine all suggestions with type labeling
         all_suggestions = []
@@ -131,15 +241,28 @@ async def get_suggestions_from_predictions(
         for opp in all_savings_opps:
             all_suggestions.append({**opp, "suggestion_type": "savings_opportunity"})
 
+        print(f"DEBUG: Total suggestions before deduplication: {len(all_suggestions)}")
+        print(f"DEBUG: Budget: {len(all_budget_recs)}, Spending: {len(all_spending_suggs)}, Savings: {len(all_savings_opps)}")
+
+        # Sort suggestions by generated_at timestamp (newest first) before deduplication
+        # This ensures that if there are duplicates, we keep the most recent version
+        all_suggestions.sort(key=lambda x: x.get("generated_at", ""), reverse=True)
+
+        # Deduplicate suggestions based on content similarity
+        unique_suggestions = _deduplicate_suggestions(all_suggestions)
+
         return {
             "status": "success",
-            "suggestions": all_suggestions,
+            "suggestions": unique_suggestions,
             "budget_recommendations": all_budget_recs,
             "spending_suggestions": all_spending_suggs,
             "savings_opportunities": all_savings_opps,
-            "total_count": len(all_suggestions),
-            "workflows_analyzed": len(result.data)
+           "total_count": len(unique_suggestions),
+            "workflows_analyzed": len(result.data),
+            "original_count": len(all_suggestions),
+            "duplicates_removed": len(all_suggestions) - len(unique_suggestions)
         }
+        
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch suggestions: {str(e)}")
