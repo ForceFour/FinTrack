@@ -1,8 +1,7 @@
 """FastAPI application for FinTrack transaction processing"""
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uvicorn
 import logging
@@ -12,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.workflows.unified_workflow import UnifiedTransactionWorkflow, WorkflowMode, get_workflow_instance
+from src.workflows.unified_workflow import WorkflowMode, get_workflow_instance
 from src.schemas.transaction_schemas import RawTransaction
 
 # Import routers
@@ -91,20 +90,20 @@ async def startup_event():
         # Initialize database
         from src.core.database_config import init_database
         await init_database()
-        logger.info("✅ FinTrack API startup complete")
+        logger.info("FinTrack API startup complete")
     except Exception as e:
-        logger.error(f"❌ Failed to start FinTrack API: {e}")
+        logger.error(f"Failed to start FinTrack API: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    logger.info("🛑 Shutting down FinTrack API...")
+    logger.info("Shutting down FinTrack API...")
     try:
         from src.core.database_config import close_database
         await close_database()
     except Exception as e:
-        logger.error(f"⚠️ Error during shutdown: {e}")
-    logger.info("✅ FinTrack API shutdown complete")
+        logger.error(f"Error during shutdown: {e}")
+    logger.info("FinTrack API shutdown complete")
 
 @app.get("/")
 async def root():
@@ -154,9 +153,6 @@ async def process_transaction(
                 detail=f"Invalid workflow mode: {mode}. Valid modes: {[m.value for m in WorkflowMode]}"
             )
 
-        # Execute workflow using the unified workflow API. Pass the transaction
-        # description as user_input and include the raw transaction data in
-        # raw_transactions / conversation_context so agents can access it.
         result = await workflow.execute_workflow(
             mode=workflow_mode,
             user_input=transaction.description,
