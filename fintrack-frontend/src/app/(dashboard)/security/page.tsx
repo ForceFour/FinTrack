@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   ShieldCheckIcon,
   ExclamationTriangleIcon,
@@ -44,8 +45,8 @@ export default function SecurityPage() {
   const [metrics, setMetrics] = useState<SecurityMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
-  const [currencySymbol, setCurrencySymbol] = useState("LKR");
   const { auth } = useApp();
+  const { symbol: currencySymbol } = useCurrency();
 
   useEffect(() => {
     const loadData = async () => {
@@ -54,23 +55,11 @@ export default function SecurityPage() {
       setLoading(true);
 
       try {
-        // Load currency preference
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-        const settingsResponse = await fetch(`${API_BASE}/api/user-settings/${auth.user.id}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-
-        if (settingsResponse.ok) {
-          const settingsData = await settingsResponse.json();
-          if (settingsData.preferences?.currency_symbol) {
-            setCurrencySymbol(settingsData.preferences.currency_symbol);
-          }
-        }
+        // Currency preference is now loaded from local storage via useCurrency hook
+        // No need to fetch from backend
 
         // Load security data from backend API (READ-ONLY, no pipeline trigger)
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
         const response = await fetch(`${API_BASE}/api/prediction-results/user/${auth.user.id}/security`, {
           method: 'GET',
           headers: {

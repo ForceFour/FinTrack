@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "@/app/providers";
+import { useCurrency } from "@/hooks/useCurrency";
 import {
   SparklesIcon,
   ChartBarIcon,
@@ -87,6 +88,7 @@ export default function SuggestionsPage() {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [generatingTips, setGeneratingTips] = useState(false);
   const { auth } = useApp();
+  const { formatAmount } = useCurrency();
 
   useEffect(() => {
     if (auth.isAuthenticated && auth.user) {
@@ -98,7 +100,7 @@ export default function SuggestionsPage() {
   const tryGeneratePersonalizedSuggestions = async () => {
     setGeneratingTips(true);
     setError("");
-    
+
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${API_BASE}/api/v1/suggestions/personalized?user_id=${auth.user?.id}`, {
@@ -132,7 +134,7 @@ export default function SuggestionsPage() {
             created_at: new Date().toISOString(),
             metadata: sugg.metadata || {}
           }));
-          
+
           setSuggestions(personalizedSuggestions);
           setError("");
         } else {
@@ -265,9 +267,9 @@ export default function SuggestionsPage() {
       String(suggestion.potential_savings || 0),
       String(suggestion.potential_monthly_savings || 0)
     ];
-    
+
     const contentString = contentFields.join("|").toLowerCase();
-    
+
     // Simple hash function for consistency (not for security)
     let hash = 0;
     for (let i = 0; i < contentString.length; i++) {
@@ -275,10 +277,10 @@ export default function SuggestionsPage() {
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash; // Convert to 32bit integer
     }
-    
+
     return Math.abs(hash).toString(36);
   };
-  
+
   const mapSuggestionType = (backendType: string): SuggestionType => {
     const typeMap: Record<string, SuggestionType> = {
       'budget_adjustment': 'budget',
@@ -350,14 +352,14 @@ export default function SuggestionsPage() {
 
       if (response.ok) {
         // Update suggestion status locally
-        setSuggestions(prev => 
-          prev.map(s => 
-            s.id === suggestionId 
+        setSuggestions(prev =>
+          prev.map(s =>
+            s.id === suggestionId
               ? { ...s, status: feedbackType === "implemented" ? "implemented" : feedbackType === "dismissed" ? "dismissed" : s.status }
               : s
           )
         );
-        
+
         // Show success message
         if (feedbackType === "implemented") {
           setError("");
@@ -460,8 +462,8 @@ export default function SuggestionsPage() {
   const totalOpportunities = spendingSuggestions.length + savingsOpportunities.length;
 
   // Extract savings-focused suggestions from main suggestions
-  const savingsFocusedSuggestions = suggestions.filter(s => 
-    s.type === 'savings' || 
+  const savingsFocusedSuggestions = suggestions.filter(s =>
+    s.type === 'savings' ||
     s.title.toLowerCase().includes('save') ||
     s.title.toLowerCase().includes('reduce') ||
     s.description.toLowerCase().includes('savings') ||
@@ -478,7 +480,7 @@ export default function SuggestionsPage() {
     if (selectedFilter === "all") return true;
     if (selectedFilter === "savings") {
       // For savings filter, show both savings type and suggestions with savings potential
-      return suggestion.type === selectedFilter || 
+      return suggestion.type === selectedFilter ||
              suggestion.title.toLowerCase().includes('save') ||
              suggestion.title.toLowerCase().includes('reduce') ||
              (suggestion.potential_savings && suggestion.potential_savings > 0);
@@ -622,7 +624,7 @@ export default function SuggestionsPage() {
           />
           <StatCard
             title="Potential Savings"
-            value={`$${combinedTotalSavings.toFixed(2)}`}
+            value={formatAmount(combinedTotalSavings)}
             icon={<BanknotesIcon className="w-6 h-6" />}
             gradient="from-green-500 to-emerald-500"
             description="Monthly savings potential"
@@ -702,7 +704,7 @@ export default function SuggestionsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {(() => {
                   const categoryBreakdown: Record<string, { amount: number; count: number }> = {};
-                  
+
                   // Add from suggestions
                   savingsFocusedSuggestions.forEach(s => {
                     const category = s.category || 'general';
@@ -712,7 +714,7 @@ export default function SuggestionsPage() {
                     categoryBreakdown[category].amount += s.potential_savings || 0;
                     categoryBreakdown[category].count += 1;
                   });
-                  
+
                   // Add from opportunities
                   filteredSavingsOpportunities.forEach(opp => {
                     const category = opp.category || 'general';
@@ -750,6 +752,7 @@ export default function SuggestionsPage() {
                   getPriorityBadgeColor={getPriorityBadgeColor}
                   getTypeIcon={getTypeIcon}
                   getDifficultyColor={getDifficultyColor}
+                  formatAmount={formatAmount}
                 />
               ))
             }
@@ -765,7 +768,7 @@ export default function SuggestionsPage() {
               </div>
               <div>
                 <h2 className="text-2xl font-bold">Great Progress!</h2>
-                <p className="text-green-100">You've implemented {implementedCount} financial improvement{implementedCount > 1 ? 's' : ''}</p>
+                <p className="text-green-100">You&apos;ve implemented {implementedCount} financial improvement{implementedCount > 1 ? 's' : ''}</p>
               </div>
             </div>
             <div className="bg-white/10 rounded-xl p-4 backdrop-blur-sm">
@@ -799,7 +802,7 @@ export default function SuggestionsPage() {
                     Monthly Income
                   </div>
                   <div className="text-4xl font-bold">
-                    ${budgetRecommendations.monthly_income.toFixed(2)}
+                    {formatAmount(budgetRecommendations.monthly_income)}
                   </div>
                   <div className="mt-2 text-green-100">
                     Confidence: {(budgetRecommendations.confidence_score * 100).toFixed(0)}%
@@ -815,7 +818,7 @@ export default function SuggestionsPage() {
                           Potential Monthly Savings
                         </div>
                         <div className="text-3xl font-bold text-blue-600">
-                          ${budgetRecommendations.savings_potential.toFixed(2)}
+                          {formatAmount(budgetRecommendations.savings_potential)}
                         </div>
                       </div>
                       <BanknotesIcon className="w-12 h-12 text-blue-500" />
@@ -845,12 +848,12 @@ export default function SuggestionsPage() {
                                 {category}
                               </span>
                               <span className="text-lg font-bold text-slate-800">
-                                ${amount.toFixed(2)}
+                                {formatAmount(amount)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-slate-600">
-                                Current: ${current.toFixed(2)}
+                                Current: {formatAmount(current)}
                               </span>
                               <span className="text-slate-500">
                                 {percentage.toFixed(1)}% of income
@@ -901,13 +904,13 @@ export default function SuggestionsPage() {
                           </div>
                           <div className="text-sm space-y-1">
                             <div>
-                              Current: ${adj.current_amount.toFixed(2)}
+                              Current: {formatAmount(adj.current_amount)}
                             </div>
                             <div>
-                              Recommended: ${adj.recommended_amount.toFixed(2)}
+                              Recommended: {formatAmount(adj.recommended_amount)}
                             </div>
                             <div className="font-semibold text-red-600">
-                              Reduce by: ${adj.difference.toFixed(2)}
+                              Reduce by: {formatAmount(adj.difference)}
                             </div>
                           </div>
                         </div>
@@ -984,6 +987,7 @@ function SuggestionCard({
   getPriorityBadgeColor,
   getTypeIcon,
   getDifficultyColor,
+  formatAmount,
 }: {
   suggestion: Suggestion;
   onFeedback: (id: string, rating: number, type: string) => void;
@@ -991,6 +995,7 @@ function SuggestionCard({
   getPriorityBadgeColor: (priority: SuggestionPriority) => string;
   getTypeIcon: (type: SuggestionType) => React.ReactNode;
   getDifficultyColor: (difficulty: string) => string;
+  formatAmount: (amount: number, includeSymbol?: boolean) => string;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
@@ -1046,7 +1051,7 @@ function SuggestionCard({
             </div>
             <div className="text-2xl font-bold text-green-600">
               {suggestion.potential_savings && suggestion.potential_savings > 0
-                ? `$${suggestion.potential_savings.toFixed(2)}`
+                ? formatAmount(suggestion.potential_savings)
                 : 'High'}
             </div>
           </div>
@@ -1061,7 +1066,7 @@ function SuggestionCard({
                 {(() => {
                   const metadata = suggestion.metadata as Record<string, any>;
                   const details = [];
-                  
+
                   if (metadata.based_on) {
                     details.push(
                       <div key="based_on" className="text-xs text-slate-700">
@@ -1069,7 +1074,7 @@ function SuggestionCard({
                       </div>
                     );
                   }
-                  
+
                   if (metadata.current_spending) {
                     details.push(
                       <div key="current_spending" className="text-xs text-slate-700">
@@ -1077,7 +1082,7 @@ function SuggestionCard({
                       </div>
                     );
                   }
-                  
+
                   if (metadata.reduction_percentage) {
                     details.push(
                       <div key="reduction_percentage" className="text-xs text-slate-700">
@@ -1085,7 +1090,7 @@ function SuggestionCard({
                       </div>
                     );
                   }
-                  
+
                   if (metadata.transaction_count) {
                     details.push(
                       <div key="transaction_count" className="text-xs text-slate-700">
@@ -1093,7 +1098,7 @@ function SuggestionCard({
                       </div>
                     );
                   }
-                  
+
                   if (metadata.personalized) {
                     details.push(
                       <div key="personalized" className="text-xs text-green-700">
@@ -1101,7 +1106,7 @@ function SuggestionCard({
                       </div>
                     );
                   }
-                  
+
                   return details;
                 })()}
               </div>
