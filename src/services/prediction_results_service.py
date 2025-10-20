@@ -67,6 +67,7 @@ class PredictionResultsService:
                 # Input data
                 "user_input": workflow_state.get("user_input"),
                 "input_type": workflow_state.get("input_type"),
+                "source_name": workflow_state.get("source_name"),  # Add source name
                 "raw_transaction_count": len(workflow_state.get("raw_transactions", [])),
 
                 # Duplicate tracking - check if any transactions were flagged as duplicates

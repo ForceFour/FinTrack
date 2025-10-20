@@ -76,9 +76,9 @@ async def upload_transactions(
                 detail=f"Missing required columns: {missing_columns}"
             )
 
-        # Process transactions
+        # Process transactions with source file name
         result = await transaction_service.process_uploaded_transactions(
-            df, user_id
+            df, user_id, source_name=file.filename
         )
 
         return {
@@ -605,12 +605,17 @@ async def process_natural_language_transaction(
                                 }
                                 raw_transactions.append(raw_tx)
 
+                            # Generate source name for chat input
+                            chat_preview = user_input[:50] + "..." if len(user_input) > 50 else user_input
+                            source_name = f"Chat: {chat_preview}"
+
                             # Run full pipeline to populate prediction_results
                             await workflow.execute_workflow(
                                 mode=WorkflowMode.FULL_PIPELINE,
                                 user_id=user_id,
                                 raw_transactions=raw_transactions,
-                                user_input=user_input
+                                user_input=user_input,
+                                source_name=source_name
                             )
                         except Exception as e:
                             print(f"Background workflow error: {e}")

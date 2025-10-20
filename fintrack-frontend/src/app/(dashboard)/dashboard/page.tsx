@@ -6,7 +6,6 @@ import { getTransactions } from "@/lib/transactions";
 import { Transaction } from "@/lib/types";
 import { useApp } from "@/app/providers";
 import { useCurrency } from "@/hooks/useCurrency";
-import AgentStatusWidget from "@/components/AgentStatusWidget";
 import {
   LineChart,
   Line,
@@ -218,10 +217,6 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Agent Status */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-          <AgentStatusWidget />
-        </div>
 
         {/* Charts */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
