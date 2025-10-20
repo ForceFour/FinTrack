@@ -14,7 +14,6 @@ import {
   CheckCircleIcon,
   XMarkIcon,
   ArrowPathIcon,
-  StarIcon,
 } from "@heroicons/react/24/outline";
 
 // Type definitions based on backend models
@@ -37,21 +36,6 @@ interface Suggestion {
   metadata?: Record<string, unknown>;
 }
 
-interface BudgetRecommendation {
-  monthly_income: number;
-  recommended_budget: Record<string, number>;
-  current_spending: Record<string, number>;
-  adjustments: Array<{
-    category: string;
-    current_amount: number;
-    recommended_amount: number;
-    difference: number;
-    type: string;
-    priority: string;
-  }>;
-  savings_potential: number;
-  confidence_score: number;
-}
 
 interface SpendingSuggestion {
   title: string;
@@ -75,18 +59,57 @@ interface SavingsOpportunity {
   metadata?: Record<string, unknown>;
 }
 
+interface BackendSuggestion {
+  id?: string;
+  workflow_id?: string;
+  suggestion_type: string;
+  title?: string;
+  category?: string;
+  description?: string;
+  message?: string;
+  priority?: string;
+  potential_savings?: number;
+  potential_monthly_savings?: number;
+  implementation_difficulty?: string;
+  generated_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface BackendSpendingSuggestion {
+  title?: string;
+  name?: string;
+  description?: string;
+  potential_savings?: number;
+  potential_monthly_savings?: number;
+  category?: string;
+  priority?: string;
+  implementation_difficulty?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface BackendSavingsOpportunity {
+  title?: string;
+  name?: string;
+  description?: string;
+  potential_savings?: number;
+  potential_monthly_savings?: number;
+  tips?: string[];
+  action_steps?: string[];
+  category?: string;
+  priority?: string;
+  metadata?: Record<string, unknown>;
+}
 
 
 export default function SuggestionsPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [budgetRecommendations, setBudgetRecommendations] = useState<BudgetRecommendation | null>(null);
   const [spendingSuggestions, setSpendingSuggestions] = useState<SpendingSuggestion[]>([]);
   const [savingsOpportunities, setSavingsOpportunities] = useState<SavingsOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
-  const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [generatingTips, setGeneratingTips] = useState(false);
+  // const [showBudgetModal, setShowBudgetModal] = useState(false);
+  // const [budgetRecommendations, setBudgetRecommendations] = useState<BudgetRecommendation | null>(null);
   const { auth } = useApp();
   const { formatAmount } = useCurrency();
 
@@ -98,7 +121,6 @@ export default function SuggestionsPage() {
   }, [auth.isAuthenticated, auth.user, selectedFilter]);
 
   const tryGeneratePersonalizedSuggestions = async () => {
-    setGeneratingTips(true);
     setError("");
 
     try {
@@ -121,9 +143,9 @@ export default function SuggestionsPage() {
         const data = await response.json();
         if (data.suggestions && data.suggestions.suggestions && data.suggestions.suggestions.length > 0) {
           // Convert personalized suggestions to our format
-          const personalizedSuggestions: Suggestion[] = data.suggestions.suggestions.map((sugg: any) => ({
+          const personalizedSuggestions: Suggestion[] = data.suggestions.suggestions.map((sugg: BackendSuggestion) => ({
             id: `personalized_${Math.random().toString(36).substr(2, 9)}`,
-            type: mapSuggestionType(sugg.suggestion_type || sugg.type),
+            type: mapSuggestionType(sugg.suggestion_type),
             title: sugg.title || "Personalized Suggestion",
             description: sugg.description || "",
             priority: sugg.priority as SuggestionPriority || "medium",
@@ -146,8 +168,6 @@ export default function SuggestionsPage() {
     } catch (err) {
       console.warn('Failed to generate personalized suggestions:', err);
       setError("Failed to generate AI tips. Please check your connection and try again.");
-    } finally {
-      setGeneratingTips(false);
     }
   };
 
@@ -197,7 +217,7 @@ export default function SuggestionsPage() {
 
         // Set spending suggestions if available
         if (data.spending_suggestions && data.spending_suggestions.length > 0) {
-          setSpendingSuggestions(data.spending_suggestions.map((sugg: any) => ({
+          setSpendingSuggestions(data.spending_suggestions.map((sugg: BackendSpendingSuggestion) => ({
             title: sugg.title || sugg.name || "Spending Optimization",
             description: sugg.description || "Optimize your spending in this area",
             potential_savings: sugg.potential_savings || 0,
@@ -211,7 +231,7 @@ export default function SuggestionsPage() {
 
         // Set savings opportunities if available
         if (data.savings_opportunities && data.savings_opportunities.length > 0) {
-          setSavingsOpportunities(data.savings_opportunities.map((opp: any) => ({
+          setSavingsOpportunities(data.savings_opportunities.map((opp: BackendSavingsOpportunity) => ({
             title: opp.title || opp.name || "Savings Opportunity",
             description: opp.description || "Potential area for savings",
             potential_savings: opp.potential_savings || 0,
@@ -257,7 +277,7 @@ export default function SuggestionsPage() {
     setLoading(false);
   };
 
-  const generateConsistentId = (suggestion: any): string => {
+  const generateConsistentId = (suggestion: BackendSuggestion): string => {
     // Generate consistent ID based on suggestion content
     const contentFields = [
       suggestion.title || "",
@@ -300,78 +320,6 @@ export default function SuggestionsPage() {
       'financial_overview': 'budget'
     };
     return typeMap[backendType] || 'budget';
-  };
-
-
-
-
-
-  const loadBudgetRecommendations = async () => {
-    try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(
-        `${API_BASE}/api/v1/suggestions/budget?user_id=${auth.user?.id}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ monthly_income: 5000 }), // TODO: Get from user profile
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setBudgetRecommendations(data);
-        setShowBudgetModal(true);
-      }
-    } catch (err) {
-      console.error("Failed to load budget recommendations:", err);
-      setError("Failed to load budget recommendations. Please try again.");
-    }
-  };
-
-  const handleFeedback = async (
-    suggestionId: string,
-    rating: number,
-    feedbackType: string
-  ) => {
-    try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE}/api/v1/suggestions/feedback?user_id=${auth.user?.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          suggestion_id: suggestionId,
-          rating,
-          feedback_type: feedbackType,
-        }),
-      });
-
-      if (response.ok) {
-        // Update suggestion status locally
-        setSuggestions(prev =>
-          prev.map(s =>
-            s.id === suggestionId
-              ? { ...s, status: feedbackType === "implemented" ? "implemented" : feedbackType === "dismissed" ? "dismissed" : s.status }
-              : s
-          )
-        );
-
-        // Show success message
-        if (feedbackType === "implemented") {
-          setError("");
-          // You could show a success toast here
-        }
-      } else {
-        setError("Failed to submit feedback. Please try again.");
-      }
-    } catch (err) {
-      console.error("Failed to submit feedback:", err);
-      setError("Failed to submit feedback. Please check your connection.");
-    }
   };
 
   const getPriorityColor = (priority: SuggestionPriority) => {
@@ -418,19 +366,6 @@ export default function SuggestionsPage() {
         return <ExclamationTriangleIcon className="w-6 h-6" />;
       default:
         return <LightBulbIcon className="w-6 h-6" />;
-    }
-  };
-
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty.toLowerCase()) {
-      case "easy":
-        return "text-green-600";
-      case "medium":
-        return "text-yellow-600";
-      case "hard":
-        return "text-red-600";
-      default:
-        return "text-gray-600";
     }
   };
 
@@ -487,11 +422,6 @@ export default function SuggestionsPage() {
     }
     return suggestion.type === selectedFilter;
   });
-
-  // Filter spending suggestions based on selected filter
-  const filteredSpendingSuggestions = selectedFilter === "all" || selectedFilter === "spending"
-    ? spendingSuggestions
-    : [];
 
   // Filter savings opportunities based on selected filter
   const filteredSavingsOpportunities = selectedFilter === "all" || selectedFilter === "savings"
@@ -579,7 +509,7 @@ export default function SuggestionsPage() {
               <div className="bg-white/10 rounded-xl p-6 backdrop-blur-sm">
                 <h3 className="text-lg font-semibold mb-2">Potential Monthly Savings</h3>
                 <div className="text-3xl font-bold mb-2">
-                  ${combinedTotalSavings > 0 ? combinedTotalSavings.toFixed(2) : '0.00'}
+                  {formatAmount(combinedTotalSavings > 0 ? combinedTotalSavings : 0)}
                 </div>
                 <p className="text-sm text-purple-100">
                   From {suggestions.length + spendingSuggestions.length + savingsOpportunities.length} personalized suggestions
@@ -678,22 +608,22 @@ export default function SuggestionsPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Direct Savings</div>
-                <div className="text-2xl font-bold">${totalPotentialFromSuggestions.toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalPotentialFromSuggestions)}</div>
                 <div className="text-xs text-green-200">From {savingsFocusedSuggestions.length} suggestions</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Opportunities</div>
-                <div className="text-2xl font-bold">${totalSavingsOpportunities.toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalSavingsOpportunities)}</div>
                 <div className="text-xs text-green-200">From {filteredSavingsOpportunities.length} opportunities</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Total Monthly</div>
-                <div className="text-2xl font-bold">${(totalPotentialFromSuggestions + totalSavingsOpportunities).toFixed(2)}</div>
+                <div className="text-2xl font-bold">{formatAmount(totalPotentialFromSuggestions + totalSavingsOpportunities)}</div>
                 <div className="text-xs text-green-200">Combined potential</div>
               </div>
               <div className="bg-white/15 rounded-xl p-4 backdrop-blur-sm">
                 <div className="text-sm text-green-100 mb-1">Annual Impact</div>
-                <div className="text-2xl font-bold">${((totalPotentialFromSuggestions + totalSavingsOpportunities) * 12).toFixed(0)}</div>
+                <div className="text-2xl font-bold">{formatAmount((totalPotentialFromSuggestions + totalSavingsOpportunities) * 12)}</div>
                 <div className="text-xs text-green-200">Yearly projection</div>
               </div>
             </div>
@@ -730,7 +660,7 @@ export default function SuggestionsPage() {
                     .map(([category, data]) => (
                       <div key={category} className="bg-white/10 rounded-lg p-3">
                         <div className="text-xs text-green-100 font-medium capitalize mb-1">{category}</div>
-                        <div className="text-lg font-bold">${data.amount.toFixed(2)}</div>
+                        <div className="text-lg font-bold">{formatAmount(data.amount)}</div>
                         <div className="text-xs text-green-200">{data.count} item{data.count > 1 ? 's' : ''}</div>
                       </div>
                     ));
@@ -747,11 +677,9 @@ export default function SuggestionsPage() {
                 <SuggestionCard
                   key={suggestion.id || idx}
                   suggestion={suggestion}
-                  onFeedback={handleFeedback}
                   getPriorityColor={getPriorityColor}
                   getPriorityBadgeColor={getPriorityBadgeColor}
                   getTypeIcon={getTypeIcon}
-                  getDifficultyColor={getDifficultyColor}
                   formatAmount={formatAmount}
                 />
               ))
@@ -780,148 +708,14 @@ export default function SuggestionsPage() {
           </div>
         )}
 
-        {/* Budget Recommendations Modal */}
+        {/* Budget Recommendations Modal - Commented out for future use */}
+        {/* 
         {showBudgetModal && budgetRecommendations && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-slate-800">
-                  Budget Recommendations
-                </h2>
-                <button
-                  onClick={() => setShowBudgetModal(false)}
-                  className="text-slate-500 hover:text-slate-700"
-                >
-                  <XMarkIcon className="w-6 h-6" />
-                </button>
-              </div>
-              <div className="p-6 space-y-6">
-                {/* Monthly Income */}
-                <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl p-6 text-white">
-                  <div className="text-lg font-medium mb-2">
-                    Monthly Income
-                  </div>
-                  <div className="text-4xl font-bold">
-                    {formatAmount(budgetRecommendations.monthly_income)}
-                  </div>
-                  <div className="mt-2 text-green-100">
-                    Confidence: {(budgetRecommendations.confidence_score * 100).toFixed(0)}%
-                  </div>
-                </div>
-
-                {/* Savings Potential */}
-                {budgetRecommendations.savings_potential > 0 && (
-                  <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium text-blue-900 mb-1">
-                          Potential Monthly Savings
-                        </div>
-                        <div className="text-3xl font-bold text-blue-600">
-                          {formatAmount(budgetRecommendations.savings_potential)}
-                        </div>
-                      </div>
-                      <BanknotesIcon className="w-12 h-12 text-blue-500" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Budget Breakdown */}
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">
-                    Recommended Budget Allocation
-                  </h3>
-                  <div className="space-y-3">
-                    {Object.entries(budgetRecommendations.recommended_budget).map(
-                      ([category, amount]) => {
-                        const current =
-                          budgetRecommendations.current_spending[category] || 0;
-                        const percentage =
-                          (amount / budgetRecommendations.monthly_income) * 100;
-                        return (
-                          <div
-                            key={category}
-                            className="bg-slate-50 rounded-lg p-4"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-semibold text-slate-800 capitalize">
-                                {category}
-                              </span>
-                              <span className="text-lg font-bold text-slate-800">
-                                {formatAmount(amount)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-600">
-                                Current: {formatAmount(current)}
-                              </span>
-                              <span className="text-slate-500">
-                                {percentage.toFixed(1)}% of income
-                              </span>
-                            </div>
-                            <div className="mt-2 h-2 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
-                                style={{ width: `${Math.min(percentage, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      }
-                    )}
-                  </div>
-                </div>
-
-                {/* Adjustments Needed */}
-                {budgetRecommendations.adjustments.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800 mb-4">
-                      Recommended Adjustments
-                    </h3>
-                    <div className="space-y-3">
-                      {budgetRecommendations.adjustments.map((adj, idx) => (
-                        <div
-                          key={idx}
-                          className={`border-2 rounded-lg p-4 ${
-                            adj.priority === "high"
-                              ? "border-red-300 bg-red-50"
-                              : "border-yellow-300 bg-yellow-50"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold capitalize">
-                              {adj.category}
-                            </span>
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                adj.priority === "high"
-                                  ? "bg-red-200 text-red-800"
-                                  : "bg-yellow-200 text-yellow-800"
-                              }`}
-                            >
-                              {adj.priority.toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="text-sm space-y-1">
-                            <div>
-                              Current: {formatAmount(adj.current_amount)}
-                            </div>
-                            <div>
-                              Recommended: {formatAmount(adj.recommended_amount)}
-                            </div>
-                            <div className="font-semibold text-red-600">
-                              Reduce by: {formatAmount(adj.difference)}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            ...modal content...
           </div>
         )}
+        */}
       </div>
     </div>
   );
@@ -982,19 +776,15 @@ function FilterTab({
 
 function SuggestionCard({
   suggestion,
-  onFeedback,
   getPriorityColor,
   getPriorityBadgeColor,
   getTypeIcon,
-  getDifficultyColor,
   formatAmount,
 }: {
   suggestion: Suggestion;
-  onFeedback: (id: string, rating: number, type: string) => void;
   getPriorityColor: (priority: SuggestionPriority) => string;
   getPriorityBadgeColor: (priority: SuggestionPriority) => string;
   getTypeIcon: (type: SuggestionType) => React.ReactNode;
-  getDifficultyColor: (difficulty: string) => string;
   formatAmount: (amount: number, includeSymbol?: boolean) => string;
 }) {
   return (
@@ -1064,7 +854,7 @@ function SuggestionCard({
               <div className="text-xs text-slate-600 font-medium mb-2">AI Analysis Details</div>
               <div className="space-y-1">
                 {(() => {
-                  const metadata = suggestion.metadata as Record<string, any>;
+                  const metadata = suggestion.metadata as Record<string, string | number | boolean>;
                   const details = [];
 
                   if (metadata.based_on) {
@@ -1078,7 +868,7 @@ function SuggestionCard({
                   if (metadata.current_spending) {
                     details.push(
                       <div key="current_spending" className="text-xs text-slate-700">
-                        <span className="font-medium">Current spending:</span> ${Number(metadata.current_spending).toFixed(2)}
+                        <span className="font-medium">Current spending:</span> {formatAmount(Number(metadata.current_spending))}
                       </div>
                     );
                   }
