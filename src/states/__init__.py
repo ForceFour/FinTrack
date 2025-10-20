@@ -33,6 +33,7 @@ class TransactionProcessingState(TypedDict):
     raw_transactions: Optional[List[Dict[str, Any]]]  # Structured transaction data
     raw_input: Optional[str]  # Legacy field
     input_type: Optional[str]  # "structured" or "unstructured"
+    source_name: Optional[str]  # Source name (filename for uploads, title for chats)
 
     # Processing stage tracking
     current_stage: ProcessingStage
