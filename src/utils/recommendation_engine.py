@@ -51,7 +51,7 @@ class RecommendationEngine:
                         'type': SuggestionType.BUDGET_ALERT,
                         'category': category,
                         'title': f"Budget Alert: {category.replace('_', ' ').title()}",
-                        'description': f"You've exceeded your {category} budget by ${overspend_amount:.2f} ({overspend_percent:.1f}%)",
+                        'description': f'You have exceeded your {category} budget by {overspend_amount:.2f} ({overspend_percent:.1f}%)',
                         'priority': SuggestionPriority.HIGH if overspend_percent > 50 else SuggestionPriority.MEDIUM,
                         'amount_exceeded': overspend_amount,
                         'percentage_exceeded': overspend_percent
@@ -90,7 +90,7 @@ class RecommendationEngine:
                     suggestions.append({
                         'type': SuggestionType.SPENDING_REDUCTION,
                         'title': f"Review Recurring Expense: {metadata.get('merchant', 'Unknown')}",
-                        'description': f"This recurring expense costs ${monthly_cost:.2f}/month. Consider if it's necessary.",
+                        'description': f"This recurring expense costs {monthly_cost:.2f}/month. Consider if it's necessary.",
                         'priority': SuggestionPriority.MEDIUM if amount > 20 else SuggestionPriority.LOW,
                         'potential_savings': monthly_cost * 0.5,  # Assume 50% could be saved if eliminated
                         'merchant': metadata.get('merchant'),
@@ -118,7 +118,7 @@ class RecommendationEngine:
                     alerts.append({
                         'type': SuggestionType.SUBSCRIPTION_ALERT,
                         'title': f"Subscription Review: {metadata.get('merchant', 'Unknown')}",
-                        'description': f"Annual cost: ${annual_cost:.2f}. Consider if you're getting value from this subscription.",
+                        'description': f"Annual cost: {annual_cost:.2f}. Consider if you're getting value from this subscription.",
                         'priority': SuggestionPriority.LOW if annual_cost < 100 else SuggestionPriority.MEDIUM,
                         'merchant': metadata.get('merchant'),
                         'monthly_cost': amount * (30 / frequency) if frequency > 0 else 0,
@@ -153,7 +153,7 @@ class RecommendationEngine:
                     'type': SuggestionType.SAVINGS_OPPORTUNITY,
                     'category': category,
                     'title': f"Save on {category.replace('_', ' ').title()}",
-                    'description': f"You spent ${amount:.2f} on {category}. Here are ways to save:",
+                    'description': f"You spent {amount:.2f} on {category}. Here are ways to save:",
                     'priority': SuggestionPriority.LOW,
                     'potential_savings': amount * 0.15,  # Assume 15% savings potential
                     'tips': savings_tips,
