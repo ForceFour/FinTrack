@@ -25,7 +25,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { format, subDays, addDays } from "date-fns";
+import { format, subDays, addDays, startOfWeek, endOfWeek, startOfDay, endOfDay } from "date-fns";
 import {
   FunnelIcon,
   ChartBarIcon,
@@ -1071,26 +1071,97 @@ export default function AnalyticsPage() {
       pdf.text('Predictive Financial Analysis', 20, yPosition);
       yPosition += 10;
 
-      // Calculate forecast data
-      const recentDays = displayData.dailyData.slice(-30);
-      const recentTrend = recentDays.reduce((sum, d) => sum + d.amount, 0) / recentDays.length;
-      const historicalAvg = displayData.dailyData.reduce((sum, d) => sum + d.amount, 0) / displayData.dailyData.length;
-      const trendChange = historicalAvg > 0 ? ((recentTrend - historicalAvg) / historicalAvg * 100) : 0;
-
-      const forecast30Days = recentTrend * 30;
-      // Calculate confidence based on data points: 30+ days = 75%, 60+ days = 85%, 90+ days = 95%
-      const dataPoints = displayData.dailyData.length;
-      const baseConfidence = Math.min(0.95, 0.50 + (dataPoints / 90) * 0.45);
-      const confidence = Math.round(baseConfidence * 100) / 100; // Round to 2 decimals
+      // Calculate forecast data using the same logic as frontend
+      const today = new Date();
+      const thirtyDaysAgo = subDays(today, 30);
+      const sevenDaysAgo = subDays(today, 7);
+      const fourteenDaysAgo = subDays(today, 14);
+      
+      // Calculate actual last 30 days SPENDING ONLY (exclude income) - matching frontend
+      const spendingTransactions = transactions.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate >= thirtyDaysAgo && 
+               transactionDate <= today && 
+               t.amount < 0; // Only negative amounts (spending)
+      });
+      
+      const last30DaysSpending = spendingTransactions.reduce((sum, t) => {
+        return sum + Math.abs(t.amount); // Convert to positive for display
+      }, 0);
+      
+      // Get last 7 days spending (negative amounts only) - matching frontend
+      const lastWeekSpending = transactions.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate >= sevenDaysAgo && 
+               transactionDate <= today && 
+               t.amount < 0; // Only negative amounts (spending)
+      }).reduce((sum, t) => {
+        return sum + Math.abs(t.amount); // Convert to positive for calculation
+      }, 0);
+      
+      // Get previous 7 days spending (8-14 days ago, negative amounts only) - matching frontend
+      const previousWeekSpending = transactions.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate >= fourteenDaysAgo && 
+               transactionDate < sevenDaysAgo && 
+               t.amount < 0; // Only negative amounts (spending)
+      }).reduce((sum, t) => {
+        return sum + Math.abs(t.amount); // Convert to positive for calculation
+      }, 0);
+      
+      // Calculate weekly change - matching frontend
+      let weeklyChange = '0%';
+      if (previousWeekSpending === 0) {
+        weeklyChange = lastWeekSpending > 0 ? '100%' : '0%';
+      } else {
+        const change = ((lastWeekSpending - previousWeekSpending) / previousWeekSpending) * 100;
+        weeklyChange = `${change.toFixed(1)}%`;
+      }
+      
+      // Calculate daily averages
+      const avgDailyLast30 = last30DaysSpending / 30;
+      const avgDailyLastWeek = lastWeekSpending / 7;
+      const avgDailyPrevWeek = previousWeekSpending / 7;
+      
+      // Calculate trend-based forecast for next 30 days
+      let forecast30Days;
+      let trendDirection;
+      
+      if (previousWeekSpending > 0 && lastWeekSpending > 0) {
+        // Calculate the weekly trend multiplier
+        const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
+        
+        // Determine trend direction
+        if (weeklyTrendMultiplier > 1.05) { // 5% increase threshold
+          trendDirection = 'Increasing';
+          // Project the trend forward: use recent week average with trend applied
+          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+        } else if (weeklyTrendMultiplier < 0.95) { // 5% decrease threshold
+          trendDirection = 'Decreasing';
+          // Project the trend forward: use recent week average with trend applied
+          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+        } else {
+          trendDirection = 'Stable';
+          // Use recent week average for stable trend
+          forecast30Days = avgDailyLastWeek * 30;
+        }
+      } else {
+        // Fallback to 30-day average if no previous week data
+        trendDirection = 'Stable';
+        forecast30Days = avgDailyLast30 * 30;
+      }
+      
+      // Ensure forecast is reasonable (not negative and not wildly excessive)
+      forecast30Days = Math.max(0, Math.min(forecast30Days, avgDailyLast30 * 60)); // Cap at 2x current rate
 
       const predictiveData = [
-        ['Historical Daily Average', formatCurrency(historicalAvg)],
-        ['Recent Trend (30 days)', `${formatCurrency(recentTrend)}/day`],
-        ['Trend Direction', trendChange > 0 ? 'Increasing' : trendChange < 0 ? 'Decreasing' : 'Stable'],
-        ['30-Day Forecast', formatCurrency(forecast30Days)],
-        ['Predicted Monthly Change', `${trendChange > 0 ? '+' : ''}${trendChange.toFixed(1)}%`],
-        ['Forecast Confidence', `${(confidence * 100).toFixed(0)}%`],
-        ['Data Points Used', `${displayData.dailyData.length} days`]
+        ['Last 30 Days Spending', formatCurrency(last30DaysSpending)],
+        ['Daily Average (Last 30 Days)', formatCurrency(avgDailyLast30)],
+        ['Last Week Spending', formatCurrency(lastWeekSpending)],
+        ['Previous Week Spending', formatCurrency(previousWeekSpending)],
+        ['Weekly Change', weeklyChange],
+        ['Trend Direction', trendDirection],
+        ['30-Day Forecast', formatCurrency(forecast30Days)]
       ];
 
       autoTable(pdf, {
@@ -1915,46 +1986,191 @@ export default function AnalyticsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(displayData.dailyData.slice(-30).reduce((sum, d) => sum + d.amount, 0))}
+                    {(() => {
+                      // Calculate actual last 30 days SPENDING ONLY (exclude income)
+                      const today = new Date();
+                      const thirtyDaysAgo = subDays(today, 30);
+                      
+                      // Get spending transactions (negative amounts only)
+                      const spendingTransactions = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= thirtyDaysAgo && 
+                               transactionDate <= today && 
+                               t.amount < 0; // Only negative amounts (spending)
+                      });
+                      
+                      const totalSpending = spendingTransactions.reduce((sum, t) => {
+                        return sum + Math.abs(t.amount); // Convert to positive for display
+                      }, 0);
+                      
+                      return formatCurrency(totalSpending);
+                    })()}
                   </div>
-                  <div className="text-sm text-gray-600">Recent Monthly Spending</div>
+                  <div className="text-sm text-gray-600">Last 30 Days Spending</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {displayData.dailyData.length > 7 ?
-                      `${((displayData.dailyData.slice(-7).reduce((sum, d) => sum + d.amount, 0) /
-                          Math.max(1, displayData.dailyData.slice(-14, -7).reduce((sum, d) => sum + d.amount, 0)) - 1) * 100).toFixed(1)}%`
-                      : '0%'}
+                    {(() => {
+                      // Calculate weekly change using SPENDING ONLY (exclude income)
+                      const today = new Date();
+                      const sevenDaysAgo = subDays(today, 7);
+                      const fourteenDaysAgo = subDays(today, 14);
+                      
+                      // Get last 7 days spending (negative amounts only)
+                      const lastWeekSpending = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= sevenDaysAgo && 
+                               transactionDate <= today && 
+                               t.amount < 0; // Only negative amounts (spending)
+                      }).reduce((sum, t) => {
+                        return sum + Math.abs(t.amount); // Convert to positive for calculation
+                      }, 0);
+                      
+                      // Get previous 7 days spending (8-14 days ago, negative amounts only)
+                      const previousWeekSpending = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= fourteenDaysAgo && 
+                               transactionDate < sevenDaysAgo && 
+                               t.amount < 0; // Only negative amounts (spending)
+                      }).reduce((sum, t) => {
+                        return sum + Math.abs(t.amount); // Convert to positive for calculation
+                      }, 0);
+                      
+                      if (previousWeekSpending === 0) {
+                        return lastWeekSpending > 0 ? '100%' : '0%';
+                      }
+                      
+                      const change = ((lastWeekSpending - previousWeekSpending) / previousWeekSpending) * 100;
+                      return `${change.toFixed(1)}%`;
+                    })()}
                   </div>
                   <div className="text-sm text-gray-600">Weekly Change</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">
                     {(() => {
-                      // Calculate confidence based on data points (more data = higher confidence)
-                      // Use displayData to respect filters
-                      const dataPoints = displayData.dailyData.length;
-                      // 30+ days = 75%, 60+ days = 85%, 90+ days = 95%
-                      const baseConfidence = Math.min(95, 50 + (dataPoints / 90) * 45);
-                      return Math.round(baseConfidence);
-                    })()}%
+                      // Calculate 30-day forecast using same logic as PDF
+                      const today = new Date();
+                      const thirtyDaysAgo = subDays(today, 30);
+                      const sevenDaysAgo = subDays(today, 7);
+                      const fourteenDaysAgo = subDays(today, 14);
+                      
+                      // Get spending data
+                      const last30DaysSpending = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= thirtyDaysAgo && 
+                               transactionDate <= today && 
+                               t.amount < 0;
+                      }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                      
+                      const lastWeekSpending = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= sevenDaysAgo && 
+                               transactionDate <= today && 
+                               t.amount < 0;
+                      }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                      
+                      const previousWeekSpending = transactions.filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= fourteenDaysAgo && 
+                               transactionDate < sevenDaysAgo && 
+                               t.amount < 0;
+                      }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                      
+                      // Calculate averages
+                      const avgDailyLast30 = last30DaysSpending / 30;
+                      const avgDailyLastWeek = lastWeekSpending / 7;
+                      
+                      // Calculate forecast
+                      let forecast30Days;
+                      
+                      if (previousWeekSpending > 0 && lastWeekSpending > 0) {
+                        const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
+                        
+                        if (weeklyTrendMultiplier > 1.05) {
+                          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+                        } else if (weeklyTrendMultiplier < 0.95) {
+                          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+                        } else {
+                          forecast30Days = avgDailyLastWeek * 30;
+                        }
+                      } else {
+                        forecast30Days = avgDailyLast30 * 30;
+                      }
+                      
+                      // Cap the forecast
+                      forecast30Days = Math.max(0, Math.min(forecast30Days, avgDailyLast30 * 60));
+                      
+                      return formatCurrency(forecast30Days);
+                    })()}
                   </div>
-                  <div className="text-sm text-gray-600">Data Confidence</div>
+                  <div className="text-sm text-gray-600">Next 30 Days Forecast</div>
                 </div>
               </div>
 
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart
-                  data={[
-                    // Future predictions only (next 30 days from current date)
-                    ...Array.from({ length: 31 }, (_, i) => ({
+                  data={(() => {
+                    // Calculate the same forecast logic as the summary card
+                    const today = new Date();
+                    const thirtyDaysAgo = subDays(today, 30);
+                    const sevenDaysAgo = subDays(today, 7);
+                    const fourteenDaysAgo = subDays(today, 14);
+                    
+                    // Get spending data using same logic as forecast
+                    const last30DaysSpending = transactions.filter(t => {
+                      const transactionDate = new Date(t.date);
+                      return transactionDate >= thirtyDaysAgo && 
+                             transactionDate <= today && 
+                             t.amount < 0;
+                    }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                    
+                    const lastWeekSpending = transactions.filter(t => {
+                      const transactionDate = new Date(t.date);
+                      return transactionDate >= sevenDaysAgo && 
+                             transactionDate <= today && 
+                             t.amount < 0;
+                    }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                    
+                    const previousWeekSpending = transactions.filter(t => {
+                      const transactionDate = new Date(t.date);
+                      return transactionDate >= fourteenDaysAgo && 
+                             transactionDate < sevenDaysAgo && 
+                             t.amount < 0;
+                    }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                    
+                    // Calculate daily forecast rate using same logic as summary card
+                    const avgDailyLast30 = last30DaysSpending / 30;
+                    const avgDailyLastWeek = lastWeekSpending / 7;
+                    
+                    let dailyForecastRate;
+                    
+                    if (previousWeekSpending > 0 && lastWeekSpending > 0) {
+                      const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
+                      
+                      if (weeklyTrendMultiplier > 1.05) {
+                        dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
+                      } else if (weeklyTrendMultiplier < 0.95) {
+                        dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
+                      } else {
+                        dailyForecastRate = avgDailyLastWeek;
+                      }
+                    } else {
+                      dailyForecastRate = avgDailyLast30;
+                    }
+                    
+                    // Cap the daily rate
+                    dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+                    
+                    // Generate 30 days of forecast data with slight daily variations
+                    return Array.from({ length: 30 }, (_, i) => ({
                       date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
-                      amount: displayData.dailyData.slice(-1)[0]?.amount * (1 + Math.random() * 0.2 - 0.1) || 0,
+                      amount: dailyForecastRate * (0.8 + Math.random() * 0.4), // ±20% daily variation around the forecast rate
                       ma7: 0,
                       ma30: 0,
                       predicted: true
-                    }))
-                  ]}
+                    }));
+                  })()}
                   margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
