@@ -248,15 +248,35 @@ async def get_suggestions_from_predictions(
         # This ensures that if there are duplicates, we keep the most recent version
         all_suggestions.sort(key=lambda x: x.get("generated_at", ""), reverse=True)
 
+        # Deduplicate all suggestion lists based on content (title + category + description)
+        def deduplicate_by_content(suggestions_list):
+            """Remove duplicates based on title, category, and description."""
+            seen = set()
+            unique = []
+            for item in suggestions_list:
+                # Create unique key from title, category, and description
+                key = f"{item.get('title', '')}|{item.get('category', '')}|{item.get('description', '')}"
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(item)
+            return unique
+
         # Deduplicate suggestions based on content similarity
         unique_suggestions = _deduplicate_suggestions(all_suggestions)
+        
+        # Also deduplicate the individual lists to prevent duplicates in budget, spending, and savings
+        unique_budget_recs = deduplicate_by_content(all_budget_recs)
+        unique_spending_suggs = deduplicate_by_content(all_spending_suggs)
+        unique_savings_opps = deduplicate_by_content(all_savings_opps)
+
+        print(f"DEBUG: After deduplication - Budget: {len(unique_budget_recs)}, Spending: {len(unique_spending_suggs)}, Savings: {len(unique_savings_opps)}")
 
         return {
             "status": "success",
             "suggestions": unique_suggestions,
-            "budget_recommendations": all_budget_recs,
-            "spending_suggestions": all_spending_suggs,
-            "savings_opportunities": all_savings_opps,
+            "budget_recommendations": unique_budget_recs,
+            "spending_suggestions": unique_spending_suggs,
+            "savings_opportunities": unique_savings_opps,
            "total_count": len(unique_suggestions),
             "workflows_analyzed": len(result.data),
             "original_count": len(all_suggestions),
