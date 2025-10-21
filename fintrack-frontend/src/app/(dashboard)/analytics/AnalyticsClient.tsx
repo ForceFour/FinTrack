@@ -1123,36 +1123,46 @@ export default function AnalyticsPage() {
       const avgDailyLastWeek = lastWeekSpending / 7;
       const avgDailyPrevWeek = previousWeekSpending / 7;
       
-      // Calculate trend-based forecast for next 30 days
-      let forecast30Days;
+      // Calculate trend-based forecast for next 30 days using same logic as frontend
+      let dailyForecastRate;
       let trendDirection;
       
       if (previousWeekSpending > 0 && lastWeekSpending > 0) {
         // Calculate the weekly trend multiplier
         const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
         
-        // Determine trend direction
+        // Determine trend direction and calculate daily forecast rate
         if (weeklyTrendMultiplier > 1.05) { // 5% increase threshold
           trendDirection = 'Increasing';
-          // Project the trend forward: use recent week average with trend applied
-          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
         } else if (weeklyTrendMultiplier < 0.95) { // 5% decrease threshold
           trendDirection = 'Decreasing';
-          // Project the trend forward: use recent week average with trend applied
-          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
         } else {
           trendDirection = 'Stable';
-          // Use recent week average for stable trend
-          forecast30Days = avgDailyLastWeek * 30;
+          dailyForecastRate = avgDailyLastWeek;
         }
       } else {
         // Fallback to 30-day average if no previous week data
         trendDirection = 'Stable';
-        forecast30Days = avgDailyLast30 * 30;
+        dailyForecastRate = avgDailyLast30;
       }
       
-      // Ensure forecast is reasonable (not negative and not wildly excessive)
-      forecast30Days = Math.max(0, Math.min(forecast30Days, avgDailyLast30 * 60)); // Cap at 2x current rate
+      // Cap the daily forecast rate
+      dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+      
+      // Generate deterministic variations using the same pattern as frontend
+      const variationPattern = [
+        0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
+        0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
+        1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
+      ];
+      
+      // Calculate forecast as sum of actual predicted daily values (same as frontend)
+      const predictedValues = Array.from({ length: 30 }, (_, i) => 
+        dailyForecastRate * variationPattern[i]
+      );
+      const forecast30Days = predictedValues.reduce((sum, value) => sum + value, 0);
 
       const predictiveData = [
         ['Last 30 Days Spending', formatCurrency(last30DaysSpending)],
@@ -1353,30 +1363,34 @@ export default function AnalyticsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Amount Range</label>
               <div className="space-y-2">
                 <input
-                  type="number"
+                  type="text"
                   placeholder="Min Amount (optional)"
                   value={amountRange.min || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    const numericValue = value === '' ? 0 : parseInt(value, 10);
-                    setAmountRange(prev => ({ ...prev, min: numericValue }));
+                    // Only allow numeric characters
+                    if (value === '' || /^\d+$/.test(value)) {
+                      const numericValue = value === '' ? 0 : parseInt(value, 10);
+                      console.log('Setting min amount:', value, 'parsed to:', numericValue);
+                      setAmountRange(prev => ({ ...prev, min: numericValue >= 0 ? numericValue : 0 }));
+                    }
                   }}
                   className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  min="0"
-                  step="1"
                 />
                 <input
-                  type="number"
+                  type="text"
                   placeholder="Max Amount (optional)"
                   value={amountRange.max || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    const numericValue = value === '' ? 0 : parseInt(value, 10);
-                    setAmountRange(prev => ({ ...prev, max: numericValue }));
+                    // Only allow numeric characters
+                    if (value === '' || /^\d+$/.test(value)) {
+                      const numericValue = value === '' ? 0 : parseInt(value, 10);
+                      console.log('Setting max amount:', value, 'parsed to:', numericValue);
+                      setAmountRange(prev => ({ ...prev, max: numericValue >= 0 ? numericValue : 0 }));
+                    }
                   }}
                   className="w-full px-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  min="0"
-                  step="1"
                 />
               </div>
             </div>
@@ -2049,7 +2063,7 @@ export default function AnalyticsPage() {
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">
                     {(() => {
-                      // Calculate 30-day forecast using same logic as PDF
+                      // Calculate 30-day forecast as sum of actual predicted values
                       const today = new Date();
                       const thirtyDaysAgo = subDays(today, 30);
                       const sevenDaysAgo = subDays(today, 7);
@@ -2077,29 +2091,41 @@ export default function AnalyticsPage() {
                                t.amount < 0;
                       }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
                       
-                      // Calculate averages
+                      // Calculate daily forecast rate using same logic as chart
                       const avgDailyLast30 = last30DaysSpending / 30;
                       const avgDailyLastWeek = lastWeekSpending / 7;
                       
-                      // Calculate forecast
-                      let forecast30Days;
+                      let dailyForecastRate;
                       
                       if (previousWeekSpending > 0 && lastWeekSpending > 0) {
                         const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
                         
                         if (weeklyTrendMultiplier > 1.05) {
-                          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+                          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
                         } else if (weeklyTrendMultiplier < 0.95) {
-                          forecast30Days = avgDailyLastWeek * weeklyTrendMultiplier * 30;
+                          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
                         } else {
-                          forecast30Days = avgDailyLastWeek * 30;
+                          dailyForecastRate = avgDailyLastWeek;
                         }
                       } else {
-                        forecast30Days = avgDailyLast30 * 30;
+                        dailyForecastRate = avgDailyLast30;
                       }
                       
-                      // Cap the forecast
-                      forecast30Days = Math.max(0, Math.min(forecast30Days, avgDailyLast30 * 60));
+                      // Cap the daily rate
+                      dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+                      
+                      // Generate deterministic variations using a simple pattern
+                      const variationPattern = [
+                        0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
+                        0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
+                        1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
+                      ];
+                      
+                      // Generate and sum the actual predicted values (same as chart)
+                      const predictedValues = Array.from({ length: 30 }, (_, i) => 
+                        dailyForecastRate * variationPattern[i]
+                      );
+                      const forecast30Days = predictedValues.reduce((sum, value) => sum + value, 0);
                       
                       return formatCurrency(forecast30Days);
                     })()}
@@ -2162,10 +2188,16 @@ export default function AnalyticsPage() {
                     // Cap the daily rate
                     dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
                     
-                    // Generate 30 days of forecast data with slight daily variations
+                    // Generate 30 days of forecast data with deterministic daily variations
+                    const variationPattern = [
+                      0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
+                      0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
+                      1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
+                    ];
+                    
                     return Array.from({ length: 30 }, (_, i) => ({
                       date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
-                      amount: dailyForecastRate * (0.8 + Math.random() * 0.4), // ±20% daily variation around the forecast rate
+                      amount: dailyForecastRate * variationPattern[i], // Use same deterministic pattern as summary
                       ma7: 0,
                       ma30: 0,
                       predicted: true
