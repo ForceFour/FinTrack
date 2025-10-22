@@ -438,7 +438,22 @@ class UnifiedTransactionWorkflow:
     async def _load_user_profile(self, user_id: str) -> Dict[str, Any]:
         """
         Load user profile with spending limits from database
+        Returns default profile if user_id is None (testing mode)
         """
+        # Handle None user_id (testing mode)
+        if user_id is None:
+            logger.info("Loading default user profile for testing mode")
+            return {
+                'user_id': None,
+                'spending_limits': {},
+                'historical_amounts': [],
+                'frequency_threshold': 10,
+                'category_frequency_threshold': 15,
+                'location_repetition_threshold': 15,
+                'is_new_user': True,
+                'has_seen_security_recommendations': False
+            }
+
         try:
             from ..core.database_config import get_db_client
 
@@ -489,7 +504,7 @@ class UnifiedTransactionWorkflow:
                              mode: WorkflowMode = WorkflowMode.FULL_PIPELINE,
                              user_input: str = None,
                              raw_transactions: List[Dict[str, Any]] = None,
-                             user_id: str = "default",
+                             user_id: str = None,
                              source_name: str = None,
                              conversation_context: Dict[str, Any] = None,
                              custom_config: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -500,7 +515,7 @@ class UnifiedTransactionWorkflow:
             mode: Workflow execution mode
             user_input: Natural language input for processing
             raw_transactions: Raw transaction data for structured processing
-            user_id: User identifier
+            user_id: User identifier (must be a valid UUID or None for testing)
             source_name: Name of the source (filename for uploads, title for chats)
             conversation_context: Conversation state for multi-turn interactions
             custom_config: Runtime configuration overrides
@@ -511,6 +526,19 @@ class UnifiedTransactionWorkflow:
 
         workflow_id = f"workflow_{uuid.uuid4().hex[:8]}"
         start_time = datetime.now()
+
+        # Validate or handle user_id
+        if user_id is None or user_id == "default":
+            logger.warning(f"No valid user_id provided for workflow {workflow_id}, results will not be persisted to database")
+            # Set to None so the finalization node knows not to save
+            user_id = None
+        else:
+            # Validate that user_id is a valid UUID format
+            try:
+                uuid.UUID(user_id)
+            except (ValueError, AttributeError, TypeError):
+                logger.warning(f"Invalid user_id format '{user_id}' for workflow {workflow_id}, results will not be persisted to database")
+                user_id = None
 
         logger.info(f"Starting workflow {workflow_id} in {mode.value} mode for source: {source_name}")
 
