@@ -1,157 +1,200 @@
 @startuml FinTrack System Architecture
 
-title FinTrack - Agentic Expense Tracker System Architecture
+title FinTrack - Multi-Agent AI Expense Tracker System Architecture
 
 skinparam backgroundColor #FEFEFE
 skinparam componentStyle uml2
 skinparam linetype ortho
-skinparam nodesep 15
-skinparam ranksep 25
-skinparam minlen 2
+skinparam nodesep 60
+skinparam ranksep 80
+skinparam minlen 8
+skinparam packageTitleAlignment left
 
+' Layout direction for better organization
+top to bottom direction
+
+' Top Layer - User Interaction
+together {
 ' External Actors
 actor "User" as User #BBDEFB
 
 ' Application Layer
-package "Frontend Layer" as Frontend #E3F2FD {
-    component [Dashboard Page] as Dashboard
-    component [Upload Page] as Upload
-    component [Analytics Page] as Analytics
-    component [Suggestions Page] as Suggestions
-    component [Category Management] as Categories
-    component [Security Monitor] as Security
+package "Frontend Layer (Next.js)" as Frontend #E3F2FD {
+    component [Dashboard] as Dashboard
+    component [Upload] as Upload
+    component [Analytics] as Analytics
+    component [Suggestions] as Suggestions
+    component [Security] as Security
+    component [Settings] as Settings
+    component [Workflow] as Workflow
+}
 }
 
-package "Backend Layer" #E8F5E8 {
+' Backend Layer
+package "Backend Layer (FastAPI)" as Backend #E8F5E8 {
     component [FastAPI Server] as API
-    component [LangGraph Orchestrator] as Orchestrator
+    component [LangGraph Server] as LangGraphServer
+    component [API Routes] as Routes
 }
 
 ' Data Processing Layer
-package "Data Processing Layer" #FFFDE7 {
-    component [Data Preprocessor\n(7-step pipeline)] as Preprocessor
-    component [File Parser\n(CSV/Excel)] as FileParser
-    component [NL Processor\n(Text extraction)] as NLProcessor
-    component [Validation Engine] as Validator
+package "Data Processing Layer" as DataProcessing #FFFDE7 {
+    together {
+        component [Data Preprocessor] as Preprocessor
+        component [File Parser\n(CSV/Excel)] as FileParser
+    }
+    together {
+        component [NL Processor\n(Text extraction)] as NLProcessor
+        component [Validation Engine] as Validator
+    }
 }
 
-' AI Agent Pipeline
-package "AI Agent Pipeline" #FFF3E0 {
-    component [Ingestion\nAgent] as IngestionAgent
-    component [NER Merchant\nAgent] as NERAgent
-    component [Classifier\nAgent] as ClassifierAgent
-    component [Pattern Analyzer\nAgent] as PatternAgent
-    component [Suggestion\nAgent] as SuggestionAgent
-    component [Safety Guard\nAgent] as SafetyAgent
+' AI Agent Pipeline (6 Agents)
+package "AI Agent Pipeline" as AIAgents #FFF3E0 {
+    together {
+        component [Ingestion\nAgent] as IngestionAgent
+        component [NER Merchant\nAgent] as NERAgent
+    }
+    together {
+        component [Classifier\nAgent] as ClassifierAgent
+        component [Pattern Analyzer\nAgent] as PatternAgent
+    }
+    together {
+        component [Suggestion\nAgent] as SuggestionAgent
+        component [Safety Guard\nAgent] as SafetyAgent
+    }
 }
 
 ' AI/ML Infrastructure
-package "AI/ML Infrastructure" #FFEBEE {
-    component [LangChain Framework] as LangChain
-    component [Groq/OpenAI LLMs] as LLMs
-    component [LangSmith Tracing] as Tracing
+package "AI/ML Infrastructure" as AIML #FFEBEE {
+    together {
+        component [LangChain Framework] as LangChain
+        component [LangGraph Orchestrator] as Orchestrator
+    }
+    together {
+        component [Groq/OpenAI LLMs] as LLMs
+        component [LangSmith Tracing] as Tracing
+    }
 }
 
 ' Cloud/Infrastructure Layer
-cloud "Cloud Platform" as Cloud #F3E5F5 {
-    rectangle "Container Orchestration\n(Docker)" as K8sOrch #E1BEE7
-    database "PostgreSQL Database" as DB #C8E6C9
+cloud "Cloud Platform (Supabase)" as Cloud #F3E5F5 {
+    rectangle "PostgreSQL Database" as DB #C8E6C9
     storage "Object Storage\n(Models/Logs)" as ObjectStore #E0E0E0
+    component [Authentication] as Auth
+    component [Real-time\nSubscriptions] as Realtime
 }
 
 ' Main Flow
 User --> Frontend : Interact with UI
 Frontend --> API : HTTP API calls
-API --> Orchestrator : Workflow requests
+API --> LangGraphServer : Workflow requests
 
 ' Processing Pipeline
 Orchestrator --> IngestionAgent : Start pipeline
 IngestionAgent --> Preprocessor : Data preprocessing
 
-' Data Processing Flow - spread connections
+' Data Processing Flow
 Preprocessor --> FileParser : Structured data
-FileParser .[hidden]. NLProcessor
 Preprocessor --> NLProcessor : Natural language
-NLProcessor .[hidden]. Validator
 Preprocessor --> Validator : Data validation
 
-' AI Agent Pipeline Flow
+' AI Agent Pipeline Flow (6 Agents)
 IngestionAgent --> NERAgent : Merchant extraction
 NERAgent --> ClassifierAgent : Transaction classification
 ClassifierAgent --> PatternAgent : Pattern analysis
 PatternAgent --> SuggestionAgent : Generate recommendations
 SuggestionAgent --> SafetyAgent : Security validation
 
-' AI Infrastructure connections - staggered
+' AI Infrastructure connections
 IngestionAgent -[#FF6B6B]-> LangChain : LLM integration
 NERAgent -[#4ECDC4]-> LangChain : AI processing
 ClassifierAgent -[#45B7D1]-> LangChain : AI processing
-SuggestionAgent -[#FFA07A]-> LangChain : AI processing
+PatternAgent -[#FFA07A]-> LangChain : AI processing
+SuggestionAgent -[#98D8C8]-> LangChain : AI processing
+SafetyAgent -[#F7DC6F]-> LangChain : AI processing
 
 ' LangChain to services
-LangChain --> LLMs : API calls
+LangChain --> LLMs : API calls (Groq/OpenAI)
 LangChain --> Tracing : Workflow logging
+LangChain --> Orchestrator : Workflow coordination
 
-' Data persistence - different entry points to DB
+' Data persistence
 SafetyAgent -[#95E1D3]-> DB : Store processed transactions
 API -[#F38BA8]-> DB : CRUD operations
 Analytics -[#A8E6CF]-> DB : Query analytics data
+Auth -[#D7BDE2]-> DB : User management
 
-' Cloud deployment
-Frontend --> K8sOrch : Deploy frontend
-API --> K8sOrch : Deploy backend
+' Real-time features
+DB --> Realtime : Live data updates
+Realtime --> Frontend : Real-time notifications
 
-' Storage connections
-Tracing --> ObjectStore : Store logs
-LLMs --> ObjectStore : Model storage
+' Cloud storage
+Tracing --> ObjectStore : Store logs/traces
+LLMs --> ObjectStore : Model artifacts
 
-' Monitoring
-Tracing --> K8sOrch : Audit trails
-SafetyAgent --> K8sOrch : Security monitoring
+' Authentication flow
+User --> Auth : Login/Register
+Auth --> Frontend : Session tokens
+Frontend --> API : Authenticated requests
 
-' Scalability indicators
-note right of K8sOrch
-    **Scalability Features:**
-    - Horizontal pod scaling
-    - Load balancing
-    - Auto-scaling groups
+' Legend
+legend bottom right
+    |= Component |= Technology |
+    | Frontend | Next.js + TypeScript + Tailwind |
+    | Backend API | FastAPI + Python |
+    | Agent Orchestration | LangGraph + LangChain |
+    | Database | Supabase PostgreSQL |
+    | AI Models | Groq/OpenAI LLMs |
+    | Real-time | Supabase Subscriptions |
+    | Authentication | Supabase Auth |
+endlegend
+
+' System capabilities
+note as OrchestratorNote
+    **LangGraph Workflow Modes:**
+    - Full Pipeline (6 agents)
+    - Quick Classification
+    - Ingestion Only
+    - Background Processing
+    - Validation Only
 end note
 
-note right of DB
-    **Database Scaling:**
-    - Connection pooling
-    - Read replicas
-    - Sharding support
+note as DBNote
+    **Database Features:**
+    - Row Level Security (RLS)
+    - Real-time subscriptions
+    - Automatic API generation
+    - Built-in authentication
+    - Serverless scaling
 end note
 
-note right of LLMs
-    **AI Scaling:**
+note as LLMsNote
+    **AI Capabilities:**
+    - Multi-model support (Groq/OpenAI)
+    - Streaming responses
     - Model versioning
-    - Batch processing
-    - GPU acceleration
+    - Cost optimization
+    - Fallback mechanisms
 end note
 
 ' Responsible AI considerations
 note as ResponsibleAI
     **Responsible AI Features:**
-    - Confidence scoring on all decisions
+    - Confidence scoring on all agent decisions
     - Bias detection in pattern analysis
-    - Data privacy controls
-    - Explainable AI outputs
+    - Data privacy with Supabase RLS
+    - Explainable AI outputs with LangSmith
     - Security validation pipeline
+    - User consent and data control
 end note
 
+' Position notes to avoid overlaps
+OrchestratorNote .. Orchestrator
+DBNote .. DB
+LLMsNote .. LLMs
 ResponsibleAI .. Tracing
 ResponsibleAI .. SafetyAgent
-
-' Legend
-legend right
-    |= Component |= Type |
-    | User Interface | Frontend |
-    | Business Logic | Backend |
-    | AI Processing | ML/AI |
-    | Data Processing | ETL |
-    | Infrastructure | Cloud |
-endlegend
+ResponsibleAI .. Auth
 
 @enduml
