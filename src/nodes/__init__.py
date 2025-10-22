@@ -1318,14 +1318,19 @@ class TransactionProcessingNodes:
                 prediction_service = get_prediction_results_service()
                 workflow_mode = getattr(state.get('workflow_mode'), 'value', state.get('workflow_mode', 'full_pipeline'))
 
-                prediction_service.save_prediction_result(
-                    workflow_id=state.get('workflow_id'),
-                    user_id=state.get('user_id', 'default'),
-                    workflow_state=dict(state),
-                    mode=workflow_mode,
-                    status='completed'
-                )
-                logger.info(f"Saved prediction results to database for workflow {state.get('workflow_id')}")
+                # Get user_id from state - skip saving if not present or invalid
+                user_id = state.get('user_id')
+                if not user_id or user_id == 'default':
+                    logger.warning(f"Skipping prediction results save: user_id is missing or invalid ('{user_id}')")
+                else:
+                    prediction_service.save_prediction_result(
+                        workflow_id=state.get('workflow_id'),
+                        user_id=user_id,
+                        workflow_state=dict(state),
+                        mode=workflow_mode,
+                        status='completed'
+                    )
+                    logger.info(f"Saved prediction results to database for workflow {state.get('workflow_id')}")
             except Exception as db_error:
                 logger.error(f"Failed to save prediction results to database: {db_error}", exc_info=True)
                 # Don't fail the workflow if database save fails
