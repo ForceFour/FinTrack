@@ -1123,21 +1123,48 @@ export default function AnalyticsPage() {
       const avgDailyLastWeek = lastWeekSpending / 7;
       const avgDailyPrevWeek = previousWeekSpending / 7;
       
-      // Calculate trend-based forecast for next 30 days using same logic as frontend
+      // Calculate trend-based forecast for next 30 days using dynamic analysis
       let dailyForecastRate;
       let trendDirection;
+      
+      // Calculate dynamic thresholds based on historical spending volatility
+      const last7DaysAmounts = transactions
+        .filter(t => {
+          const transactionDate = new Date(t.date);
+          return transactionDate >= sevenDaysAgo && transactionDate <= today && t.amount < 0;
+        })
+        .map(t => Math.abs(t.amount));
+      
+      const avgDailySpendingLast7 = last7DaysAmounts.length > 0 
+        ? last7DaysAmounts.reduce((sum, amt) => sum + amt, 0) / 7 
+        : avgDailyLast30;
+      
+      // Calculate volatility-based threshold (more volatile = higher threshold)
+      const dailyAmounts = transactions
+        .filter(t => {
+          const transactionDate = new Date(t.date);
+          return transactionDate >= thirtyDaysAgo && transactionDate <= today && t.amount < 0;
+        })
+        .map(t => Math.abs(t.amount));
+      
+      const volatility = dailyAmounts.length > 1 
+        ? Math.sqrt(dailyAmounts.reduce((sum, amt) => sum + Math.pow(amt - avgDailyLast30, 2), 0) / dailyAmounts.length) / avgDailyLast30
+        : 0.1;
+      
+      // Dynamic threshold: higher volatility = need larger change to be significant
+      const trendThreshold = Math.max(0.03, Math.min(0.15, volatility * 0.5)); // Between 3% and 15%
       
       if (previousWeekSpending > 0 && lastWeekSpending > 0) {
         // Calculate the weekly trend multiplier
         const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
         
-        // Determine trend direction and calculate daily forecast rate
-        if (weeklyTrendMultiplier > 1.05) { // 5% increase threshold
+        // Determine trend direction using dynamic threshold
+        if (weeklyTrendMultiplier > (1 + trendThreshold)) {
           trendDirection = 'Increasing';
-          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
-        } else if (weeklyTrendMultiplier < 0.95) { // 5% decrease threshold
+          dailyForecastRate = avgDailyLastWeek * Math.min(weeklyTrendMultiplier, 1.5); // Cap extreme multipliers
+        } else if (weeklyTrendMultiplier < (1 - trendThreshold)) {
           trendDirection = 'Decreasing';
-          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
+          dailyForecastRate = avgDailyLastWeek * Math.max(weeklyTrendMultiplier, 0.5); // Cap extreme multipliers
         } else {
           trendDirection = 'Stable';
           dailyForecastRate = avgDailyLastWeek;
@@ -1148,17 +1175,36 @@ export default function AnalyticsPage() {
         dailyForecastRate = avgDailyLast30;
       }
       
-      // Cap the daily forecast rate
-      dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+      // Cap the daily forecast rate using dynamic bounds
+      const maxRate = avgDailyLast30 * (1 + volatility + 0.5); // Higher volatility = wider bounds
+      const minRate = avgDailyLast30 * Math.max(0.1, 1 - volatility - 0.5);
+      dailyForecastRate = Math.max(minRate, Math.min(dailyForecastRate, maxRate));
       
-      // Generate deterministic variations using the same pattern as frontend
-      const variationPattern = [
-        0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
-        0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
-        1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
-      ];
+      // Generate realistic variations based on historical patterns
+      const generateVariationPattern = () => {
+        const pattern = [];
+        const baseVariation = Math.max(0.05, Math.min(0.3, volatility)); // 5-30% variation based on historical volatility
+        
+        for (let i = 0; i < 30; i++) {
+          // Create cyclical pattern with randomness based on day of week and month patterns
+          const dayOfWeek = (new Date().getDay() + i) % 7;
+          const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.1 : 0.95; // Weekend spending typically higher
+          
+          // Monthly cycle (higher spending at month start/end)
+          const dayOfMonth = (new Date().getDate() + i) % 30;
+          const monthlyFactor = dayOfMonth < 5 || dayOfMonth > 25 ? 1.05 : 0.98;
+          
+          // Add randomness
+          const randomFactor = 0.9 + (Math.sin(i * 0.5 + Math.cos(i * 0.3)) * baseVariation);
+          
+          pattern.push(weekendFactor * monthlyFactor * randomFactor);
+        }
+        return pattern;
+      };
       
-      // Calculate forecast as sum of actual predicted daily values (same as frontend)
+      const variationPattern = generateVariationPattern();
+      
+      // Calculate forecast as sum of actual predicted daily values
       const predictedValues = Array.from({ length: 30 }, (_, i) => 
         dailyForecastRate * variationPattern[i]
       );
@@ -2097,13 +2143,28 @@ export default function AnalyticsPage() {
                       
                       let dailyForecastRate;
                       
+                      // Calculate dynamic thresholds based on historical spending volatility
+                      const dailyAmounts = transactions
+                        .filter(t => {
+                          const transactionDate = new Date(t.date);
+                          return transactionDate >= thirtyDaysAgo && transactionDate <= today && t.amount < 0;
+                        })
+                        .map(t => Math.abs(t.amount));
+                      
+                      const volatility = dailyAmounts.length > 1 
+                        ? Math.sqrt(dailyAmounts.reduce((sum, amt) => sum + Math.pow(amt - avgDailyLast30, 2), 0) / dailyAmounts.length) / avgDailyLast30
+                        : 0.1;
+                      
+                      // Dynamic threshold based on spending volatility
+                      const trendThreshold = Math.max(0.03, Math.min(0.15, volatility * 0.5));
+                      
                       if (previousWeekSpending > 0 && lastWeekSpending > 0) {
                         const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
                         
-                        if (weeklyTrendMultiplier > 1.05) {
-                          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
-                        } else if (weeklyTrendMultiplier < 0.95) {
-                          dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
+                        if (weeklyTrendMultiplier > (1 + trendThreshold)) {
+                          dailyForecastRate = avgDailyLastWeek * Math.min(weeklyTrendMultiplier, 1.5);
+                        } else if (weeklyTrendMultiplier < (1 - trendThreshold)) {
+                          dailyForecastRate = avgDailyLastWeek * Math.max(weeklyTrendMultiplier, 0.5);
                         } else {
                           dailyForecastRate = avgDailyLastWeek;
                         }
@@ -2111,15 +2172,28 @@ export default function AnalyticsPage() {
                         dailyForecastRate = avgDailyLast30;
                       }
                       
-                      // Cap the daily rate
-                      dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+                      // Dynamic rate capping based on volatility
+                      const maxRate = avgDailyLast30 * (1 + volatility + 0.5);
+                      const minRate = avgDailyLast30 * Math.max(0.1, 1 - volatility - 0.5);
+                      dailyForecastRate = Math.max(minRate, Math.min(dailyForecastRate, maxRate));
                       
-                      // Generate deterministic variations using a simple pattern
-                      const variationPattern = [
-                        0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
-                        0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
-                        1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
-                      ];
+                      // Generate realistic variation pattern
+                      const generateVariationPattern = () => {
+                        const pattern = [];
+                        const baseVariation = Math.max(0.05, Math.min(0.3, volatility));
+                        
+                        for (let i = 0; i < 30; i++) {
+                          const dayOfWeek = (new Date().getDay() + i) % 7;
+                          const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.1 : 0.95;
+                          const dayOfMonth = (new Date().getDate() + i) % 30;
+                          const monthlyFactor = dayOfMonth < 5 || dayOfMonth > 25 ? 1.05 : 0.98;
+                          const randomFactor = 0.9 + (Math.sin(i * 0.5 + Math.cos(i * 0.3)) * baseVariation);
+                          pattern.push(weekendFactor * monthlyFactor * randomFactor);
+                        }
+                        return pattern;
+                      };
+                      
+                      const variationPattern = generateVariationPattern();
                       
                       // Generate and sum the actual predicted values (same as chart)
                       const predictedValues = Array.from({ length: 30 }, (_, i) => 
@@ -2171,13 +2245,28 @@ export default function AnalyticsPage() {
                     
                     let dailyForecastRate;
                     
+                    // Calculate dynamic thresholds based on historical spending volatility
+                    const dailyAmounts = transactions
+                      .filter(t => {
+                        const transactionDate = new Date(t.date);
+                        return transactionDate >= thirtyDaysAgo && transactionDate <= today && t.amount < 0;
+                      })
+                      .map(t => Math.abs(t.amount));
+                    
+                    const volatility = dailyAmounts.length > 1 
+                      ? Math.sqrt(dailyAmounts.reduce((sum, amt) => sum + Math.pow(amt - avgDailyLast30, 2), 0) / dailyAmounts.length) / avgDailyLast30
+                      : 0.1;
+                    
+                    // Dynamic threshold based on spending volatility
+                    const trendThreshold = Math.max(0.03, Math.min(0.15, volatility * 0.5));
+                    
                     if (previousWeekSpending > 0 && lastWeekSpending > 0) {
                       const weeklyTrendMultiplier = lastWeekSpending / previousWeekSpending;
                       
-                      if (weeklyTrendMultiplier > 1.05) {
-                        dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
-                      } else if (weeklyTrendMultiplier < 0.95) {
-                        dailyForecastRate = avgDailyLastWeek * weeklyTrendMultiplier;
+                      if (weeklyTrendMultiplier > (1 + trendThreshold)) {
+                        dailyForecastRate = avgDailyLastWeek * Math.min(weeklyTrendMultiplier, 1.5);
+                      } else if (weeklyTrendMultiplier < (1 - trendThreshold)) {
+                        dailyForecastRate = avgDailyLastWeek * Math.max(weeklyTrendMultiplier, 0.5);
                       } else {
                         dailyForecastRate = avgDailyLastWeek;
                       }
@@ -2185,19 +2274,32 @@ export default function AnalyticsPage() {
                       dailyForecastRate = avgDailyLast30;
                     }
                     
-                    // Cap the daily rate
-                    dailyForecastRate = Math.max(0, Math.min(dailyForecastRate, avgDailyLast30 * 2));
+                    // Dynamic rate capping based on volatility
+                    const maxRate = avgDailyLast30 * (1 + volatility + 0.5);
+                    const minRate = avgDailyLast30 * Math.max(0.1, 1 - volatility - 0.5);
+                    dailyForecastRate = Math.max(minRate, Math.min(dailyForecastRate, maxRate));
                     
-                    // Generate 30 days of forecast data with deterministic daily variations
-                    const variationPattern = [
-                      0.85, 0.92, 1.05, 0.88, 0.96, 1.12, 1.08, 0.82, 0.94, 1.15,
-                      0.89, 1.02, 0.97, 1.18, 0.91, 0.86, 1.09, 0.93, 1.07, 0.84,
-                      1.01, 0.95, 1.14, 0.87, 1.03, 0.99, 1.11, 0.90, 1.06, 0.98
-                    ];
+                    // Generate realistic variation pattern based on calendar patterns
+                    const generateVariationPattern = () => {
+                      const pattern = [];
+                      const baseVariation = Math.max(0.05, Math.min(0.3, volatility));
+                      
+                      for (let i = 0; i < 30; i++) {
+                        const dayOfWeek = (new Date().getDay() + i) % 7;
+                        const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.1 : 0.95;
+                        const dayOfMonth = (new Date().getDate() + i) % 30;
+                        const monthlyFactor = dayOfMonth < 5 || dayOfMonth > 25 ? 1.05 : 0.98;
+                        const randomFactor = 0.9 + (Math.sin(i * 0.5 + Math.cos(i * 0.3)) * baseVariation);
+                        pattern.push(weekendFactor * monthlyFactor * randomFactor);
+                      }
+                      return pattern;
+                    };
+                    
+                    const variationPattern = generateVariationPattern();
                     
                     return Array.from({ length: 30 }, (_, i) => ({
                       date: format(addDays(new Date(), i + 1), 'yyyy-MM-dd'),
-                      amount: dailyForecastRate * variationPattern[i], // Use same deterministic pattern as summary
+                      amount: dailyForecastRate * variationPattern[i], // Use dynamic pattern based on user data
                       ma7: 0,
                       ma30: 0,
                       predicted: true
