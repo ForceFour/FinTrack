@@ -154,8 +154,9 @@ class TransactionProcessingNodes:
     def nl_processing_node(self, state: TransactionProcessingState) -> TransactionProcessingState:
         """
         Advanced Natural Language Processing using LangChain/Groq
+        Handles both single and multiple transactions in the input
         """
-        print(f"NL PROCESSING: Starting NLP with Groq integration")
+        print(f"NL PROCESSING: Starting NLP with Groq integration (multi-transaction aware)")
 
         try:
             state['current_stage'] = ProcessingStage.NL_PROCESSING
@@ -165,44 +166,116 @@ class TransactionProcessingNodes:
             if not user_input:
                 raise ValueError("No user input provided for NL processing")
 
+            # Check for multiple transactions in input (indicators: "and", commas, semicolons)
+            multiple_transaction_indicators = [' and ', ', ', '; ', ' also ', ' then ']
+            likely_multiple = any(indicator in user_input.lower() for indicator in multiple_transaction_indicators)
+
             # Process with enhanced NL processor
-            if self.nl_processor and hasattr(self.nl_processor, 'process_input'):
+            if self.nl_processor and hasattr(self.nl_processor, 'extract_multiple_with_llm'):
                 try:
-                    # Use the enhanced NL processor with Groq
-                    nl_result = self.nl_processor.process_input(user_input)
+                    # Use the multiple transaction extractor with Groq
+                    print(f"NL PROCESSING: Attempting multi-transaction extraction (detected indicators: {likely_multiple})")
+                    extractions = self.nl_processor.extract_multiple_with_llm(user_input)
 
-                    # Standardize the result format
-                    processed_result = {
-                        'confidence': nl_result.get('confidence', 0.0),
-                        'extraction_method': 'groq_langchain',
-                        'transaction_data': {
-                            'amount': nl_result.get('amount'),
-                            'merchant_name': nl_result.get('merchant'),
-                            'description': nl_result.get('description', user_input),
-                            'date': nl_result.get('date'),
-                            'category': nl_result.get('category'),
-                            'payment_method': nl_result.get('payment_method'),
-                            'location': nl_result.get('location')
-                        },
-                        'insights': nl_result.get('insights', {}),
-                        'context': nl_result.get('context', {})
-                    }
+                    if len(extractions) > 1:
+                        print(f"NL PROCESSING: ✅ Extracted {len(extractions)} transactions from input")
 
-                    print(f"NL PROCESSING: Groq extraction successful with {processed_result['confidence']:.2f} confidence")
+                        # Convert multiple extractions to raw_transactions format for ingestion
+                        raw_transactions = []
+                        total_confidence = 0.0
+
+                        for i, extraction in enumerate(extractions, 1):
+                            # Convert amount string to float
+                            amount_str = extraction.amount or "$0"
+                            try:
+                                amount_value = float(amount_str.replace('$', '').replace(',', ''))
+                            except (ValueError, AttributeError):
+                                amount_value = 0.0
+
+                            raw_txn = {
+                                'id': f"nl_txn_{i}_{uuid.uuid4().hex[:8]}",
+                                'amount': amount_value,
+                                'merchant': extraction.merchant or 'Unknown',
+                                'description': extraction.description or user_input,
+                                'date': extraction.date or datetime.now().strftime("%Y-%m-%d"),
+                                'category': extraction.category or 'miscellaneous',
+                                'payment_method': extraction.payment_method or 'unknown',
+                                'transaction_type': 'expense' if amount_value < 0 else 'income'
+                            }
+                            raw_transactions.append(raw_txn)
+                            total_confidence += extraction.confidence
+
+                            print(f"   Transaction {i}: ${amount_value} at {raw_txn['merchant']} ({raw_txn['category']})")
+
+                        # Store as raw_transactions for ingestion node to process
+                        state['raw_transactions'] = raw_transactions
+                        avg_confidence = total_confidence / len(extractions)
+
+                        # Store summary result
+                        processed_result = {
+                            'confidence': avg_confidence,
+                            'extraction_method': 'groq_langchain_multi',
+                            'transaction_count': len(extractions),
+                            'transactions': raw_transactions
+                        }
+
+                        state['nl_processing_result'] = processed_result
+                        state['nl_confidence'] = avg_confidence
+                        state['extraction_method'] = 'groq_langchain_multi'
+
+                        print(f"NL PROCESSING: Multi-transaction extraction successful with {avg_confidence:.2f} avg confidence")
+
+                    else:
+                        # Single transaction
+                        extraction = extractions[0]
+                        print(f"NL PROCESSING: Single transaction extracted")
+
+                        # Standardize the result format
+                        processed_result = {
+                            'confidence': extraction.confidence,
+                            'extraction_method': 'groq_langchain',
+                            'transaction_data': {
+                                'amount': extraction.amount,
+                                'merchant_name': extraction.merchant,
+                                'description': extraction.description or user_input,
+                                'date': extraction.date,
+                                'category': extraction.category,
+                                'payment_method': extraction.payment_method,
+                                'location': extraction.location
+                            },
+                            'insights': {},
+                            'context': {}
+                        }
+
+                        # Store comprehensive NL results
+                        state['nl_processing_result'] = processed_result
+                        state['extracted_transaction'] = processed_result['transaction_data']
+                        state['nl_confidence'] = processed_result['confidence']
+                        state['extraction_method'] = processed_result['extraction_method']
+                        state['language_insights'] = processed_result.get('insights', {})
+
+                        print(f"NL PROCESSING: Groq extraction successful with {processed_result['confidence']:.2f} confidence")
 
                 except Exception as groq_error:
                     print(f"Groq processing failed: {groq_error}, falling back to regex")
                     processed_result = self._fallback_nl_extraction(user_input)
+
+                    # Store comprehensive NL results
+                    state['nl_processing_result'] = processed_result
+                    state['extracted_transaction'] = processed_result['transaction_data']
+                    state['nl_confidence'] = processed_result['confidence']
+                    state['extraction_method'] = processed_result['extraction_method']
+                    state['language_insights'] = processed_result.get('insights', {})
             else:
                 print(f"NL Processor not available, using fallback regex extraction")
                 processed_result = self._fallback_nl_extraction(user_input)
 
-            # Store comprehensive NL results
-            state['nl_processing_result'] = processed_result
-            state['extracted_transaction'] = processed_result['transaction_data']
-            state['nl_confidence'] = processed_result['confidence']
-            state['extraction_method'] = processed_result['extraction_method']
-            state['language_insights'] = processed_result.get('insights', {})
+                # Store comprehensive NL results
+                state['nl_processing_result'] = processed_result
+                state['extracted_transaction'] = processed_result['transaction_data']
+                state['nl_confidence'] = processed_result['confidence']
+                state['extraction_method'] = processed_result['extraction_method']
+                state['language_insights'] = processed_result.get('insights', {})
 
             # Update confidence tracking
             state['confidence_scores'] = state.get('confidence_scores', [])
@@ -213,21 +286,38 @@ class TransactionProcessingNodes:
             })
 
             # Add to processing history
-            processing_entry = {
-                'stage': ProcessingStage.NL_PROCESSING.value,
-                'timestamp': datetime.now().isoformat(),
-                'action': 'nl_extraction_completed',
-                'data': {
-                    'confidence': processed_result['confidence'],
-                    'extraction_method': processed_result['extraction_method'],
-                    'fields_extracted': len([v for v in processed_result['transaction_data'].values() if v is not None]),
-                    'amount_extracted': processed_result['transaction_data'].get('amount') is not None,
-                    'merchant_extracted': processed_result['transaction_data'].get('merchant_name') is not None
+            # Handle both single and multi-transaction cases
+            if 'transaction_count' in processed_result:
+                # Multi-transaction case
+                processing_entry = {
+                    'stage': ProcessingStage.NL_PROCESSING.value,
+                    'timestamp': datetime.now().isoformat(),
+                    'action': 'nl_extraction_completed',
+                    'data': {
+                        'confidence': processed_result['confidence'],
+                        'extraction_method': processed_result['extraction_method'],
+                        'transaction_count': processed_result['transaction_count'],
+                        'transactions_extracted': len(processed_result.get('transactions', []))
+                    }
                 }
-            }
-            state['processing_history'].append(processing_entry)
+                print(f"NL PROCESSING: Completed - Extracted {processed_result['transaction_count']} transactions with {processed_result['confidence']:.2f} avg confidence")
+            else:
+                # Single transaction case
+                processing_entry = {
+                    'stage': ProcessingStage.NL_PROCESSING.value,
+                    'timestamp': datetime.now().isoformat(),
+                    'action': 'nl_extraction_completed',
+                    'data': {
+                        'confidence': processed_result['confidence'],
+                        'extraction_method': processed_result['extraction_method'],
+                        'fields_extracted': len([v for v in processed_result['transaction_data'].values() if v is not None]),
+                        'amount_extracted': processed_result['transaction_data'].get('amount') is not None,
+                        'merchant_extracted': processed_result['transaction_data'].get('merchant_name') is not None
+                    }
+                }
+                print(f"NL PROCESSING: Completed - Amount: ${processed_result['transaction_data'].get('amount', 'N/A')}, Merchant: {processed_result['transaction_data'].get('merchant_name', 'N/A')}")
 
-            print(f"NL PROCESSING: Completed - Amount: ${processed_result['transaction_data'].get('amount', 'N/A')}, Merchant: {processed_result['transaction_data'].get('merchant_name', 'N/A')}")
+            state['processing_history'].append(processing_entry)
 
         except Exception as e:
             error_info = {

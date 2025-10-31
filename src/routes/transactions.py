@@ -602,14 +602,7 @@ async def process_natural_language_transaction(
 
         if not all_have_required:
             # Get user's currency symbol for conversational response
-            currency_symbol = "Rs."  # Default
-            try:
-                user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
-                if user_settings_result.data and len(user_settings_result.data) > 0:
-                    preferences = user_settings_result.data[0].get("preferences", {})
-                    currency_symbol = preferences.get("currency_symbol", "Rs.")
-            except Exception as e:
-                logger.warning(f"Failed to fetch user currency settings: {e}")
+            currency_symbol = await _get_user_currency_symbol(client, user_id)
 
             # Ask for missing information conversationally
             response_text = await _generate_conversational_response(
@@ -715,14 +708,7 @@ async def process_natural_language_transaction(
                 # Generate response for multiple transactions
                 if created_transactions:
                     # Get user's currency symbol
-                    currency_symbol = "Rs."  # Default
-                    try:
-                        user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
-                        if user_settings_result.data and len(user_settings_result.data) > 0:
-                            preferences = user_settings_result.data[0].get("preferences", {})
-                            currency_symbol = preferences.get("currency_symbol", "Rs.")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch user currency settings: {e}")
+                    currency_symbol = await _get_user_currency_symbol(client, user_id)
 
                     response_lines = ["Transactions recorded successfully!\n"]
                     for i, tx in enumerate(created_transactions, 1):
@@ -839,14 +825,7 @@ async def _handle_spending_query(user_input: str, user_id: str, client) -> Dict[
     input_lower = user_input.lower()
 
     # Get user's currency symbol
-    currency_symbol = "Rs."
-    try:
-        user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
-        if user_settings_result.data and len(user_settings_result.data) > 0:
-            preferences = user_settings_result.data[0].get("preferences", {})
-            currency_symbol = preferences.get("currency_symbol", "Rs.")
-    except Exception as e:
-        print(f"Failed to fetch user currency settings: {e}")
+    currency_symbol = await _get_user_currency_symbol(client, user_id)
 
     # Parse time period
     start_date = None
@@ -1520,6 +1499,65 @@ async def _parse_natural_language_transaction(
             logger.info(f"Auto-assigned today's date ({today}) to transaction: {tx.get('description', 'Unknown')}")
 
     return transactions
+
+
+async def _get_user_currency_symbol(client, user_id: str) -> str:
+    """
+    Get user's currency symbol from their profile preferences
+    Returns LKR symbol by default for Sri Lankan users
+
+    IMPORTANT: Prioritizes currency code mapping over stored currency_symbol
+    to handle cases where currency_symbol might be incorrect in the database
+    """
+    try:
+        user_settings_result = client.table("profiles").select("preferences").eq("id", user_id).execute()
+        if user_settings_result.data and len(user_settings_result.data) > 0:
+            preferences = user_settings_result.data[0].get("preferences", {})
+
+            # Debug logging
+            logger.info(f"User preferences from DB: {preferences}")
+
+            # Get currency from preferences, default to LKR
+            currency = preferences.get("currency", "LKR")
+            stored_symbol = preferences.get("currency_symbol")
+
+            # Debug logging
+            logger.info(f"Currency: {currency}, Stored Symbol: {stored_symbol}")
+
+            # Currency mapping - ALWAYS use this for correctness
+            # This ensures LKR always shows as "Rs." even if database has wrong value
+            currency_map = {
+                "LKR": "Rs.",  # Sri Lankan Rupee
+                "USD": "$",    # US Dollar
+                "EUR": "€",    # Euro
+                "GBP": "£",    # British Pound
+                "INR": "₹",    # Indian Rupee
+            }
+
+            # PRIORITIZE currency code mapping for correctness
+            # Map the currency code to the correct symbol
+            correct_symbol = currency_map.get(currency)
+
+            if correct_symbol:
+                # Use the mapped symbol (correct by definition)
+                final_symbol = correct_symbol
+
+                # If stored symbol differs, log a warning
+                if stored_symbol and stored_symbol != correct_symbol:
+                    logger.warning(f"Currency symbol mismatch! Currency is {currency} (should be {correct_symbol}) but stored symbol is {stored_symbol}. Using correct symbol: {correct_symbol}")
+            else:
+                # Unknown currency, fall back to stored symbol or default
+                final_symbol = stored_symbol if stored_symbol else "Rs."
+                logger.info(f"Unknown currency {currency}, using stored symbol: {final_symbol}")
+
+            logger.info(f"Final currency symbol: {final_symbol}")
+            return final_symbol
+    except Exception as e:
+        logger.warning(f"Failed to fetch user currency settings: {e}")
+
+    # Default to Rs. for Sri Lankan users
+    logger.info("Using default currency symbol: Rs.")
+    return "Rs."
 
 
 async def _generate_conversational_response(

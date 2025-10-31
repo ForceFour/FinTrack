@@ -36,17 +36,8 @@ export default function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { refreshTransactions, auth } = useApp();
 
-  // Separate agent status for file uploads and chat
+  // Agent status for file uploads only
   const [uploadAgentStatus, setUploadAgentStatus] = useState<AgentStatus>({
-    ingestion: "idle",
-    ner_merchant: "idle",
-    classifier: "idle",
-    pattern_analyzer: "idle",
-    suggestion: "idle",
-    safety_guard: "idle",
-  });
-
-  const [chatAgentStatus, setChatAgentStatus] = useState<AgentStatus>({
     ingestion: "idle",
     ner_merchant: "idle",
     classifier: "idle",
@@ -249,9 +240,8 @@ export default function UploadPage() {
           </div>
         </div>
 
-        {/* Main Content - Two Row Layout with Side-by-Side Components */}
+        {/* Main Content - File Upload and Agent Status side by side, Chat full width below */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Row 1: File Upload + Agent Status */}
           {/* File Upload Card */}
           <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 border border-slate-200 hover:shadow-2xl transition-all duration-300 min-h-[600px] flex flex-col">
             <div className="flex items-center justify-between mb-6">
@@ -448,40 +438,25 @@ export default function UploadPage() {
             </div>
             <AgentStatusWidget agentStatus={uploadAgentStatus} />
           </div>
+        </div>
 
-          {/* Row 2: Chat + Agent Status */}
-          {/* Chat Interface Card */}
-          <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 border border-slate-200 min-h-[600px]">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl shadow-lg">
-                <ChatBubbleLeftRightIcon className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold text-slate-800">AI Chat Entry</h3>
-                <p className="text-sm text-slate-500">Describe your transaction naturally</p>
-              </div>
+        {/* Chat Interface - Full Width Below */}
+        <div>
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl shadow-lg">
+              <ChatBubbleLeftRightIcon className="h-6 w-6 text-white" />
             </div>
-            <ConversationalEntry
-              onTransactionAdded={() => {}}
-              updateAgentStatus={(status: Partial<AgentStatus>) => {
-                setChatAgentStatus(prev => ({ ...prev, ...status }));
-              }}
-            />
-          </div>
-
-          {/* Agent Status for Chat */}
-          <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 border border-slate-200 min-h-[600px]">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg">
-                <SparklesIcon className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h4 className="text-xl font-bold text-slate-900">Chat AI Pipeline</h4>
-                <p className="text-sm text-slate-500">Real-time agent status for chat processing</p>
-              </div>
+            <div>
+              <h3 className="text-2xl font-bold text-slate-800">AI Chat Entry</h3>
+              <p className="text-sm text-slate-500">Describe your transaction naturally</p>
             </div>
-            <AgentStatusWidget agentStatus={chatAgentStatus} />
           </div>
+          <ConversationalEntry
+            onTransactionAdded={() => {}}
+            updateAgentStatus={(status: Partial<AgentStatus>) => {
+              setUploadAgentStatus(prev => ({ ...prev, ...status }));
+            }}
+          />
         </div>
       </div>
     </div>
