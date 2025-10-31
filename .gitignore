@@ -96,6 +96,7 @@ venv.bak/
 .env.local
 .env.dev
 *.local.env
+.env
 
 # Spyder project settings
 .spyderproject

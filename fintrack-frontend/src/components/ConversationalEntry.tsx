@@ -257,7 +257,7 @@ export default function ConversationalEntry({
       </div>
 
       {/* Messages Container */}
-      <div className=" overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
+      <div className="min-h-[400px] p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
         {messages.length === 0 && (
           <div className="text-center py-2">
             <div className="p-2 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl w-15 h-15 mx-auto mb-3 flex items-center justify-center shadow-lg">
