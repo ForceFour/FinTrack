@@ -93,6 +93,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env
 .env.local
 .env.dev
 *.local.env
@@ -137,13 +138,8 @@ logs/
 data/
 
 # Development files
-test_*.py
-check_*.py
-analyze_*.py
-*_log.*
-debug_*.py
-verify_*.py
-fix_*.py
+tests_debug/*
+
 
 tests/
 .langgraph_api/*
