@@ -314,7 +314,7 @@ Guidelines:
 
 Return only valid JSON:
 {format_instructions}
-            """)
+            """)    
 
             logger.info("Groq LLM merchant extraction system initialized successfully")
 
